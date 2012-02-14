@@ -1,14 +1,25 @@
 #!/bin/bash
 
+CUR_DIR=`pwd`
+
 ## Create the openmotics directory
 mkdir -p /opt/openmotics/bin
 mkdir -p /opt/openmotics/etc
 mkdir -p /opt/openmotics/lib
+mkdir -p /opt/openmotics/download
 
-## Copy the python libs
-cp -R OpenMoticsService /opt/openmotics/lib
-cp -R Utilities /opt/openmotics/lib
-cp -R VpnService /opt/openmotics/lib
+## Install pyserial
+opkg update
+opkg install python-pyserial
+
+## Copy our software
+cp -R Utilities/* /opt/openmotics/lib/
+cp -R OpenMoticsService /opt/openmotics/
+cp -R VpnService /opt/openmotics/
+cp -R UpdateService /opt/openmotics/
+touch /opt/openmotics/etc/blacklist
+
+cp Tools/* /opt/openmotics/bin
 
 ## Disable the unnecessary services
 systemctl disable bone101.service
@@ -24,7 +35,6 @@ make
 make install
 
 ## Install supervisord
-opkg update
 opkg install python-setuptools python-compile python-core python-crypt python-io python-lang \
     python-misc python-netclient python-netserver python-pprint python-profile python-re \
     python-shell python-stringold python-threading python-unixadmin python-xmlrpc python-crypt \
@@ -238,8 +248,9 @@ esac
 
 exit 0
 EOF
+chmod +x /etc/init.d/supervisor
 
-for i in `seq 0 6`; do sudo ln -s /etc/init.d/supervisor /etc/rc${i}.d/S99supervisor; done
+for i in `seq 0 6`; do ln -s /etc/init.d/supervisor /etc/rc${i}.d/S99supervisor; done
 
 
 ## Configure the serial port at boot
@@ -263,10 +274,10 @@ EOF
 ## Install VPN service
 cat << EOF > /etc/supervisor/conf.d/vpn_keepalive.conf 
 [program:vpn_keepalive]
-command=python /opt/openmotics/lib/VpnService/VpnService.py
+command=python /opt/openmotics/VpnService/VpnService.py
 autostart=true
 autorestart=true
-directory=/opt/openmotics/lib/VpnService
+directory=/opt/openmotics/VpnService
 startsecs=10
 EOF
 
@@ -283,15 +294,28 @@ EOF
 ## Install Openmotics service
 cat << EOF > /etc/supervisor/conf.d/openmotics.conf 
 [program:openmotics]
-command=python /opt/openmotics/lib/OpenMoticsService/Main.py
+command=python /opt/openmotics/OpenMoticsService/Main.py
 autostart=true
 autorestart=true
-directory=/opt/openmotics/lib/OpenMoticsService
+directory=/opt/openmotics/OpenMoticsService
 startsecs=10
 EOF
 
+## Install update service
+cat << EOF > /etc/supervisor/conf.d/updater.conf 
+[program:updater]
+command=python /opt/openmotics/UpdateService/update.py
+autostart=true
+autorestart=true
+directory=/opt/openmotics/UpdateService
+startsecs=10
+EOF
+
+
 ## Compile and install the bootloader
-cd Bootloader/Bootload
+opkg install qt4-x11-free-dev eglibc-gconv eglibc-gconv-unicode eglibc-gconv-utf-16
+
+cd $CUR_DIR/Bootloader/Bootload/
 make
 cd ../QextSerialPort
 make
