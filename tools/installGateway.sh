@@ -256,8 +256,18 @@ for i in `seq 0 6`; do ln -s /etc/init.d/supervisor /etc/rc${i}.d/S99supervisor;
 ## Configure the serial port at boot
 cat << EOF > /opt/openmotics/bin/configure_serial.sh
 #!/bin/bash
+# UART 1
 echo 20 > /sys/kernel/debug/omap_mux/uart1_rxd
 echo 0 > /sys/kernel/debug/omap_mux/uart1_txd
+# UART 2
+echo 21 > /sys/kernel/debug/omap_mux/spi0_sclk
+echo 1 > /sys/kernel/debug/omap_mux/spi0_d0
+# UART 4
+echo 26 > /sys/kernel/debug/omap_mux/gpmc_wait0
+echo 6 > /sys/kernel/debug/omap_mux/gpmc_wpn
+# UART 5
+echo 24 > /sys/kernel/debug/omap_mux/lcd_data9
+echo 4 > /sys/kernel/debug/omap_mux/lcd_data8
 EOF
 chmod +x /opt/openmotics/bin/configure_serial.sh
 
