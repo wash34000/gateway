@@ -33,6 +33,7 @@ cd openvpn-2.2.2
 ./configure
 make
 make install
+cd ..
 
 ## Install supervisord
 opkg install python-setuptools python-compile python-core python-crypt python-io python-lang \
@@ -45,6 +46,7 @@ wget http://pypi.python.org/packages/source/s/supervisor/supervisor-3.0a12.tar.g
 tar xzf supervisor-3.0a12.tar.gz#md5\=eb2ea5a2c3b665ba9277d17d14584a25
 cd supervisor-3.0a12
 python setup.py install
+cd ..
 
 mkdir /etc/supervisor/
 mkdir /etc/supervisor/conf.d/
@@ -322,17 +324,23 @@ startsecs=10
 EOF
 
 
+## Create the alive port service
+cat << EOF > /opt/openmotics/bin/alive_port.sh
+#!/bin/bash
+while [ true ]; do nc -l -p 82 > /dev/null ; done
+EOF
+chmod +x /opt/openmotics/bin/alive_port.sh
+
+cat << EOF > /etc/supervisor/conf.d/alive_port.conf 
+[program:alive_port]
+command=/opt/openmotics/bin/alive_port.sh
+autostart=true
+autorestart=true
+EOF
+
+
 ## Compile and install the bootloader
 opkg install qt4-x11-free-dev eglibc-gconv eglibc-gconv-unicode eglibc-gconv-utf-16
-
-cd $CUR_DIR/Bootloader/Bootload/
-make
-cd ../QextSerialPort
-make
-cd ../AN1310cl
-make
-cp AN1310cl /opt/openmotics/bin/
-cd ..
-cp devices.db /opt/openmotics/bin/
-cd ..
-
+cp $CUR_DIR/binaries/nc /usr/bin/nc
+cp $CUR_DIR/binaries/AN1310cl /opt/openmotics/bin/
+cp $CUR_DIR/Bootloader/Bootload/devices.db /opt/openmotics/bin/
