@@ -8,10 +8,6 @@ mkdir -p /opt/openmotics/etc
 mkdir -p /opt/openmotics/lib
 mkdir -p /opt/openmotics/download
 
-## Install pyserial
-opkg update
-opkg install python-pyserial
-
 ## Copy our software
 cp -R Utilities/* /opt/openmotics/lib/
 cp -R OpenMoticsService /opt/openmotics/
@@ -25,6 +21,16 @@ cp Tools/* /opt/openmotics/bin
 systemctl disable bone101.service
 systemctl disable cloud9.service
 systemctl disable gateone.service
+
+## Install pyserial
+opkg update
+opkg install python-pyserial
+
+## Install cherrypy
+wget http://download.cherrypy.org/CherryPy/3.2.2/CherryPy-3.2.2.tar.gz
+cd CherryPy-3.2.2
+python setup.py build
+python setup.py install
 
 ## Install OpenVPN
 wget http://swupdate.openvpn.org/community/releases/openvpn-2.2.2.tar.gz
@@ -323,24 +329,7 @@ directory=/opt/openmotics/UpdateService
 startsecs=10
 EOF
 
-
-## Create the alive port service
-cat << EOF > /opt/openmotics/bin/alive_port.sh
-#!/bin/bash
-while [ true ]; do nc -l -p 82 > /dev/null ; done
-EOF
-chmod +x /opt/openmotics/bin/alive_port.sh
-
-cat << EOF > /etc/supervisor/conf.d/alive_port.conf 
-[program:alive_port]
-command=/opt/openmotics/bin/alive_port.sh
-autostart=true
-autorestart=true
-EOF
-
-
 ## Compile and install the bootloader
 opkg install qt4-x11-free-dev eglibc-gconv eglibc-gconv-unicode eglibc-gconv-utf-16
-cp $CUR_DIR/binaries/nc /usr/bin/nc
 cp $CUR_DIR/binaries/AN1310cl /opt/openmotics/bin/
 cp $CUR_DIR/Bootloader/Bootload/devices.db /opt/openmotics/bin/
