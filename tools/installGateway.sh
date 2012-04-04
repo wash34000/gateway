@@ -12,7 +12,7 @@ mkdir -p /opt/openmotics/download
 cp -R Utilities/* /opt/openmotics/lib/
 cp -R OpenMoticsService /opt/openmotics/
 cp -R VpnService /opt/openmotics/
-cp -R UpdateService /opt/openmotics/
+cp -R Updater /opt/openmotics/
 touch /opt/openmotics/etc/blacklist
 
 cp Tools/* /opt/openmotics/bin
@@ -28,9 +28,11 @@ opkg install python-pyserial
 
 ## Install cherrypy
 wget http://download.cherrypy.org/CherryPy/3.2.2/CherryPy-3.2.2.tar.gz
+tar xzf CherryPy-3.2.2.tar.gz
 cd CherryPy-3.2.2
 python setup.py build
 python setup.py install
+cd ..
 
 ## Install OpenVPN
 wget http://swupdate.openvpn.org/community/releases/openvpn-2.2.2.tar.gz
@@ -316,16 +318,6 @@ command=python /opt/openmotics/OpenMoticsService/Main.py
 autostart=true
 autorestart=true
 directory=/opt/openmotics/OpenMoticsService
-startsecs=10
-EOF
-
-## Install update service
-cat << EOF > /etc/supervisor/conf.d/updater.conf 
-[program:updater]
-command=python /opt/openmotics/UpdateService/update.py
-autostart=true
-autorestart=true
-directory=/opt/openmotics/UpdateService
 startsecs=10
 EOF
 
