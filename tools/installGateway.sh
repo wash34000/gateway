@@ -25,7 +25,7 @@ systemctl disable gateone.service
 ## Install python dependencies
 opkg update
 opkg install python-setuptools python-distutils python-compile python-pprint python-profile \
-    python-unixadmin python-xmlrpc python-resource python-ctypes python-pyserial
+    python-unixadmin python-xmlrpc python-resource python-ctypes python-pyserial python-pygobject
 
 ## Install cherrypy
 wget http://download.cherrypy.org/CherryPy/3.2.2/CherryPy-3.2.2.tar.gz
@@ -258,8 +258,8 @@ chmod +x /etc/init.d/supervisor
 for i in `seq 0 6`; do ln -s /etc/init.d/supervisor /etc/rc${i}.d/S99supervisor; done
 
 
-## Configure the serial port at boot
-cat << EOF > /opt/openmotics/bin/configure_serial.sh
+## Configure beaglebone ports at boot
+cat << EOF > /opt/openmotics/bin/configure_ports.sh
 #!/bin/bash
 # UART 1
 echo 20 > /sys/kernel/debug/omap_mux/uart1_rxd
@@ -273,12 +273,24 @@ echo 6 > /sys/kernel/debug/omap_mux/gpmc_wpn
 # UART 5
 echo 24 > /sys/kernel/debug/omap_mux/lcd_data9
 echo 4 > /sys/kernel/debug/omap_mux/lcd_data8
+# OpenMotics home LED
+echo 7 > /sys/kernel/debug/omap_mux/lcd_data5
+echo 75 > /sys/class/gpio/export
+echo out > /sys/class/gpio/gpio75/direction
+echo 1 > /sys/class/gpio/gpio75/value
+# Ethernet LEDs
+for i in 48 49 60 117;
+do
+    echo $i > /sys/class/gpio/export
+    echo out > /sys/class/gpio/gpio${i}/direction
+    echo 0 > /sys/class/gpio/gpio${i}/value
+done
 EOF
-chmod +x /opt/openmotics/bin/configure_serial.sh
+chmod +x /opt/openmotics/bin/configure_ports.sh
 
-cat << EOF > /etc/supervisor/conf.d/configure_serial.conf 
-[program:configure_serial]
-command=/opt/openmotics/bin/configure_serial.sh
+cat << EOF > /etc/supervisor/conf.d/configure_ports.conf 
+[program:configure_ports]
+command=/opt/openmotics/bin/configure_ports.sh
 autostart=true
 autorestart=false
 directory=/opt/openmotics/bin/
@@ -316,7 +328,7 @@ directory=/opt/openmotics/OpenMoticsService
 startsecs=10
 EOF
 
-## Compile and install the bootloader
+## Install the bootloader
 opkg install qt4-x11-free-dev eglibc-gconv eglibc-gconv-unicode eglibc-gconv-utf-16
 cp $CUR_DIR/binaries/AN1310cl /opt/openmotics/bin/
 cp $CUR_DIR/Bootloader/devices.db /opt/openmotics/bin/
@@ -324,3 +336,39 @@ cp $CUR_DIR/Bootloader/devices.db /opt/openmotics/bin/
 
 ## TODO Place a copy of the hex file on the gateway
 touch /opt/openmotics/firmware.hex
+
+
+## Make status display (i2c-2) accessible
+mkdir /mnt/boot/
+mount /dev/mmcblk0p1 /mnt/boot/
+cat << EOF > /mnt/boot/uEnv.txt
+optargs="run_hardware_tests i2c_bus=2,100 quiet"
+EOF
+umount /mnt/boot/
+rm -R /mnt/boot
+
+
+## Install Status service to control the LEDs
+cat << EOF > /etc/dbus-1/system.d/com.openmotics.status.conf
+<!DOCTYPE busconfig PUBLIC
+          "-//freedesktop//DTD D-BUS Bus Configuration 1.0//EN"
+          "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+<busconfig>
+
+  <policy user="root">
+    <allow own="com.openmotics.status"/>
+  </policy>
+
+  <policy context="default">
+    <allow send_destination="com.openmotics.status"/>
+    <allow receive_sender="com.openmotics.status"/>
+  </policy>
+
+  <policy user="root">
+    <allow send_destination="com.openmotics.status"/>
+    <allow receive_sender="com.openmotics.status"/>
+  </policy>
+
+</busconfig>
+EOF
+
