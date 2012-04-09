@@ -22,9 +22,10 @@ systemctl disable bone101.service
 systemctl disable cloud9.service
 systemctl disable gateone.service
 
-## Install pyserial
+## Install python dependencies
 opkg update
-opkg install python-pyserial
+opkg install python-setuptools python-distutils python-compile python-pprint python-profile \
+    python-unixadmin python-xmlrpc python-resource python-ctypes python-pyserial
 
 ## Install cherrypy
 wget http://download.cherrypy.org/CherryPy/3.2.2/CherryPy-3.2.2.tar.gz
@@ -44,12 +45,6 @@ make install
 cd ..
 
 ## Install supervisord
-opkg install python-setuptools python-compile python-core python-crypt python-io python-lang \
-    python-misc python-netclient python-netserver python-pprint python-profile python-re \
-    python-shell python-stringold python-threading python-unixadmin python-xmlrpc python-crypt \
-    python-datetime python-fcntl python-unixadmin python-readline python-resource python-zlib \
-    python-ctypes python-dbus
-
 wget http://pypi.python.org/packages/source/s/supervisor/supervisor-3.0a12.tar.gz#md5=eb2ea5a2c3b665ba9277d17d14584a25
 tar xzf supervisor-3.0a12.tar.gz#md5\=eb2ea5a2c3b665ba9277d17d14584a25
 cd supervisor-3.0a12
@@ -324,4 +319,8 @@ EOF
 ## Compile and install the bootloader
 opkg install qt4-x11-free-dev eglibc-gconv eglibc-gconv-unicode eglibc-gconv-utf-16
 cp $CUR_DIR/binaries/AN1310cl /opt/openmotics/bin/
-cp $CUR_DIR/Bootloader/Bootload/devices.db /opt/openmotics/bin/
+cp $CUR_DIR/Bootloader/devices.db /opt/openmotics/bin/
+
+
+## TODO Place a copy of the hex file on the gateway
+touch /opt/openmotics/firmware.hex
