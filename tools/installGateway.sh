@@ -1,12 +1,14 @@
 #!/bin/bash
 
-## Create the openmotics directory
+echo Creating OpenMotics directory
+
 mkdir -p /opt/openmotics/bin
 mkdir -p /opt/openmotics/etc
 mkdir -p /opt/openmotics/lib
 mkdir -p /opt/openmotics/download
 
-## Copy our software
+echo Copy OpenMotics software
+
 cp -R Utilities/* /opt/openmotics/lib/
 cp -R OpenMoticsService /opt/openmotics/
 cp -R VpnService /opt/openmotics/
@@ -43,9 +45,9 @@ echo 1 > /sys/class/gpio/gpio75/value
 # Ethernet LEDs
 for i in 48 49 60 117;
 do
-    echo $i > /sys/class/gpio/export
-    echo out > /sys/class/gpio/gpio${i}/direction
-    echo 0 > /sys/class/gpio/gpio${i}/value
+    echo \$i > /sys/class/gpio/export
+    echo out > /sys/class/gpio/gpio\${i}/direction
+    echo 0 > /sys/class/gpio/gpio\${i}/value
 done
 EOF
 chmod +x /opt/openmotics/bin/configure_ports.sh
@@ -91,6 +93,17 @@ directory=/opt/openmotics/OpenMoticsService
 startsecs=10
 EOF
 
+## Install LED service
+cat << EOF > /etc/supervisor/conf.d/led_service.conf 
+[program:led_service]
+command=python /opt/openmotics/bin/LEDservice.py
+autostart=true
+autorestart=true
+directory=/opt/openmotics/bin
+startsecs=10
+priority=1
+EOF
+
 ## Install Status service to control the LEDs
 cat << EOF > /etc/dbus-1/system.d/com.openmotics.status.conf
 <!DOCTYPE busconfig PUBLIC
@@ -114,3 +127,5 @@ cat << EOF > /etc/dbus-1/system.d/com.openmotics.status.conf
 
 </busconfig>
 EOF
+
+echo OpenMotics installed successfully
