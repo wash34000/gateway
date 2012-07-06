@@ -49,6 +49,9 @@ do
     echo out > /sys/class/gpio/gpio\${i}/direction
     echo 0 > /sys/class/gpio/gpio\${i}/value
 done
+# Input button
+echo 38 > /sys/class/gpio/export
+echo in > /sys/class/gpio/gpio38/direction
 EOF
 chmod +x /opt/openmotics/bin/configure_ports.sh
 
