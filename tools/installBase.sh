@@ -42,6 +42,11 @@ chmod +x /etc/init.d/supervisor
 
 for i in `seq 0 6`; do ln -s /etc/init.d/supervisor /etc/rc${i}.d/S99supervisor; done
 
+## Keep the log files in RAM
+cat << EOF >> /etc/fstab
+tmpfs                /var/log             tmpfs      defaults              0  0
+EOF
+
 ## Make status display (i2c-2) accessible
 mkdir /mnt/boot/
 mount /dev/mmcblk0p1 /mnt/boot/

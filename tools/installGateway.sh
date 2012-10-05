@@ -4,16 +4,12 @@ echo Creating OpenMotics directory
 
 mkdir -p /opt/openmotics/bin
 mkdir -p /opt/openmotics/etc
-mkdir -p /opt/openmotics/lib
 mkdir -p /opt/openmotics/download
 
 echo Copy OpenMotics software
 
-cp -R Utilities/* /opt/openmotics/lib/
-cp -R OpenMoticsService /opt/openmotics/
-cp -R VpnService /opt/openmotics/
+cp -R python /opt/openmotics/
 cp -R Updater /opt/openmotics/
-cp Tools/* /opt/openmotics/bin
 
 ## Copy the bootloader
 cp binaries/AN1310cl /opt/openmotics/bin/
@@ -69,10 +65,10 @@ EOF
 ## Install VPN service
 cat << EOF > /etc/supervisor/conf.d/vpn_keepalive.conf 
 [program:vpn_keepalive]
-command=python /opt/openmotics/VpnService/VpnService.py
+command=python vpn_service.py
 autostart=true
 autorestart=true
-directory=/opt/openmotics/VpnService
+directory=/opt/openmotics/python
 startsecs=10
 EOF
 
@@ -89,20 +85,20 @@ EOF
 ## Install Openmotics service
 cat << EOF > /etc/supervisor/conf.d/openmotics.conf 
 [program:openmotics]
-command=python /opt/openmotics/OpenMoticsService/Main.py
+command=python openmotics_service.py
 autostart=true
 autorestart=true
-directory=/opt/openmotics/OpenMoticsService
+directory=/opt/openmotics/python
 startsecs=10
 EOF
 
 ## Install LED service
 cat << EOF > /etc/supervisor/conf.d/led_service.conf 
 [program:led_service]
-command=python /opt/openmotics/bin/LEDservice.py
+command=python physical_frontend_service.py
 autostart=true
 autorestart=true
-directory=/opt/openmotics/bin
+directory=/opt/openmotics/python
 startsecs=10
 priority=1
 EOF
