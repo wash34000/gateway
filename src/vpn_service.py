@@ -135,7 +135,7 @@ class Gateway:
             thermostats = []
             for thermostat in data['thermostats']:
                 to_add = {}
-                for field in [ 'thermostat', 'act', 'csetp', 'mode' ]:
+                for field in [ 'thermostat', 'act', 'csetp', 'mode', 'output0', 'output1' ]:
                     to_add[field] = thermostat[field]
                 thermostats.append(to_add)
             ret['thermostats'] = thermostats
@@ -174,8 +174,8 @@ def main():
     # Loop: check vpn and open/close if needed
     while True:
         monitoring_data = {}
-        monitoring_data['outputs'] = gateway.get_enabled_outputs()
         monitoring_data['thermostats'] = gateway.get_thermostats()
+        monitoring_data['outputs'] = gateway.get_enabled_outputs()
         extra_data = json.dumps(monitoring_data)
     
         should_open = cloud.should_open_vpn(extra_data)
