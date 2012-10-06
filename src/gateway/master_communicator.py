@@ -5,11 +5,13 @@ Created on Sep 10, 2012
 
 @author: fryckbos
 '''
-from threading import Thread, Lock, Event
-from master_command import printable
-from Queue import Queue, Empty
-import master_api
 import sys
+import time
+from threading import Thread, Lock
+from Queue import Queue, Empty
+
+import master_api
+from master_command import printable
 
 class MasterCommunicator:
     """ Uses a serial port to communicate with the master and updates the output state.
@@ -26,13 +28,13 @@ class MasterCommunicator:
         
         self.__serial = serial
         self.__serial_write_lock = Lock()
+        self.__command_lock = Lock()
         self.__serial_bytes_written = 0
         self.__serial_bytes_read = 0
         
         self.__cid = 1
         
         self.__maintenance_mode = False
-        self.__maintenance_done = Event()
         self.__maintenance_queue = Queue()
         
         self.__consumers = []
@@ -81,12 +83,11 @@ class MasterCommunicator:
         :param data: the data to write
         :type data: string
         """
-        self.__serial_write_lock.acquire()
-        if self.__verbose:
-            print "Writing to serial: %s" % printable(data)
-        self.__serial.write(data)
-        self.__serial_bytes_written += len(data)
-        self.__serial_write_lock.release()
+        with self.__serial_write_lock:
+            if self.__verbose:
+                print "%.3f writing to serial: %s" % (time.time(), printable(data))
+            self.__serial.write(data)
+            self.__serial_bytes_written += len(data)
 
     def register_consumer(self, consumer):
         """ Register a customer consumer with the communicator. An instance of :class`Consumer`
@@ -116,10 +117,10 @@ class MasterCommunicator:
         consumer = Consumer(cmd, cid)
         inp = cmd.create_input(cid, fields)
         
-        self.__consumers.append(consumer)
-        self.__write_to_serial(inp)
-        
-        return consumer.get(timeout).fields
+        with self.__command_lock:
+            self.__consumers.append(consumer)
+            self.__write_to_serial(inp)
+            return consumer.get(timeout).fields
     
     def send_passthrough_data(self, data):
         """ Send raw data on the serial port. 
@@ -148,7 +149,6 @@ class MasterCommunicator:
         if self.__maintenance_mode:
             raise InMaintenanceModeException()
         
-        self.__maintenance_done.clear()
         self.__maintenance_mode = True
         
         self.send_maintenance_data(master_api.to_cli_mode().create_input(0))
@@ -185,7 +185,6 @@ class MasterCommunicator:
         self.send_maintenance_data("exit\r\n")
         
         self.__maintenance_mode = False
-        self.__maintenance_done.set()
     
     def in_maintenance_mode(self):
         """ Returns whether the MasterCommunicator is in maintenance mode. """
@@ -265,7 +264,7 @@ class MasterCommunicator:
                 self.__serial_bytes_read += (1 + num_bytes)
                 
                 if self.__verbose:
-                    print "Read from serial: %s" % printable(data)
+                    print "%.3f read from serial: %s" % (time.time(), printable(data))
                 
                 if read_state.should_resume():
                     data = read_state.consume(data)
