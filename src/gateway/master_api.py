@@ -105,15 +105,15 @@ def read_output():
         [ Field.byte('output_nr'), Field.str('type', 1), Field.byte('light'), Field.int('timer'),
           Field.int('ctimer'), Field.byte('status'), Field.dimmer('dimmer'),
           Field.byte('controller_out'), Field.byte('max_power'), Field.byte('floor_level'),
-          Field.str('menu_position', 3), Field.str('name', 16), Field.str('crc', 3),
+          Field.bytes('menu_position', 3), Field.str('name', 16), Field.bytes('crc', 3),
           Field.lit('\r\n\r\n') ])
 
 def read_input():
     """ Read the information about an input """
     return MasterCommandSpec("ri", 
         [ Field.byte("input_nr"), Field.padding(12) ],
-        [ Field.byte('input_nr'), Field.byte('output_action'), Field.str('output_list', 30),
-          Field.str('input_name', 8), Field.str('crc', 3), Field.lit('\r\n\r\n') ])
+        [ Field.byte('input_nr'), Field.byte('output_action'), Field.bytes('output_list', 30),
+          Field.str('input_name', 8), Field.bytes('crc', 3), Field.lit('\r\n\r\n') ])
 
 def temperature_list():
     """ Read the temperature thermostat sensor list for a series of 12 sensors """
@@ -159,7 +159,7 @@ def read_setpoint():
           Field.byte('fri_stop_d1'), Field.byte('fri_start_d2'), Field.byte('fri_stop_d2'),
           Field.byte('sat_start_d1'), Field.byte('sat_stop_d1'), Field.byte('sat_start_d2'),
           Field.byte('sat_stop_d2'), Field.byte('sun_start_d1'), Field.byte('sun_stop_d1'),
-          Field.byte('sun_start_d2'), Field.byte('sun_stop_d2'), Field.str('crc', 3),
+          Field.byte('sun_start_d2'), Field.byte('sun_stop_d2'), Field.bytes('crc', 3),
           Field.lit('\r\n\r\n') ])        
 
 def write_setpoint():

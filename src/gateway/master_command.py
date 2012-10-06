@@ -149,6 +149,11 @@ class Field:
         return Field(name, FieldType(str, length))
     
     @staticmethod
+    def bytes(name, length):
+        """ Create a byte array with a certain name and length. """
+        return Field(name, BytesFieldType(length))
+    
+    @staticmethod
     def padding(length):
         """ Padding, will be skipped. """
         return Field("padding", PaddingFieldType(length))
@@ -293,6 +298,23 @@ class PaddingFieldType:
         else:
             return ""
 
+class BytesFieldType:
+    """ Type for an array of bytes. """
+    def __init__(self, length):
+        self.length = length
+    
+    def get_min_decode_bytes(self):
+        """ Get the minimal amount of bytes required to start decoding. """
+        return self.length
+    
+    def encode(self, byte_arr):
+        """ Generates a string of bytes from the byte array. """
+        return [ chr(x) for x in byte_arr ]
+    
+    def decode(self, byte_str):
+        """ Generates an array of bytes. """
+        return [ ord(x) for x in byte_str ]
+
 def printable(string):
     """ Converts non-printable characters into hex notation """
     return "".join([c if ord(c) >= 32 and ord(c) <= 126 else '\\x%02d' % ord(c) for c in string])
@@ -336,7 +358,7 @@ class SvtFieldType:
     def decode(self, byte_str):
         """ Decode a svt string into a float (degrees Celsius) """
         byte = ord(byte_str[0])
-        return (float(byte) / 2) - 32 if byte != 255 else "NA"
+        return (float(byte) / 2) - 32
     
 
 class VarStringFieldType:
@@ -408,7 +430,10 @@ class OutputFieldType:
             raise ValueError("Got more bytes than required: expected %d, got %d",
                              bytes_required, len(byte_str))
         else:
+            dimmerFieldType = DimmerFieldType()
             out = []
             for i in range(ord(byte_str[0])):
-                out.append((ord(byte_str[1 + i*2]), ord(byte_str[1 + i*2 + 1])))
+                output_nr = ord(byte_str[1 + i*2])
+                dimmer = dimmerFieldType.decode(byte_str[1 + i*2 + 1:1 + i*2 + 2])
+                out.append((output_nr, dimmer))
             return out
