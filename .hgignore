@@ -9,3 +9,5 @@ _build
 .pyproj$
 .sln$
 .suo$
+.project
+.pydevproject
