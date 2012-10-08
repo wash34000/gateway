@@ -73,13 +73,14 @@ startsecs=10
 EOF
 
 ## Install OpenVPN service
-cat << EOF > /etc/supervisor/conf.d/openvpn.conf 
-[program:openvpn]
-command=openvpn --config vpn.conf
-autostart=false
-autorestart=true
-directory=/opt/openmotics/etc
-startsecs=10
+cat << EOF > /lib/systemd/system/openvpn.service
+[Unit]
+Description=OpenVPN connection to the OpenMotics cloud
+
+[Service]
+ExecStart=/usr/local/sbin/openvpn --config /opt/openmotics/etc/vpn.conf
+Restart=always
+WorkingDirectory=/opt/openmotics/etc
 EOF
 
 ## Install Openmotics service

@@ -5,9 +5,9 @@ thermostats to the cloud, to keep the status information in the cloud in sync. "
 import urllib, urllib2
 import time
 import sys
+import subprocess
 
 from ConfigParser import ConfigParser
-from subprocess import Popen, PIPE
 from datetime import datetime
 
 try:
@@ -23,31 +23,26 @@ from frontend.physical_frontend import PhysicalFrontend
 class VpnController:
     """ Contains methods to check the vpn status, start and stop the vpn. """
     
-    vpnService = "openvpn"
-    startCmd = "supervisorctl start " + vpnService
-    stopCmd = "supervisorctl stop " + vpnService
-    checkCmd = "supervisorctl status " + vpnService
+    vpnService = "openvpn.service"
+    startCmd = "systemctl start " + vpnService
+    stopCmd = "systemctl stop " + vpnService
+    checkCmd = "systemctl is-active " + vpnService
     
     def __init__(self):
         pass
     
     def start_vpn(self):
-        """ Start openvpn using supervisord """
-        proc = Popen(VpnController.startCmd, stdout=PIPE, stderr=PIPE, shell=True)
-        stdout, _ = proc.communicate()
-        return 'started' in stdout
+        """ Start openvpn """
+        return subprocess.call(VpnController.startCmd, shell=True) == 0
         
     def stop_vpn(self):
-        """ Stop openvpn using supervisord """
-        proc = Popen(VpnController.stopCmd, stdout=PIPE, stderr=PIPE, shell=True)
-        stdout, _ = proc.communicate()
-        return 'stopped' in stdout
+        """ Stop openvpn """
+        return subprocess.call(VpnController.stopCmd, shell=True) == 0
     
     def check_vpn(self):
-        """ Check if openvpn is running using supervisord """
-        proc = Popen(VpnController.checkCmd, stdout=PIPE, stderr=PIPE, shell=True)
-        stdout, _ = proc.communicate()
-        return 'RUNNING' in stdout
+        """ Check if openvpn is running """
+        return subprocess.call(VpnController.checkCmd, shell=True) == 0
+
 
 class Cloud:
     """ Connects to the OpenMotics cloud to check if the vpn should be opened. """
