@@ -180,3 +180,66 @@ def output_list():
     return MasterCommandSpec("OL",
         [],
         [Field("outputs", OutputFieldType()), Field.lit("\r\n\r\n")])
+
+class Svt:
+    """ Class for the system value type, this can be either a time or a temperature. """
+    TIME = 1
+    TEMPERATURE = 2
+    RAW = 3
+    
+    def __init__(self, type, value):
+        """ Default constructor.
+        :param type: Type of the Svt (can be Svt.TIME or Svt.TERMPERATUR).
+        """
+        if type == Svt.TIME:
+            split = [ int(x) for x in value.split(":") ]
+            if len(split) != 2:
+                raise ValueError("Time is not in HH:MM format: %s" % value)
+            self.__value = (split[0] * 6) + (split[1] / 10)
+        elif type == Svt.TEMPERATURE:
+            self.__value = int((value + 32) * 2)
+        elif type == Svt.RAW:
+            self.__value = value
+        else:
+            raise ValueError("Unknown type for Svt: " + str(type))
+    
+    def get_time(self):
+        """ Convert an Svt to time. 
+        :returns: String with form HH:MM
+        """
+        hours = (self.__value / 6)
+        minutes = (self.__value % 6) * 10
+        return "%02d:%02d" % (hours, minutes)
+    
+    def get_temperature(self):
+        """ Convert an Svt to temperature.
+        :returns: degrees celcius (float).
+        """
+        return (float(self.__value) / 2) - 32
+    
+    def get_byte(self):
+        """ Get the Svt value as a byte.
+        :returns: one byte
+        """
+        return chr(self.__value)
+    
+    @staticmethod
+    def from_byte(byte_value):
+        """ Create an Svt instance from a byte.
+        :returns: instance of the Svt class.
+        """
+        return Svt(Svt.RAW, ord(byte_value))
+
+    @staticmethod
+    def temp(temperature):
+        """ Create an Svt instance from a temperature.
+        :param temperature: in degrees celcius (float)
+        """
+        return Svt(Svt.TEMPERATURE, temperature)
+    
+    @staticmethod
+    def time(time_value):
+        """ Create an Svt instance from a time value.
+        :param time_value: String in format HH:MM
+        """
+        return Svt(Svt.TIME, time_value)

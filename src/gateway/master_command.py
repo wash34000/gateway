@@ -5,6 +5,7 @@ Created on Sep 9, 2012
 
 @author: fryckbos
 """
+import master_api
 
 class MasterCommandSpec:
     """ The input command to the master looks like this:
@@ -348,17 +349,16 @@ class SvtFieldType:
         pass
     
     def encode(self, field_value):
-        """ Encode a float (degrees Celsius) into a string. """
-        return chr(int((field_value + 32) * 2))
+        """ Encode an instance of the Svt class to a byte. """
+        return field_value.get_byte()
     
     def get_min_decode_bytes(self):
         """ Get the minimal amount of bytes required to start decoding. """
         return 1
     
     def decode(self, byte_str):
-        """ Decode a svt string into a float (degrees Celsius) """
-        byte = ord(byte_str[0])
-        return (float(byte) / 2) - 32
+        """ Decode a svt byte string into a instance of the Svt class. """
+        return master_api.Svt.from_byte(byte_str[0])
     
 
 class VarStringFieldType:

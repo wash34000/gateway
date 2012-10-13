@@ -10,6 +10,7 @@ import time as pytime
 from threading import Timer
 
 import master_api
+from master_api import Svt
 from outputs import OutputStatus
 from master_communicator import BackgroundConsumer 
 
@@ -254,7 +255,13 @@ class GatewayApi:
             thermostat = self.__master_communicator.do_command(master_api.read_setpoint(),
                             { 'thermostat' :  thermostat_id })
             
+            # Check if the thermostat is activated
             if thermostat['sensor_nr'] <= 31 and thermostat['output0_nr'] < 240:
+                # Convert the Svt instances into temperatures
+                for temperature_key in [ 'act', 'csetp', 'psetp0', 'psetp1', 'psetp2', 'psetp3',
+                                         'psetp4', 'psetp5', 'outside', 'threshold_temp' ]:
+                    thermostat[temperature_key] = thermostat[temperature_key].get_temperature()
+                
                 thermostats.append(thermostat)
 
         return { 'thermostats_on' : thermostats_on, 'automatic' : automatic,
@@ -276,8 +283,11 @@ class GatewayApi:
         if setpoint not in range(0, 6):
             raise ValueError("Setpoint not in [0,5]: %d" % setpoint)
         
-        return self.__master_communicator.do_command(master_api.write_setpoint(),
-            { 'thermostat' : thermostat, 'config' : setpoint, 'temp' : temperature })
+        ret = self.__master_communicator.do_command(master_api.write_setpoint(),
+            { 'thermostat' : thermostat, 'config' : setpoint, 'temp' : Svt.temp(temperature) })
+        ret['temp'] = ret['temp'].get_temperature()
+        return ret
+        
     
     def set_current_setpoint(self, thermostat, temperature):
         """ Set the current setpoint of a thermostat.
@@ -290,8 +300,10 @@ class GatewayApi:
         """
         if thermostat not in range(0, 25):
             raise ValueError("Thermostat not in [0,24]: %d" % thermostat)
-        return self.__master_communicator.do_command(master_api.write_setpoint(),
-            { 'thermostat' : thermostat, 'config' : 0, 'temp' : temperature })
+        ret = self.__master_communicator.do_command(master_api.write_setpoint(),
+            { 'thermostat' : thermostat, 'config' : 0, 'temp' : Svt.temp(temperature) })
+        ret['temp'] = ret['temp'].get_temperature()
+        return ret
     
     def set_setpoint_start_time(self, thermostat, day_of_week, setpoint, time):
         """ Set the start time of setpoint 0 or 2 for a certain day of the week and thermostat.
@@ -347,18 +359,14 @@ class GatewayApi:
         if day_of_week not in range(1, 8):
             raise ValueError("Day of week not in [1, 7]: %d" % day_of_week)
     
-        split = [ int(x) for x in time.split(":") ]
-        if len(split) != 2:
-            raise ValueError("Time is not in HH:MM format: %s" % time)
-        
         config_point = 18 + ((day_of_week-1) * 4)
         config_point += 0 if start else 1
         config_point += setpoint
         
-        time_value = (split[0] * 6) + (split[1] / 10)
-        
-        return self.__master_communicator.do_command(master_api.write_setpoint(),
-            { 'thermostat' : thermostat, 'config' : config_point, 'temp' : time_value })
+        ret = self.__master_communicator.do_command(master_api.write_setpoint(),
+            { 'thermostat' : thermostat, 'config' : config_point, 'temp' : Svt.time(time) })
+        ret['temp'] = ret['temp'].get_time()
+        return ret
     
     def set_thermostat_mode(self, thermostat_on, automatic, setpoint):
         """ Set the mode of the thermostats. Thermostats can be on or off, automatic or manual
