@@ -1,11 +1,11 @@
 """ Includes the WebService class """
 import threading
 import random
-import base64
 import ConfigParser
 import subprocess
 import os
 from types import MethodType
+import traceback
 
 try:
     import json
@@ -194,7 +194,7 @@ class WebInterface:
         """
         self.__check_token(token)
         return self.__wrap(lambda: self.__gateway_api.set_programmed_setpoint(
-                                            int(thermostat), int(setpoint), int(temperature)))
+                                            int(thermostat), int(setpoint), float(temperature)))
     
     @cherrypy.expose
     def set_current_setpoint(self, token, thermostat, temperature):
@@ -208,7 +208,7 @@ class WebInterface:
         """
         self.__check_token(token)
         return self.__wrap(lambda: self.__gateway_api.set_current_setpoint(
-                                            int(thermostat), int(temperature)))
+                                            int(thermostat), float(temperature)))
     
     @cherrypy.expose
     def set_setpoint_start_time(self, token, thermostat, day_of_week, setpoint, time):
@@ -281,11 +281,11 @@ class WebInterface:
         """ Restore a backup of the eeprom of the master.
         
         :param data: The eeprom backup to restore.
-        :type data: string of bytes (size = 64 kb).
+        :type data: multipart/form-data encoded bytes (size = 64 kb).
         :returns: dict with 'output' key (contains an array with the addresses that were written). 
         """
         self.__check_token(token)
-        data = base64.b64decode(data)
+        data = data.file.read()
         return self.__wrap(lambda: self.__gateway_api.master_restore(data))
     
     @cherrypy.expose
@@ -308,12 +308,12 @@ class WebInterface:
         :param md5: the md5 sum of update_data.
         :type md5: string
         :param update_data: a tgz file containing the update script (update.sh) and data.
-        :type update_data: base64 encoded byte string.
+        :type update_data: multipart/form-data encoded byte string.
         :returns: dict with 'msg'.
         """
         
         self.__check_token(token)
-        update_data = base64.b64decode(update_data)
+        update_data = update_data.file.read()
 
         if not os.path.exists(constants.get_update_dir()):
             os.mkdir(constants.get_update_dir())
@@ -351,8 +351,8 @@ class WebInterface:
         """
         try:
             ret = func()
-        except ValueError as error:
-            return self.__error(str(error))
+        except ValueError:
+            return self.__error(traceback.format_exc())
         else:
             return self.__success(**ret)
 
