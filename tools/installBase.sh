@@ -7,8 +7,10 @@ ntpd -q -g -x
 
 ## Install cherrypy
 wget http://openmotics.com:8100/distro/CherryPy-3.2.2.tar.gz
+wget http://openmotics.com:8100/distro/cherrypy-https.patch
 tar xzf CherryPy-3.2.2.tar.gz
 cd CherryPy-3.2.2
+patch -p1 < ../cherrypy-https.patch
 python setup.py build
 python setup.py install
 cd ..
@@ -41,6 +43,10 @@ mv supervisor.init /etc/init.d/supervisor
 chmod +x /etc/init.d/supervisor
 
 for i in `seq 0 6`; do ln -s /etc/init.d/supervisor /etc/rc${i}.d/S99supervisor; done
+
+## Install python sqlite3
+wget http://openmotics.com:8100/distro/python-sqlite3_2.7.2-r3.17_armv7a.ipk
+opkg install python-sqlite3_2.7.2-r3.17_armv7a.ipk
 
 ## Keep the log files in RAM
 cat << EOF >> /etc/fstab
