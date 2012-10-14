@@ -194,7 +194,7 @@ class WebInterface:
         """
         self.__check_token(token)
         return self.__wrap(lambda: self.__gateway_api.set_programmed_setpoint(
-                                            int(thermostat), int(setpoint), int(temperature)))
+                                            int(thermostat), int(setpoint), float(temperature)))
     
     @cherrypy.expose
     def set_current_setpoint(self, token, thermostat, temperature):
@@ -208,7 +208,7 @@ class WebInterface:
         """
         self.__check_token(token)
         return self.__wrap(lambda: self.__gateway_api.set_current_setpoint(
-                                            int(thermostat), int(temperature)))
+                                            int(thermostat), float(temperature)))
     
     @cherrypy.expose
     def set_setpoint_start_time(self, token, thermostat, day_of_week, setpoint, time):
