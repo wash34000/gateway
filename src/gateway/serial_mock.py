@@ -72,7 +72,7 @@ class SerialMock:
         self.__sequence.append(sout("\x00"))
 
 class SerialMockTest(unittest.TestCase):
-    """ Tests for MasterCommunicator class """
+    """ Tests for SerialMock class """
 
     def test_serial_mock(self):
         """ Tests for SerialMock. """

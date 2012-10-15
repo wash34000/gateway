@@ -18,12 +18,18 @@ class MasterCommunicator:
     Provides methods to send MasterCommands, Passthrough and Maintenance
     """
     
-    def __init__(self, serial, verbose=True):
+    def __init__(self, serial, init_master=True, verbose=False):
         """ Default constructor.
         
         :param serial: Serial port to communicate with 
         :type serial: Instance of :class`serial.Serial`
+        :param init_master: Send an initialization sequence to the master to make sure we are in CLI
+        mode. This can be turned of for testing.
+        :param init_master: boolean.
+        :param verbose: Print all serial communication to stdout.
+        :param verbose: boolean.
         """
+        self.__init_master = init_master
         self.__verbose = verbose
         
         self.__serial = serial
@@ -52,14 +58,15 @@ class MasterCommunicator:
     
     def start(self):
         """ Start the MasterComunicator, this starts the background read thread. """
-        self.__serial.timeout = 1
-        self.__serial.write(" "*18 + "\r\n")
-        self.__flush_serial_input()
-        self.__serial.write("exit\r\n")
-        self.__flush_serial_input()
-        self.__serial.write(" "*10)
-        self.__flush_serial_input()
-        self.__serial.timeout = None
+        if self.__init_master:
+            self.__serial.timeout = 1
+            self.__serial.write(" "*18 + "\r\n")
+            self.__flush_serial_input()
+            self.__serial.write("exit\r\n")
+            self.__flush_serial_input()
+            self.__serial.write(" "*10)
+            self.__flush_serial_input()
+            self.__serial.timeout = None
         
         self.__stop = False
         self.__read_thread.start()

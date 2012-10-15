@@ -405,7 +405,7 @@ class DimmerFieldType:
         if dimmer_value == 63:
             return 100
         else:
-            return dimmer_value / 6 * 10
+            return dimmer_value * 10 / 6
     
     def get_min_decode_bytes(self):
         """ The dimmer type is always 1 byte. """

@@ -27,7 +27,7 @@ class MasterCommunicatorTest(unittest.TestCase):
                         [ sin(action.create_input(1, in_fields)),
                         sout(action.create_output(1, out_fields)) ])
         
-        comm = MasterCommunicator(serial_mock)
+        comm = MasterCommunicator(serial_mock, init_master=False)
         comm.start()
         
         output = comm.do_command(action, in_fields)
@@ -40,7 +40,7 @@ class MasterCommunicatorTest(unittest.TestCase):
         
         serial_mock = SerialMock([ sin(action.create_input(1, in_fields)) ])
         
-        comm = MasterCommunicator(serial_mock)
+        comm = MasterCommunicator(serial_mock, init_master=False)
         comm.start()
         
         try:
@@ -65,7 +65,7 @@ class MasterCommunicatorTest(unittest.TestCase):
                           sin(action.create_input(4, in_fields)), 
                           sout("hello"), sout(action.create_output(4, out_fields)) ])
         
-        comm = MasterCommunicator(serial_mock)
+        comm = MasterCommunicator(serial_mock, init_master=False)
         comm.start()
         
         self.assertEquals("OK", comm.do_command(action, in_fields)["resp"])
@@ -95,7 +95,7 @@ class MasterCommunicatorTest(unittest.TestCase):
         
         serial_mock = SerialMock(sequence)
 
-        comm = MasterCommunicator(serial_mock)
+        comm = MasterCommunicator(serial_mock, init_master=False)
         comm.start()
         
         for i in range(1, 18):
@@ -107,7 +107,7 @@ class MasterCommunicatorTest(unittest.TestCase):
         pt_output = "got it !"
         serial_mock = SerialMock([ sin(pt_input), sout(pt_output) ] )
         
-        comm = MasterCommunicator(serial_mock)
+        comm = MasterCommunicator(serial_mock, init_master=False)
         comm.start()
         
         comm.send_passthrough_data(pt_input)
@@ -117,7 +117,7 @@ class MasterCommunicatorTest(unittest.TestCase):
         """ Test the passthrough output if no other communications are going on. """
         serial_mock = SerialMock([ sout("passthrough"), sout(" my "), sout("data") ] )
         
-        comm = MasterCommunicator(serial_mock)
+        comm = MasterCommunicator(serial_mock, init_master=False)
         comm.start()
         
         self.assertEquals("passthrough", comm.get_passthrough_data())
@@ -128,9 +128,9 @@ class MasterCommunicatorTest(unittest.TestCase):
         """ Test the maintenance mode. """
         serial_mock = SerialMock([ sin(master_api.to_cli_mode().create_input(0)),
                                    sout("OK"), sin("error list\r\n"), sout("the list\n"),
-                                   sin(" "*18 + "\r\n\nexit\r\n") ])
+                                   sin("exit\r\n") ])
         
-        comm = MasterCommunicator(serial_mock)
+        comm = MasterCommunicator(serial_mock, init_master=False)
         comm.start()
         
         comm.start_maintenance_mode()
@@ -157,9 +157,9 @@ class MasterCommunicatorTest(unittest.TestCase):
         serial_mock = SerialMock([
                         sout("For passthrough"), sin(master_api.to_cli_mode().create_input(0)),
                         sout("OK"), sin("error list\r\n"), sout("the list\n"),
-                        sin(" "*18 + "\r\n\nexit\r\n"), sout("Passthrough again") ])
+                        sin("exit\r\n"), sout("Passthrough again") ])
         
-        comm = MasterCommunicator(serial_mock)
+        comm = MasterCommunicator(serial_mock, init_master=False)
         comm.start()
         
         def passthrough_thread():
@@ -185,21 +185,21 @@ class MasterCommunicatorTest(unittest.TestCase):
         out_fields = {"resp": "OK" }
         
         serial_mock = SerialMock([
-                        sout("OL\x00\x01\x03\x04\r\n\r\n"), sin(action.create_input(1, in_fields)),
-                        sout("junkOL\x00\x02\x03\x04\x05\x06\r\n\r\n here"),
+                        sout("OL\x00\x01\x03\x0c\r\n\r\n"), sin(action.create_input(1, in_fields)),
+                        sout("junkOL\x00\x02\x03\x0c\x05\x06\r\n\r\n here"),
                         sout(action.create_output(1, out_fields)) ])
         
-        comm = MasterCommunicator(serial_mock)
+        comm = MasterCommunicator(serial_mock, init_master=False)
 
         got_output = { "phase" : 1 }
         
         def callback(output):
             """ Callback that check if the correct result was returned for OL. """
             if got_output["phase"] == 1:
-                self.assertEquals([ (3, 4) ], output["outputs"])
+                self.assertEquals([ (3, 12 * 10 / 6) ], output["outputs"])
                 got_output["phase"] = 2
             elif got_output["phase"] == 2:
-                self.assertEquals([ (3, 4), (5, 6) ], output["outputs"])
+                self.assertEquals([ (3, 12 * 10 / 6), (5, 6 * 10 / 6) ], output["outputs"])
                 got_output["phase"] = 3
         
         comm.register_consumer(BackgroundConsumer(master_api.output_list(), 0, callback))
@@ -220,7 +220,7 @@ class MasterCommunicatorTest(unittest.TestCase):
                           sout("hello"),
                           sout(action.create_output(1, out_fields)) ])
                           
-        comm = MasterCommunicator(serial_mock)
+        comm = MasterCommunicator(serial_mock, init_master=False)
         comm.start()
         
         self.assertEquals("OK", comm.do_command(action, in_fields)["resp"])

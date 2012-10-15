@@ -6,6 +6,8 @@ Created on Sep 9, 2012
 @author: fryckbos
 """
 import unittest
+
+import master_api
 from master_command import MasterCommandSpec, Field, OutputFieldType
 
 class MasterCommandSpecTest(unittest.TestCase):
@@ -127,8 +129,9 @@ class MasterCommandSpecTest(unittest.TestCase):
     def test_svt(self):
         """ Test for SvtFieldType.encode and SvtFieldType.decode"""
         svt_field_type = Field.svt("test")
-        self.assertEquals('\x42', svt_field_type.encode(1.0))
-        self.assertEquals(64.0, svt_field_type.decode(svt_field_type.encode(64.0)))
+        self.assertEquals('\x42', svt_field_type.encode(master_api.Svt.temp(1.0)))
+        self.assertEquals(64.0, svt_field_type.decode(svt_field_type.encode(
+                                                    master_api.Svt.temp(64.0))).get_temperature())
     
     def test_create_input(self):
         """ Test for MasterCommandSpec.create_input """
@@ -211,6 +214,10 @@ class MasterCommandSpecTest(unittest.TestCase):
     
     def test_consume_output_varlength(self):
         """ Test for MasterCommandSpec.consume_output with a variable length output field. """
+        def dim(byte_value):
+            """ Convert a dimmer byte value to the api value. """
+            return byte_value * 10 / 6
+        
         basic_action = MasterCommandSpec("OL", [],
                                 [Field("outputs", OutputFieldType()), Field.lit("\r\n\r\n")])
         
@@ -226,7 +233,7 @@ class MasterCommandSpecTest(unittest.TestCase):
             basic_action.consume_output('\x01\x05\x10\r\n\r\n', None)
         
         self.assertEquals((7, True), (bytes_consumed, done))
-        self.assertEquals([(5, 16)], result["outputs"])
+        self.assertEquals([(5, dim(16))], result["outputs"])
         
         # Split up in multiple parts
         (bytes_consumed, result, done) = \
@@ -249,7 +256,7 @@ class MasterCommandSpecTest(unittest.TestCase):
         
         self.assertEquals((2, True), (bytes_consumed, done))
         
-        self.assertEquals([(5, 16), (1, 2), (3, 4)], result["outputs"])
+        self.assertEquals([(5, dim(16)), (1, dim(2)), (3, dim(4))], result["outputs"])
         
     
 if __name__ == "__main__":

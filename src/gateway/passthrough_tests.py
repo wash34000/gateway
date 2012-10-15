@@ -8,6 +8,7 @@ Created on Sep 24, 2012
 import unittest
 import time
 
+import master_api
 from serial_mock import SerialMock, sout, sin
 from master_communicator import MasterCommunicator
 from passthrough import PassthroughService
@@ -25,7 +26,7 @@ class PassthroughServiceTest(unittest.TestCase):
                         sin("data for the passthrough"), sout("response"),
                         sin("more data"), sout("more response") ])        
         
-        master_communicator = MasterCommunicator(master_mock)
+        master_communicator = MasterCommunicator(master_mock, init_master=False)
         master_communicator.start()
         
         passthrough = PassthroughService(master_communicator, passthrough_mock)
