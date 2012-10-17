@@ -284,7 +284,7 @@ class GatewayApi:
             raise ValueError("Setpoint not in [0,5]: %d" % setpoint)
         
         ret = self.__master_communicator.do_command(master_api.write_setpoint(),
-            { 'thermostat' : thermostat, 'config' : setpoint, 'temp' : Svt.temp(temperature) })
+            { 'thermostat' : thermostat, 'config' : setpoint + 1, 'temp' : Svt.temp(temperature) })
         ret['temp'] = ret['temp'].get_temperature()
         return ret
         
