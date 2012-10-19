@@ -147,7 +147,9 @@ class Gateway:
         if self.__last_thermostats_data == None or now >= self.__last_thermostats_fetch + 60:
             self.__last_thermostats_fetch = now
             self.__last_thermostats_data = self.__fetch_thermostats()
-        return self.__last_thermostats_data
+            return self.__last_thermostats_data
+        else:
+            return None
 
 def main():
     """ The main function contains the loop that check if the vpn should be opened every 2 seconds.
