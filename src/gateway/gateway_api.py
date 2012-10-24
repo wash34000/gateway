@@ -381,13 +381,30 @@ class GatewayApi:
         
         :returns: dict with 'resp'
         """
+        def checked(ret_dict):
+            if ret_dict['resp'] != 'OK':
+                raise ValueError("Setting thermostat mode did not return OK !")
+        
         if setpoint not in range(0, 6):
             raise ValueError("Setpoint not in [0,5]: " + str(setpoint))
         mode = 128 if thermostat_on else 0
         mode += 8 if automatic else 0
         mode += setpoint
-        return self.__master_communicator.do_command(master_api.basic_action(),
-            { 'action_type' : 140, 'action_number' : mode })
+        checked(self.__master_communicator.do_command(master_api.basic_action(),
+            { 'action_type' : master_api.BA_THERMOSTAT_MODE, 'action_number' : mode }))
+        
+        checked(self.__master_communicator.do_command(master_api.basic_action(),
+                { 'action_type' : master_api.BA_THERMOSTAT_AUTOMATIC, 'action_number' : 255 }))
+        
+        if not automatic:
+            checked(self.__master_communicator.do_command(master_api.basic_action(),
+                { 'action_type' : master_api.__dict__['BA_ALL_SETPOINT_' + str(setpoint)],
+                  'action_number' : 0 }))
+            
+            checked(self.__master_communicator.do_command(master_api.basic_action(),
+                { 'action_type' : master_api.BA_THERMOSTAT_AUTOMATIC, 'action_number' : 0 }))
+        
+        return { 'resp': 'OK' }
 
     ###### Backup and restore functions
     
