@@ -6,6 +6,9 @@ Created on Sep 16, 2012
 
 @author: fryckbos
 '''
+import logging
+LOGGER = logging.getLogger("openmotics")
+
 import time as pytime
 from threading import Timer
 
@@ -252,20 +255,56 @@ class GatewayApi:
         
         thermostats = []
         for thermostat_id in range(0, 24):
-            thermostat = self.__master_communicator.do_command(master_api.read_setpoint(),
-                            { 'thermostat' :  thermostat_id })
-            
-            # Check if the thermostat is activated
-            if thermostat['sensor_nr'] <= 31 and thermostat['output0_nr'] < 240:
-                # Convert the Svt instances into temperatures
-                for temperature_key in [ 'act', 'csetp', 'psetp0', 'psetp1', 'psetp2', 'psetp3',
-                                         'psetp4', 'psetp5', 'outside', 'threshold_temp' ]:
-                    thermostat[temperature_key] = thermostat[temperature_key].get_temperature()
+            (success, tries) = (False, 0)
+            while not success and tries < 3:
+                # Try 3 times, if not OK after 3 times: add error message to output
+                (success, tries, msg) = (True, tries + 1, '')
                 
-                thermostats.append(thermostat)
+                thermostat = self.__master_communicator.do_command(master_api.read_setpoint(),
+                                { 'thermostat' :  thermostat_id })
+                
+                if thermostat['thermostat'] != thermostat_id:
+                    success = False
+                    msg = 'Got information for wrong thermostat, asked %d, got %d' % \
+                                (thermostat_id, thermostat['thermostat'])
+                    LOGGER.error(msg)
+                
+                if self.check_crc(master_api.read_setpoint(), thermostat) == False:
+                    success = False
+                    msg = 'Error while calculating CRC for rs on thermostat %d' % thermostat_id
+                    LOGGER.error(msg)
+                
+                # Check if the thermostat is activated
+                if success and thermostat['sensor_nr'] <= 31 and thermostat['output0_nr'] < 240:
+                    # Convert the Svt instances into temperatures
+                    for temperature_key in [ 'act', 'csetp', 'psetp0', 'psetp1', 'psetp2', 'psetp3',
+                                             'psetp4', 'psetp5', 'outside', 'threshold_temp' ]:
+                        thermostat[temperature_key] = thermostat[temperature_key].get_temperature()
+                    
+                    thermostats.append(thermostat)
+                
+                if tries == 3 and not success:
+                    thermostats.append({ 'thermostat' : thermostat_id, 'error' : msg })
 
         return { 'thermostats_on' : thermostats_on, 'automatic' : automatic,
                  'setpoint' : setpoint, 'thermostats' : thermostats }
+    
+    def check_crc(self, masterCommandSpec, result):
+        """ Check the CRC of the result of a certain master command.
+        
+        :param masterCommandSpec: instance of MasterCommandSpec.
+        :param result: A dict containing the result of the master command.
+        :returns: boolean.
+        """
+        crc = 0
+        for field in masterCommandSpec.output_fields:
+            if field.name == 'crc':
+                break
+            else:
+                for byte in field.encode(result[field.name]):
+                    crc += ord(byte)
+        
+        return result['crc'] == [ 67, (crc / 256), (crc % 256) ]
     
     def set_programmed_setpoint(self, thermostat, setpoint, temperature):
         """ Set a programmed setpoint of a thermostat.
