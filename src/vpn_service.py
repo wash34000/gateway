@@ -4,7 +4,6 @@ thermostats to the cloud, to keep the status information in the cloud in sync. "
 
 import urllib, urllib2
 import time
-import sys
 import subprocess
 
 from ConfigParser import ConfigParser
@@ -19,6 +18,13 @@ import constants
 
 from https.https import VerifiedHTTPSHandler, VerifiedHTTPSConnection
 from frontend.physical_frontend import PhysicalFrontend
+
+REBOOT_TIMEOUT = 3600
+
+def reboot_gateway():
+    """ Reboot the gateway. """
+    subprocess.call('reboot', shell=True)
+
 
 class VpnController:
     """ Contains methods to check the vpn status, start and stop the vpn. """
@@ -48,9 +54,9 @@ class Cloud:
     """ Connects to the OpenMotics cloud to check if the vpn should be opened. """
 
     def __init__(self, url, physical_frontend):
-        self.__errors = 0
         self.__url = url
         self.__physical_frontend = physical_frontend
+        self.__last_connect = time.time()
 
     def should_open_vpn(self, extra_data):
         """ Check with the OpenMotics could if we should open a VPN """
@@ -63,22 +69,19 @@ class Cloud:
             
             self.__physical_frontend.set_led('cloud', True)
             self.__physical_frontend.toggle_led('alive')
-            self.__errors = 0
+            self.__last_connect = time.time()
             
             return "true" in lines
         except Exception as exception:
             print "Exception occured during check: ", exception
             self.__physical_frontend.set_led('cloud', False)
             self.__physical_frontend.set_led('alive', False)
-            
-            self.__errors += 1
-            if self.__errors >= 30:
-                # Stop the daemon if we keep getting errors.
-                # This will force the daemon to automatically.
-                print "Exiting VpnService"
-                sys.exit(1)
                 
             return False
+    
+    def get_last_connect(self):
+        """ Get the timestamp of the last connection with the cloud. """
+        return self.__last_connect
 
 class Gateway:
     """ Class to get the current status of the gateway. Outputs are fetched from the webservice on
@@ -176,6 +179,12 @@ def main():
         extra_data = json.dumps(monitoring_data)
     
         should_open = cloud.should_open_vpn(extra_data)
+        
+        if cloud.get_last_connect() < time.time() - REBOOT_TIMEOUT:
+            ''' The cloud is not responding for a while, perhaps the BeagleBone network stack is 
+            hanging, reboot the gateway to reset the BeagleBone. '''
+            reboot_gateway()
+        
         is_open = vpn.check_vpn()
         
         if should_open and not is_open:

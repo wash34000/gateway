@@ -104,6 +104,14 @@ startsecs=10
 priority=1
 EOF
 
+## Install watchdog
+cat << EOF > /etc/supervisor/conf.d/watchdog.conf 
+[program:watchdog]
+command=python /opt/openmotics/python/watchdog.py
+autostart=true
+autorestart=false
+EOF
+
 ## Install Status service to control the LEDs
 cat << EOF > /etc/dbus-1/system.d/com.openmotics.status.conf
 <!DOCTYPE busconfig PUBLIC
