@@ -445,6 +445,21 @@ class GatewayApi:
         
         return { 'resp': 'OK' }
 
+    def set_thermostat_threshold(self, threshold):
+        """ Set the outside temperature threshold of the thermostats.
+        
+        :param threshold: Temperature in degrees celcius
+        :type threshold: integer
+        
+        :returns: dict with 'resp'
+        """
+        self.__master_communicator.do_command(master_api.write_eeprom(),
+            { "bank" : 0, "address": 17, "data": master_api.Svt.temp(threshold).get_byte() })
+        
+        self.__master_communicator.do_command(master_api.activate_eeprom(), { 'eep' : 0 })
+        return { 'resp': 'OK' }
+        
+
     ###### Backup and restore functions
     
     def get_master_backup(self):

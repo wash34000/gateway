@@ -267,6 +267,18 @@ class WebInterface:
                        thermostat_on.lower() == 'true', automatic.lower() == 'true', int(setpoint)))
     
     @cherrypy.expose
+    def set_thermostat_threshold(self, token, threshold):
+        """ Set the outside temperature threshold of the thermostats.
+        
+        :param threshold: Temperature in degrees celcius
+        :type threshold: integer
+        
+        :returns: dict with 'resp'
+        """
+        self.__check_token(token)
+        return self.__wrap(lambda: self.__gateway_api.set_thermostat_threshold(float(threshold)))
+    
+    @cherrypy.expose
     def get_master_backup(self, token):
         """ Get a backup of the eeprom of the master.
         
