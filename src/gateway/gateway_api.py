@@ -13,7 +13,7 @@ import time as pytime
 from threading import Timer
 
 import master_api
-from master_api import Svt
+import master_command
 from outputs import OutputStatus
 from master_communicator import BackgroundConsumer 
 
@@ -281,6 +281,10 @@ class GatewayApi:
                                              'psetp4', 'psetp5', 'outside', 'threshold_temp' ]:
                         thermostat[temperature_key] = thermostat[temperature_key].get_temperature()
                     
+                    for output_key in [ 'output0', 'output1' ]:
+                        thermostat[output_key] = \
+                            master_api.dimmer_to_percentage(thermostat[output_key])
+                    
                     thermostats.append(thermostat)
                 
                 if tries == 3 and not success:
@@ -323,7 +327,8 @@ class GatewayApi:
             raise ValueError("Setpoint not in [0,5]: %d" % setpoint)
         
         ret = self.__master_communicator.do_command(master_api.write_setpoint(),
-            { 'thermostat' : thermostat, 'config' : setpoint + 1, 'temp' : Svt.temp(temperature) })
+            { 'thermostat' : thermostat, 'config' : setpoint + 1,
+              'temp' : master_api.Svt.temp(temperature) })
         ret['temp'] = ret['temp'].get_temperature()
         return ret
         
@@ -340,7 +345,7 @@ class GatewayApi:
         if thermostat not in range(0, 25):
             raise ValueError("Thermostat not in [0,24]: %d" % thermostat)
         ret = self.__master_communicator.do_command(master_api.write_setpoint(),
-            { 'thermostat' : thermostat, 'config' : 0, 'temp' : Svt.temp(temperature) })
+            { 'thermostat' : thermostat, 'config' : 0, 'temp' : master_api.Svt.temp(temperature) })
         ret['temp'] = ret['temp'].get_temperature()
         return ret
     
@@ -403,7 +408,8 @@ class GatewayApi:
         config_point += setpoint
         
         ret = self.__master_communicator.do_command(master_api.write_setpoint(),
-            { 'thermostat' : thermostat, 'config' : config_point, 'temp' : Svt.time(time) })
+            { 'thermostat' : thermostat, 'config' : config_point,
+              'temp' : master_api.Svt.time(time) })
         ret['temp'] = ret['temp'].get_time()
         return ret
     

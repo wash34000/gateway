@@ -5,7 +5,7 @@ Created on Sep 9, 2012
 
 @author: fryckbos
 '''
-from master_command import MasterCommandSpec, Field, OutputFieldType
+from master_command import MasterCommandSpec, Field, OutputFieldType, DimmerFieldType
 
 BA_ALL_SETPOINT_0 = 134
 BA_ALL_SETPOINT_1 = 135
@@ -252,3 +252,11 @@ class Svt:
         :param time_value: String in format HH:MM
         """
         return Svt(Svt.TIME, time_value)
+
+def dimmer_to_percentage(dimmer_value):
+    """ Convert a dimmer value to an integer in [0, 100].
+    
+    :param dimmer_value: integer in [0, 63].
+    :returns: dimmer percentage in [0, 100].
+    """
+    return DimmerFieldType().decode(chr(dimmer_value))
