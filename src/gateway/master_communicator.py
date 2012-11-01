@@ -15,19 +15,26 @@ from master_command import printable
 
 class MasterCommunicator:
     """ Uses a serial port to communicate with the master and updates the output state.
-    Provides methods to send MasterCommands, Passthrough and Maintenance
+    Provides methods to send MasterCommands, Passthrough and Maintenance. A watchdog checks the
+    state of the communication: if more than 1 timeout between 2 watchdog checks is received, the
+    communication is not working properly and watchdog callback is called.
     """
     
-    def __init__(self, serial, init_master=True, verbose=False):
+    def __init__(self, serial, init_master=True, verbose=False,
+                 watchdog_period=150, watchdog_callback=lambda: sys.exit(1)):
         """ Default constructor.
         
         :param serial: Serial port to communicate with 
         :type serial: Instance of :class`serial.Serial`
         :param init_master: Send an initialization sequence to the master to make sure we are in CLI
         mode. This can be turned of for testing.
-        :param init_master: boolean.
+        :type init_master: boolean.
         :param verbose: Print all serial communication to stdout.
-        :param verbose: boolean.
+        :type verbose: boolean.
+        :param watchdog_period: The number of seconds between two watchdog checks.
+        :type watchdog_perdiod: integer.
+        :param watchdog_callback: The action to call if the watchdog detects a communication problem.
+        :type watchdog_callback: function without arguments.
         """
         self.__init_master = init_master
         self.__verbose = verbose
@@ -37,6 +44,7 @@ class MasterCommunicator:
         self.__command_lock = Lock()
         self.__serial_bytes_written = 0
         self.__serial_bytes_read = 0
+        self.__timeouts = 0
         
         self.__cid = 1
         
@@ -48,28 +56,38 @@ class MasterCommunicator:
         self.__passthrough_queue = Queue()
     
         self.__stop = False
+        
         self.__read_thread = Thread(target=self.__read, name="MasterCommunicator read thread")
         self.__read_thread.daemon = True
-    
-    def __flush_serial_input(self):
-        data = self.__serial.read(1)
-        while len(data) > 0:
-            data = self.__serial.read(1)
+        
+        self.__watchdog_period = watchdog_period
+        self.__watchdog_callback = watchdog_callback
+        self.__watchdog_thread = Thread(target=self.__watchdog,
+                                        name="MasterCommunicator watchdog thread")
+        self.__watchdog_thread.daemon = True
     
     def start(self):
         """ Start the MasterComunicator, this starts the background read thread. """
         if self.__init_master:
+            
+            def flush_serial_input():
+                """ Try to read from the serial input and discard the bytes read. """
+                data = self.__serial.read(1)
+                while len(data) > 0:
+                    data = self.__serial.read(1)
+            
             self.__serial.timeout = 1
             self.__serial.write(" "*18 + "\r\n")
-            self.__flush_serial_input()
+            flush_serial_input()
             self.__serial.write("exit\r\n")
-            self.__flush_serial_input()
+            flush_serial_input()
             self.__serial.write(" "*10)
-            self.__flush_serial_input()
+            flush_serial_input()
             self.__serial.timeout = None
         
         self.__stop = False
         self.__read_thread.start()
+        self.__watchdog_thread.start()
     
     def get_bytes_written(self):
         """ Get the number of bytes written to the Master. """
@@ -108,12 +126,12 @@ class MasterCommunicator:
 
     def do_command(self, cmd, fields=dict(), timeout=1):
         """ Send a command over the serial port and block until an answer is received.
-        If the master does not respond within the timeout period, a CommunicationTimeOutException
+        If the master does not respond within the timeout period, a CommunicationTimedOutException
         is raised
         
         :param cmd: specification of the command to execute
         :type cmd: :class`MasterCommand.MasterCommandSpec`
-        :raises: :class`CommunicationTimeOutException` if master did not respond in time
+        :raises: :class`CommunicationTimedOutException` if master did not respond in time
         :raises: :class`InMaintenanceModeException` if master is in maintenance mode
         :returns: dict containing the output fields of the command
         """
@@ -127,7 +145,11 @@ class MasterCommunicator:
         with self.__command_lock:
             self.__consumers.append(consumer)
             self.__write_to_serial(inp)
-            return consumer.get(timeout).fields
+            try:
+                return consumer.get(timeout).fields
+            except CommunicationTimedOutException:
+                self.__timeouts += 1
+                raise
     
     def send_passthrough_data(self, data):
         """ Send raw data on the serial port. 
@@ -207,6 +229,16 @@ class MasterCommunicator:
             else:
                 start_bytes[start_byte] = [ consumer ]
         return start_bytes
+    
+    def __watchdog(self):
+        """ Run in the background watchdog thread: checks the number of timeouts per minute. If the
+        number of timeouts is larger than 1, sys.exit(1) is called. """
+        while not self.__stop:
+            (timeouts, self.__timeouts) = (self.__timeouts, 0)
+            if timeouts > 1:
+                sys.stderr.write("Watchdog detected problems in communication !\n")
+                self.__watchdog_callback()
+            time.sleep(self.__watchdog_period)
     
     def __read(self):
         """ Code for the background read thread: reads from the serial port, checks if
@@ -344,7 +376,7 @@ class Consumer:
         """ Wait until the master replies or the timeout expires.
         
         :param timeout: timeout in seconds
-        :raises: :class`CommunicationTimeOutException` if master did not respond in time
+        :raises: :class`CommunicationTimedOutException` if master did not respond in time
         :returns: dict containing the output fields of the command
         """
         try:

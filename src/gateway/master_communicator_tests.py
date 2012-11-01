@@ -7,6 +7,7 @@ Created on Sep 10, 2012
 '''
 import unittest
 import threading
+import time
 
 from master_communicator import MasterCommunicator, CommunicationTimedOutException
 from master_communicator import InMaintenanceModeException, BackgroundConsumer
@@ -228,6 +229,53 @@ class MasterCommunicatorTest(unittest.TestCase):
         
         self.assertEquals(21, comm.get_bytes_written())
         self.assertEquals(5 + 18, comm.get_bytes_read())
+    
+    def test_watchdog(self):
+        """ Test the watchdog. """
+        action = master_api.basic_action()
+        in_fields = { "action_type": 1, "action_number": 2 }
+        
+        serial_mock = SerialMock( [ sin(action.create_input(1, in_fields)),
+                                    sin(action.create_input(2, in_fields)),
+                                    sin(action.create_input(3, in_fields)) ])
+        
+        timeout = False
+        watchdog = {}
+        
+        def callback():
+            """ Callback for the watchdog """
+            watchdog['done'] = True
+        
+        comm = MasterCommunicator(serial_mock, init_master=False,
+                                  watchdog_period=4, watchdog_callback=callback)
+        comm.start()
+        
+        try:
+            comm.do_command(action, in_fields)
+        except CommunicationTimedOutException:
+            timeout = True
+        
+        time.sleep(6)
+        
+        self.assertTrue(timeout)
+        self.assertFalse('done' in watchdog)
+        
+        try:
+            comm.do_command(action, in_fields)
+        except CommunicationTimedOutException:
+            timeout = True
+        
+        self.assertTrue(timeout)
+        
+        try:
+            comm.do_command(action, in_fields)
+        except CommunicationTimedOutException:
+            timeout = True
+        
+        time.sleep(6)
+        
+        self.assertTrue(timeout)
+        self.assertTrue('done' in watchdog)
         
 
 if __name__ == "__main__":
