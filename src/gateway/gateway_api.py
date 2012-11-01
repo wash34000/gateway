@@ -13,9 +13,8 @@ import time as pytime
 from threading import Timer
 
 import master_api
-import master_command
 from outputs import OutputStatus
-from master_communicator import BackgroundConsumer 
+from master_communicator import BackgroundConsumer, CommunicationTimedOutException 
 
 class GatewayApi:
     """ The GatewayApi combines master_api functions into high level functions. """
@@ -28,7 +27,24 @@ class GatewayApi:
         
         self.__output_status = None
         self.__master_communicator.register_consumer(
-                    BackgroundConsumer(master_api.output_list(), 0, self.__update_outputs))    
+                    BackgroundConsumer(master_api.output_list(), 0, self.__update_outputs))
+        
+        self.init_master()
+    
+    def init_master(self):
+        """ Initialize the master: disable the async RO messages. """
+        try:
+            eeprom_data = self.__master_communicator.do_command(master_api.eeprom_list(),
+                { "bank" : 0 })['data']
+            
+            if eeprom_data[11] != chr(255):
+                LOGGER.info("Disabling async RO messages.")
+                self.__master_communicator.do_command(master_api.write_eeprom(),
+                    { "bank" : 0, "address": 11, "data": chr(255) })
+                
+                self.__master_communicator.do_command(master_api.activate_eeprom(), { 'eep' : 0 })
+        except CommunicationTimedOutException:
+            LOGGER.error("Got CommunicationTimedOutException during gateway_api initialization.")
     
     ###### Maintenance functions
     
