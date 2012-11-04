@@ -230,6 +230,33 @@ class WebInterface:
                                             int(thermostat), int(day_of_week), int(setpoint), time))
     
     @cherrypy.expose
+    def set_all_lights_off(self, token):
+        """ Turn all lights off.
+        
+        :returns: empty dict.
+        """
+        self.__check_token(token)
+        return self.__wrap(lambda: self.__gateway_api.set_all_lights_off())
+    
+    @cherrypy.expose
+    def set_all_lights_floor_off(self, token, floor):
+        """ Turn all lights on a given floor off.
+        
+        :returns: empty dict.
+        """
+        self.__check_token(token)
+        return self.__wrap(lambda: self.__gateway_api.set_all_lights_floor_off(int(floor)))
+    
+    @cherrypy.expose
+    def set_all_lights_floor_on(self, token, floor):
+        """ Turn all lights on a given floor on.
+        
+        :returns: empty dict.
+        """
+        self.__check_token(token)
+        return self.__wrap(lambda: self.__gateway_api.set_all_lights_floor_on(int(floor)))
+    
+    @cherrypy.expose
     def set_setpoint_stop_time(self, token, thermostat, day_of_week, setpoint, time):
         """ Set the stop time of setpoint 0 or 2 for a certain day of the week and thermostat.
         
