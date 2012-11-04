@@ -30,6 +30,7 @@ class UserController:
                                             check_same_thread=False, isolation_level=None)
         self.__cursor = self.__connection.cursor()
         self.__token_timeout = token_timeout
+        self.__tokens = {}
         if new_database:
             self.__create_tables()
     
@@ -38,9 +39,7 @@ class UserController:
         populate the users table with the OpenMotics cloud credentials.
         """
         self.__cursor.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT UNIQUE, "
-                              "password TEXT, role TEXT, enabled INTEGER, last_login INTEGER);")
-        self.__cursor.execute("CREATE TABLE tokens (id INTEGER PRIMARY KEY, user_id INTEGER, "
-                              "token TEXT, valid_until INTEGER);")
+                              "password TEXT, role TEXT, enabled INTEGER);")
         # Create the user for the cloud
         self.create_user(self.__config['username'], self.__config['password'], "admin", True)
 
@@ -71,10 +70,7 @@ class UserController:
         for row in self.__cursor.execute("SELECT id FROM users WHERE username = ? AND "
                                          "password = ? AND enabled = ?;",
                                          (username, self.__hash(password), 1)):
-            token = self.__gen_token(row[0], int(time.time() + self.__token_timeout))
-            self.__cursor.execute("UPDATE users SET last_login = ? "
-                                  "WHERE username = ?;", (int(time.time()), username))
-            return token
+            return self.__gen_token(row[0], time.time() + self.__token_timeout)
         
         return None
     
@@ -87,21 +83,27 @@ class UserController:
         return None
     
     def __gen_token(self, user_id, valid_until):
-        """ Generate a token and insert it into the database. """
-        token = uuid.uuid4().hex
-        self.__cursor.execute("INSERT INTO tokens (user_id, token, valid_until) "
-                              "VALUES (?, ?, ?);", (user_id, token, valid_until))
-        self.__cursor.execute("DELETE FROM tokens WHERE valid_until < ?;",
-                              (int(time.time()),))
-        return token
+        """ Generate a token and insert it into the tokens dict. """
+        ret = uuid.uuid4().hex
+        self.__tokens[ret] = (user_id, valid_until)
+        
+        # Delete the expired tokens
+        to_delete = []
+        for token in self.__tokens:
+            if self.__tokens[token][1] < time.time():
+                to_delete.append(token)
+        
+        for token in to_delete:
+            del self.__tokens[token]
+        
+        return ret
     
     def check_token(self, token):
         """ Returns True if the token is valid, False if the token is invalid. """
-        for _ in self.__cursor.execute("SELECT * FROM tokens WHERE token = ? AND valid_until > ?;",
-                                       (token, int(time.time()))):
-            return True
-        else:
+        if token not in self.__tokens:
             return False
+        else:
+            return self.__tokens[token][1] >= time.time()
     
     def close(self):
         """ Commit the changes and close the database connection. """

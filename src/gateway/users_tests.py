@@ -6,6 +6,7 @@ Created on Sep 22, 2012
 @author: fryckbos
 '''
 import unittest
+import time
 import os
 
 from users import UserController
@@ -57,6 +58,24 @@ class UserControllerTest(unittest.TestCase):
         self.assertFalse(user_controller.check_token("blah"))
         
         self.assertEquals("admin", user_controller.get_role("fred"))
+    
+    def test_token_timeout(self):
+        """ Test the timeout on the tokens. """
+        user_controller = UserController(UserControllerTest.FILE,
+                              { 'username' : 'om', 'password' : 'pass' }, 3)
+        
+        token = user_controller.login("om", "pass")
+        self.assertNotEquals(None, token)
+        self.assertTrue(user_controller.check_token(token))
+        
+        time.sleep(4)
+        
+        self.assertFalse(user_controller.check_token(token))
+        
+        token = user_controller.login("om", "pass")
+        self.assertNotEquals(None, token)
+        self.assertTrue(user_controller.check_token(token))
+        
         
 if __name__ == "__main__":
     #import sys;sys.argv = ['', 'Test.testName']
