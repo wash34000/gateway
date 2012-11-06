@@ -10,5 +10,6 @@ _build
 .sln$
 .suo$
 .project
+.idea.*
 .pydevproject
 .idea
