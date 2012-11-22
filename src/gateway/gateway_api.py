@@ -321,7 +321,7 @@ class GatewayApi:
                     LOGGER.error(msg)
                 
                 # Check if the thermostat is activated
-                if success and thermostat['sensor_nr'] <= 31 and thermostat['output0_nr'] < 240:
+                if success and (thermostat['sensor_nr'] < 30 or thermostat['sensor_nr'] == 240) and thermostat['output0_nr'] < 240:
                     # Convert the Svt instances into temperatures
                     for temperature_key in [ 'act', 'csetp', 'psetp0', 'psetp1', 'psetp2', 'psetp3',
                                              'psetp4', 'psetp5', 'outside', 'threshold_temp' ]:
