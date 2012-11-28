@@ -257,6 +257,27 @@ class GatewayApi:
         
         return dict()
     
+    def set_output_floor_level(self, output_nr, floor_level):
+        """ Set the floor level of an output. 
+        
+        :param output_nr: The id of the output to set
+        :type output_nr: Integer [0, 240]
+        :param floor_level: The new floor level
+        :type floor_level: Integer
+        :returns: empty dict.
+        """
+        if output_nr < 0 or output_nr > 240:
+            raise ValueError("Output_nr not in [0, 240]: %d" % output_nr)
+        
+        module = output_nr / 8
+        output = output_nr % 8
+        
+        self.__master_communicator.do_command(master_api.write_eeprom(),
+            { "bank" : 33 + module, "address": 157 + output, "data": chr(floor_level) })
+        
+        return dict()
+        
+    
     def set_all_lights_off(self):
         """ Turn all lights off.
         

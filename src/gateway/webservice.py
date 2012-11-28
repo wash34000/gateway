@@ -162,6 +162,20 @@ class WebInterface:
                                         int(timer) if timer is not None else None))
     
     @cherrypy.expose
+    def set_output_floor_level(self, token, output_nr, floor_level):
+        """ Set the floor level of an output. 
+        
+        :param output_nr: The id of the output to set
+        :type output_nr: Integer [0, 240]
+        :param floor_level: The new floor level
+        :type floor_level: Integer
+        :returns: empty dict.
+        """
+        self.__check_token(token)
+        return self.__wrap(lambda: self.__gateway_api.set_output_floor_level(
+                                        int(output_nr), int(floor_level)))
+    
+    @cherrypy.expose
     def get_thermostats(self, token):
         """ Get the configuration of the thermostats.
         
