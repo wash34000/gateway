@@ -32,17 +32,28 @@ class GatewayApi:
         self.init_master()
     
     def init_master(self):
-        """ Initialize the master: disable the async RO messages. """
+        """ Initialize the master: disable the async RO messages, enable async OL messages. """
         try:
             eeprom_data = self.__master_communicator.do_command(master_api.eeprom_list(),
                 { "bank" : 0 })['data']
+            
+            write = False
             
             if eeprom_data[11] != chr(255):
                 LOGGER.info("Disabling async RO messages.")
                 self.__master_communicator.do_command(master_api.write_eeprom(),
                     { "bank" : 0, "address": 11, "data": chr(255) })
+                write = True
+            
+            if eeprom_data[18] != chr(0):
+                LOGGER.info("Enabling async OL messages.")
+                self.__master_communicator.do_command(master_api.write_eeprom(),
+                    { "bank" : 0, "address": 18, "data": chr(0) })
+                write = True
                 
+            if write:
                 self.__master_communicator.do_command(master_api.activate_eeprom(), { 'eep' : 0 })
+            
         except CommunicationTimedOutException:
             LOGGER.error("Got CommunicationTimedOutException during gateway_api initialization.")
     
