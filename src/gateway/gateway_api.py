@@ -275,6 +275,9 @@ class GatewayApi:
         self.__master_communicator.do_command(master_api.write_eeprom(),
             { "bank" : 33 + module, "address": 157 + output, "data": chr(floor_level) })
         
+        # Make sure the floor level is updated on the next get_outputs
+        self.__output_status.force_refresh()
+        
         return dict()
         
     

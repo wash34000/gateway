@@ -18,6 +18,10 @@ class OutputStatus:
         self.__refresh_period = refresh_period
         self.__last_refresh = time.time()
     
+    def force_refresh(self):
+        """ Force a refresh on the OuptutStatus. """
+        self.__last_refresh = 0
+    
     def should_refresh(self):
         """ Check whether the status should be refreshed. """
         return time.time() >= self.__last_refresh + self.__refresh_period
