@@ -14,6 +14,7 @@ cp -R Updater /opt/openmotics/
 ## Copy the bootloader
 cp binaries/AN1310cl /opt/openmotics/bin/
 cp Bootloader/devices.db /opt/openmotics/bin/
+cp binaries/installGateway.sh /opt/openmotics/bin
 
 ## TODO Place a copy of the hex file on the gateway
 touch /opt/openmotics/firmware.hex
@@ -30,6 +31,7 @@ echo 1 > /sys/kernel/debug/omap_mux/spi0_d0
 # UART 4
 echo 26 > /sys/kernel/debug/omap_mux/gpmc_wait0
 echo 6 > /sys/kernel/debug/omap_mux/gpmc_wpn
+echo 6 > /sys/kernel/debug/omap_mux/lcd_data13
 # UART 5
 echo 24 > /sys/kernel/debug/omap_mux/lcd_data9
 echo 4 > /sys/kernel/debug/omap_mux/lcd_data8

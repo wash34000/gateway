@@ -7,6 +7,7 @@ Created on Oct 4, 2012
 '''
 import argparse
 import sys
+import time
 from ConfigParser import ConfigParser
 
 from serial import Serial
@@ -43,6 +44,7 @@ def main():
         master_communicator = MasterCommunicator(master_serial)
         master_communicator.start()
         gateway_api = GatewayApi(master_communicator)
+        time.sleep(10) # Wait 10 seconds for communictor initialization
         
         if args.sync:
             try:
@@ -54,7 +56,8 @@ def main():
                 print "Done"
                 sys.exit(0)
         elif args.version:
-            print gateway_api.get_status()['version']
+            status = gateway_api.get_status()
+            print status['version'] + " H" + str(status['hw_version'])
         elif args.reset:
             gateway_api.master_reset()
             print "Reset !"
