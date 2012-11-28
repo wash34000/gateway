@@ -6,7 +6,11 @@ Created on Sep 24, 2012
 
 @author: fryckbos
 '''
+import logging
+LOGGER = logging.getLogger("openmotics")
+
 import threading
+from master_communicator import InMaintenanceModeException
 
 class PassthroughService:
     """ The Passthrough service creates two threads: one for reading from and one for writing
@@ -49,7 +53,10 @@ class PassthroughService:
                 num_bytes = self.__passthrough_serial.inWaiting()
                 if num_bytes > 0:
                     data += self.__passthrough_serial.read(num_bytes)
-                self.__master_communicator.send_passthrough_data(data)
+                try:
+                    self.__master_communicator.send_passthrough_data(data)
+                except InMaintenanceModeException:
+                    LOGGER.info("Dropped passthrough communication in maintenance mode.")
     
     def stop(self):
         """ Stop the Passthrough service. """

@@ -32,7 +32,7 @@ class PassthroughServiceTest(unittest.TestCase):
         passthrough = PassthroughService(master_communicator, passthrough_mock)
         passthrough.start()
         
-        time.sleep(0.1)
+        time.sleep(1)
         
         self.assertEquals(33, master_communicator.get_bytes_read())
         self.assertEquals(21, master_communicator.get_bytes_written())

@@ -49,6 +49,28 @@ class MasterCommunicatorTest(unittest.TestCase):
             self.assertTrue(False)
         except CommunicationTimedOutException:
             pass
+        
+    def test_do_command_timeout_test_ongoing(self):
+        """ Test if communication resumes after timeout. """
+        action = master_api.basic_action()
+        in_fields = { "action_type": 1, "action_number": 2 }
+        out_fields = {"resp": "OK" }
+        
+        serial_mock = SerialMock([ sin(action.create_input(1, in_fields)),
+                                   sin(action.create_input(2, in_fields)),
+                                   sout(action.create_output(2, out_fields)) ])
+        
+        comm = MasterCommunicator(serial_mock, init_master=False)
+        comm.start()
+        
+        try:
+            comm.do_command(action, in_fields)
+            self.assertTrue(False)
+        except CommunicationTimedOutException:
+            pass
+        
+        output = comm.do_command(action, in_fields)
+        self.assertEquals("OK", output["resp"])
     
     def test_do_command_passthrough(self):
         """ Test for the do_command with passthrough data. """
@@ -114,7 +136,7 @@ class MasterCommunicatorTest(unittest.TestCase):
         comm.send_passthrough_data(pt_input)
         self.assertEquals(pt_output, comm.get_passthrough_data())
     
-    def test_passhthrough_output(self):
+    def test_passthrough_output(self):
         """ Test the passthrough output if no other communications are going on. """
         serial_mock = SerialMock([ sout("passthrough"), sout(" my "), sout("data") ] )
         

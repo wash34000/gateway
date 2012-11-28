@@ -5,9 +5,13 @@ Created on Sep 10, 2012
 
 @author: fryckbos
 '''
+import logging
+LOGGER = logging.getLogger("openmotics")
+
+import os
 import sys
 import time
-from threading import Thread, Lock
+from threading import Thread, Lock, Event
 from Queue import Queue, Empty
 
 import master_api
@@ -21,7 +25,8 @@ class MasterCommunicator:
     """
     
     def __init__(self, serial, init_master=True, verbose=False,
-                 watchdog_period=150, watchdog_callback=lambda: sys.exit(1)):
+                 watchdog_period=150, watchdog_callback=lambda: os._exit(1),
+                 passthrough_timeout=0.2):
         """ Default constructor.
         
         :param serial: Serial port to communicate with 
@@ -35,6 +40,8 @@ class MasterCommunicator:
         :type watchdog_perdiod: integer.
         :param watchdog_callback: The action to call if the watchdog detects a communication problem.
         :type watchdog_callback: function without arguments.
+        :param passthrough_timeout: The time to wait for an answer on a passthrough message (in sec)
+        :type passthrough_timeout: float.
         """
         self.__init_master = init_master
         self.__verbose = verbose
@@ -53,7 +60,10 @@ class MasterCommunicator:
         
         self.__consumers = []
         
+        self.__passthrough_mode = False
+        self.__passthrough_timeout = passthrough_timeout
         self.__passthrough_queue = Queue()
+        self.__passthrough_done = Event()
     
         self.__stop = False
         
@@ -150,6 +160,14 @@ class MasterCommunicator:
             except CommunicationTimedOutException:
                 self.__timeouts += 1
                 raise
+
+    def __passthrough_wait(self):
+        """ Waits until the passthrough is done or a timeout is reached. """
+        if self.__passthrough_done.wait(self.__passthrough_timeout) != True:
+            LOGGER.info("Timed out on passthrough message")
+        
+        self.__passthrough_mode = False
+        self.__command_lock.release()
     
     def send_passthrough_data(self, data):
         """ Send raw data on the serial port. 
@@ -160,7 +178,13 @@ class MasterCommunicator:
         if self.__maintenance_mode:
             raise InMaintenanceModeException()
         
-        self.__write_to_serial(data)
+        if not self.__passthrough_mode:
+            self.__command_lock.acquire()
+            self.__passthrough_done.clear()
+            self.__passthrough_mode = True
+            Thread(target=self.__passthrough_wait).start()
+        
+        self.__write_to_serial(data)            
     
     def get_passthrough_data(self):
         """ Get data that wasn't consumed by do_command.
@@ -168,7 +192,10 @@ class MasterCommunicator:
         
         :returns: string containing unprocessed output
         """
-        return self.__passthrough_queue.get()
+        data = self.__passthrough_queue.get()
+        if data[-4:] == '\r\n\r\n':
+            self.__passthrough_done.set()
+        return data
     
     def start_maintenance_mode(self):
         """ Start maintenance mode.
@@ -232,7 +259,7 @@ class MasterCommunicator:
     
     def __watchdog(self):
         """ Run in the background watchdog thread: checks the number of timeouts per minute. If the
-        number of timeouts is larger than 1, sys.exit(1) is called. """
+        number of timeouts is larger than 1, the watchdog callback is called. """
         while not self.__stop:
             (timeouts, self.__timeouts) = (self.__timeouts, 0)
             if timeouts > 1:
