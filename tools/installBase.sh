@@ -44,13 +44,21 @@ chmod +x /etc/init.d/supervisor
 
 for i in `seq 0 6`; do ln -s /etc/init.d/supervisor /etc/rc${i}.d/S99supervisor; done
 
-## Install python sqlite3  TODO REMOVE THIS !!!
-wget http://openmotics.com:8100/distro/python-sqlite3_2.7.2-r3.17_armv7a.ipk
-opkg install python-sqlite3_2.7.2-r3.17_armv7a.ipk
+## Install Qt packages
+PACKAGES="libz1_1.2.6-r1_armv7a.ipk libc6_2.12-r28_armv7a.ipk libgcc1_4.5-r49+svnr184907_armv7a.ipk libglib-2.0-0_2.30.3-r2_armv7a.ipk libffi5_3.0.10-r0_armv7a.ipk libstdc++6_4.5-r49+svnr184907_armv7a.ipk libqtcore4_4.8.0-r48.1_armv7a.ipk libqtsql4_4.8.0-r48.1_armv7a.ipk qt4-plugin-sqldriver-sqlite_4.8.0-r48.1_armv7a.ipk"
+for i in $PACKAGES; do wget http://openmotics.com:8100/distro/packages/${i}; done
+opkg install $PACKAGES
 
-## Keep the log files in RAM
-cat << EOF >> /etc/fstab
-tmpfs                /var/log             tmpfs      defaults              0  0
+## Configure filesystems
+mkdir /opt
+
+cat << EOF > /etc/fstab
+rootfs               /                    auto       defaults,noatime,ro   1  1
+proc                 /proc                proc       defaults              0  0
+devpts               /dev/pts             devpts     mode=0620,gid=5       0  0
+tmpfs                /tmp                 tmpfs      defaults              0  0
+tmpfs                /var                 tmpfs      defaults              0  0
+/dev/mmcblk0p3       /opt                 auto       defaults,noatime      1  1
 EOF
 
 ## Make status display (i2c-2) accessible
@@ -61,3 +69,19 @@ optargs="run_hardware_tests i2c_bus=2,100 quiet"
 EOF
 umount /mnt/boot/
 rm -R /mnt/boot
+
+## Remove unused kernel modules
+rm /etc/modules-load.d/hidp.conf
+rm /etc/modules-load.d/ircomm-tty.conf
+rm /etc/modules-load.d/rfcomm.conf
+/usr/sbin/update-modules
+
+## Make the beagle bone automatically restart on kernel panic
+echo "kernel.panic = 10" >> /etc/sysctl.conf
+
+## Instal Google public DNS name servers
+echo "nameserver 8.8.8.8" > /etc/resolv.conf
+echo "nameserver 8.8.4.4" >> /etc/resolv.conf
+
+
+

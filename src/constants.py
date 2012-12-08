@@ -18,11 +18,11 @@ def get_user_database_file():
 
 def get_ssl_certificate_file():
     """ Get the filename of the ssl certificate. """
-    return "/opt/openmotics/etc/client.crt"
+    return "/etc/openvpn/client.crt"
 
 def get_ssl_private_key_file():
     """ Get the filename of the ssl private key. """
-    return "/opt/openmotics/etc/client.key"
+    return "/etc/openvpn/client.key"
 
 
 def get_update_dir():

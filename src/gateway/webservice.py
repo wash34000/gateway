@@ -427,10 +427,10 @@ class WebService:
             'server.socket_host': '0.0.0.0',
             'server.socket_port': 443,
             'engine.autoreload_on': False,
-            
+
             'server.ssl_module':'pyopenssl',
-            'server.ssl_certificate':'/opt/openmotics/etc/client.crt',
-            'server.ssl_private_key':'/opt/openmotics/etc/client.key',
+            'server.ssl_certificate':constants.get_ssl_certificate_file(),
+            'server.ssl_private_key':constants.get_ssl_private_key_file(),
         })
         cherrypy.server.socket_timeout = 60
         cherrypy.quickstart(WebInterface(self.__user_controller, self.__gateway_api,

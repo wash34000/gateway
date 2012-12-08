@@ -99,6 +99,7 @@ class GatewayApi:
     def stop_maintenance_mode(self):
         """ Stop maintenance mode. """
         self.__master_communicator.stop_maintenance_mode()
+        self.__output_status.force_refresh()
         if self.__maintenance_timeout_timer != None:
             self.__maintenance_timeout_timer.cancel()
             self.__maintenance_timeout_timer = None
