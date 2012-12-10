@@ -65,7 +65,7 @@ EOF
 mkdir /mnt/boot/
 mount /dev/mmcblk0p1 /mnt/boot/
 cat << EOF > /mnt/boot/uEnv.txt
-optargs="run_hardware_tests i2c_bus=2,100 quiet"
+optargs="run_hardware_tests i2c_bus=2,100 panic=10"
 EOF
 umount /mnt/boot/
 rm -R /mnt/boot
@@ -77,11 +77,16 @@ rm /etc/modules-load.d/rfcomm.conf
 /usr/sbin/update-modules
 
 ## Make the beagle bone automatically restart on kernel panic
-echo "kernel.panic = 10" >> /etc/sysctl.conf
+cat << EOF >> /etc/sysctl.conf
+kernel.panic = 10
+kernel.panic_on_oops = 1 
+kernel.hung_task_panic = 1
+kernel.hung_task_timeout_secs = 300
+kernel.unknown_nmi_panic = 1
+kernel.panic_on_unrecovered_nmi = 1
+kernel.panic_on_io_nmi = 1
+EOF
 
 ## Instal Google public DNS name servers
 echo "nameserver 8.8.8.8" > /etc/resolv.conf
 echo "nameserver 8.8.4.4" >> /etc/resolv.conf
-
-
-
