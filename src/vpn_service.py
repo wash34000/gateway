@@ -16,10 +16,9 @@ except ImportError:
 
 import constants
 
-from https.https import VerifiedHTTPSHandler, VerifiedHTTPSConnection
 from frontend.physical_frontend import PhysicalFrontend
 
-REBOOT_TIMEOUT = 3600
+REBOOT_TIMEOUT = 600
 
 def reboot_gateway():
     """ Reboot the gateway. """
@@ -60,7 +59,7 @@ class Cloud:
 
     def should_open_vpn(self, extra_data):
         """ Check with the OpenMotics could if we should open a VPN """
-        url_opener = urllib2.build_opener(VerifiedHTTPSHandler())
+        url_opener = urllib2.build_opener()
         try:
             handle = url_opener.open(self.__url, urllib.urlencode([("extra_data", extra_data)]),
                                      timeout=10.0)
@@ -76,8 +75,8 @@ class Cloud:
             print "Exception occured during check: ", exception
             self.__physical_frontend.set_led('cloud', False)
             self.__physical_frontend.set_led('alive', False)
-                
-            return False
+            
+            return True
     
     def get_last_connect(self):
         """ Get the timestamp of the last connection with the cloud. """
@@ -165,7 +164,6 @@ def main():
     config.read(constants.get_config_file())
     
     check_url = config.get('OpenMotics', 'vpn_check_url') % config.get('OpenMotics', 'uuid')
-    VerifiedHTTPSConnection.certificateFile = config.get('OpenMotics', 'certificate_file')
 
     vpn = VpnController()
     cloud = Cloud(check_url, physical_frontend)
