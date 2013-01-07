@@ -7,8 +7,8 @@ Created on Oct 25, 2012
 '''
 import unittest
 
-import master_api
-from master_command import MasterCommandSpec, Field
+import master.master_api
+from master.master_command import MasterCommandSpec, Field
 import gateway_api
 
 class MasterCommunicatorDummy:

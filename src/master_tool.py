@@ -13,9 +13,9 @@ from ConfigParser import ConfigParser
 from serial import Serial
 
 import constants
-from gateway.master_communicator import MasterCommunicator
 from gateway.gateway_api import GatewayApi
-from gateway.master_communicator import CommunicationTimedOutException
+from master.master_communicator import MasterCommunicator
+from serial_utils import CommunicationTimedOutException
 
 
 def main():

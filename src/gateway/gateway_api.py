@@ -12,14 +12,18 @@ LOGGER = logging.getLogger("openmotics")
 import time as pytime
 from threading import Timer
 
-import master_api
-from outputs import OutputStatus
-from master_communicator import BackgroundConsumer, CommunicationTimedOutException 
+from serial_utils import CommunicationTimedOutException
+
+import master.master_api as master_api
+from master.outputs import OutputStatus
+from master.master_communicator import BackgroundConsumer
+
+import power.power_api as power_api
 
 class GatewayApi:
     """ The GatewayApi combines master_api functions into high level functions. """
     
-    def __init__(self, master_communicator):
+    def __init__(self, master_communicator, power_communicator, power_controller):
         self.__master_communicator = master_communicator
     
         self.__last_maintenance_send_time = 0
@@ -28,6 +32,9 @@ class GatewayApi:
         self.__output_status = None
         self.__master_communicator.register_consumer(
                     BackgroundConsumer(master_api.output_list(), 0, self.__update_outputs))
+        
+        self.__power_communicator = power_communicator
+        self.__power_controller = power_controller
         
         self.init_master()
     
@@ -594,4 +601,44 @@ class GatewayApi:
         :returns: emtpy dict.
         """
         self.__master_communicator.do_command(master_api.reset())
+        return dict()
+
+    ###### Power functions
+    
+    def get_realtime_power(self):
+        """ Get the realtime power measurement values.
+        
+        :returns: dict with ....
+        """
+        output = { }
+        
+        modules = self.__power_controller.get_power_modules()
+        for id in sorted(modules.keys()):
+            address = modules[id]['address']
+            
+            try:
+                output[id] = self.__power_communicator.do_command(address, power_api.get_voltage())
+            except CommunicationTimedOutException:
+                output[id] = None
+            
+            #power_api.get_frequency()
+            #power_api.get_current()
+            #power_api.get_power()
+        
+        return output
+    
+    def start_power_address_mode(self):
+        """ Start the address mode on the power modules.
+        
+        :returns: empty dict.
+        """
+        self.__power_communicator.start_address_mode()
+        return dict()
+    
+    def stop_power_address_mode(self):
+        """ Stop the address mode on the power modules.
+        
+        :returns: empty dict
+        """
+        self.__power_communicator.stop_address_mode()
         return dict()

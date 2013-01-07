@@ -14,8 +14,8 @@ except ImportError:
 
 import cherrypy
 
-from master_communicator import InMaintenanceModeException
 import constants
+from master.master_communicator import InMaintenanceModeException
 
 class GatewayApiWrapper:
     """ Wraps the GatewayApi, catches the InMaintenanceModeException and converts
@@ -125,7 +125,7 @@ class WebInterface:
     def get_status(self, token):
         """ Get the status of the master.
         
-        :returns: dict with keys 'time' (HH:MM), 'date' (DD:MM:YYYY), 'mode', 'version' (a.b.c)  
+        :returns: dict with keys 'time' (HH:MM), 'date' (DD:MM:YYYY), 'mode', 'version' (a.b.c) \
         and 'hw_version' (hardware version)
         """
         self.__check_token(token)
@@ -135,7 +135,7 @@ class WebInterface:
     def get_outputs(self, token):
         """ Get the status of the master.
         
-        :returns: dict with key 'outputs' (List of dictionaries with the following keys: output_nr,
+        :returns: dict with key 'outputs' (List of dictionaries with the following keys: output_nr,\
         name, floor_level, light, type, controller_out, timer, ctimer, max_power, status and dimmer.
         """
         self.__check_token(token)
@@ -179,17 +179,18 @@ class WebInterface:
     def get_thermostats(self, token):
         """ Get the configuration of the thermostats.
         
-        :returns: dict with global status information about the thermostats: 'thermostats_on',
-        'automatic' and 'setpoints' and a list ('thermostats') with status information for each
-        active thermostats, each element in the list is a dict with the following keys:
-        'thermostat', 'act', 'csetp', 'psetp0', 'psetp1', 'psetp2', 'psetp3', 'psetp4', 'psetp5',
-        'sensor_nr', 'output0_nr', 'output1_nr', 'output0', 'output1', 'outside', 'mode', 'name',
-        'pid_p', 'pid_i', 'pid_d', 'pid_ithresh', 'threshold_temp', 'days', 'hours', 'minutes',
-        'mon_start_d1', 'mon_stop_d1', 'mon_start_d2', 'mon_stop_d2', 'tue_start_d1', 'tue_stop_d1',
-        'tue_start_d2', 'tue_stop_d2', 'wed_start_d1', 'wed_stop_d1', 'wed_start_d2', 'wed_stop_d2',
-        'thu_start_d1', 'thu_stop_d1', 'thu_start_d2', 'thu_stop_d2', 'fri_start_d1', 'fri_stop_d1',
-        'fri_start_d2', 'fri_stop_d2', 'sat_start_d1', 'sat_stop_d1', 'sat_start_d2', 'sat_stop_d2',
-        'sun_start_d1', 'sun_stop_d1', 'sun_start_d2', 'sun_stop_d2' and 'crc'.
+        :returns: dict with global status information about the thermostats: 'thermostats_on', \
+        'automatic' and 'setpoints' and a list ('thermostats') with status information for each \
+        active thermostats, each element in the list is a dict with the following keys: \
+        'thermostat', 'act', 'csetp', 'psetp0', 'psetp1', 'psetp2', 'psetp3', 'psetp4', 'psetp5', \
+        'sensor_nr', 'output0_nr', 'output1_nr', 'output0', 'output1', 'outside', 'mode', 'name', \
+        'pid_p', 'pid_i', 'pid_d', 'pid_ithresh', 'threshold_temp', 'days', 'hours', 'minutes', \
+        'mon_start_d1', 'mon_stop_d1', 'mon_start_d2', 'mon_stop_d2', 'tue_start_d1', \
+        'tue_stop_d1', 'tue_start_d2', 'tue_stop_d2', 'wed_start_d1', 'wed_stop_d1', \
+        'wed_start_d2', 'wed_stop_d2', 'thu_start_d1', 'thu_stop_d1', 'thu_start_d2', \
+        'thu_stop_d2', 'fri_start_d1', 'fri_stop_d1', 'fri_start_d2', 'fri_stop_d2', \
+        'sat_start_d1', 'sat_stop_d1', 'sat_start_d2', 'sat_stop_d2', 'sun_start_d1', \
+        'sun_stop_d1', 'sun_start_d2', 'sun_stop_d2' and 'crc'.
         """
         self.__check_token(token)
         return self.__wrap(self.__gateway_api.get_thermostats)
@@ -340,6 +341,33 @@ class WebInterface:
         self.__check_token(token)
         data = data.file.read()
         return self.__wrap(lambda: self.__gateway_api.master_restore(data))
+    
+    @cherrypy.expose
+    def get_realtime_power(self, token):
+        """ Get the realtime power measurements.
+        
+        :returns: dict with ...
+        """
+        self.__check_token(token)
+        return self.__wrap(lambda: self.__gateway_api.get_realtime_power())
+    
+    @cherrypy.expose
+    def start_power_address_mode(self, token):
+        """ Start the address mode on the power modules.
+        
+        :returns: empty dict.
+        """
+        self.__check_token(token)
+        return self.__wrap(lambda: self.__gateway_api.start_power_address_mode())
+    
+    @cherrypy.expose
+    def stop_power_address_mode(self, token):
+        """ Stop the address mode on the power modules.
+        
+        :returns: empty dict.
+        """
+        self.__check_token(token)
+        return self.__wrap(lambda: self.__gateway_api.stop_power_address_mode())
     
     @cherrypy.expose
     def get_version(self, token):

@@ -6,6 +6,7 @@ Created on Sep 9, 2012
 @author: fryckbos
 """
 import master_api
+from serial_utils import printable
 
 class MasterCommandSpec:
     """ The input command to the master looks like this:
@@ -315,10 +316,6 @@ class BytesFieldType:
     def decode(self, byte_str):
         """ Generates an array of bytes. """
         return [ ord(x) for x in byte_str ]
-
-def printable(string):
-    """ Converts non-printable characters into hex notation """
-    return "".join([c if ord(c) >= 32 and ord(c) <= 126 else '\\x%02d' % ord(c) for c in string])
 
 class LiteralFieldType:
     """ Literal string field. """

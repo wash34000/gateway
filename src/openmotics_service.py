@@ -16,13 +16,20 @@ from ConfigParser import ConfigParser
 
 import constants
 
+from serial_utils import RS485
+
 from gateway.webservice import WebService
-from gateway.maintenance import MaintenanceService
 from gateway.gateway_api import GatewayApi
-from gateway.master_communicator import MasterCommunicator
 from gateway.users import UserController
-from gateway.passthrough import PassthroughService
+
 from frontend.physical_frontend import PhysicalFrontend
+
+from master.maintenance import MaintenanceService
+from master.master_communicator import MasterCommunicator
+from master.passthrough import PassthroughService
+
+from power.power_communicator import PowerCommunicator
+from power.power_controller import PowerController
 
 def setup_logger():
     """ Setup the OpenMotics logger. """
@@ -60,14 +67,21 @@ def main():
     
     controller_serial_port = config.get('OpenMotics', 'controller_serial')
     passthrough_serial_port = config.get('OpenMotics', 'passthrough_serial')
+    power_serial_port = config.get('OpenMotics', 'power_serial')
     
     controller_serial = Serial(controller_serial_port, 19200)
     passthrough_serial = Serial(passthrough_serial_port, 19200)
+    power_serial = RS485(Serial(power_serial_port, 115200))
     
     master_communicator = MasterCommunicator(controller_serial)
     master_communicator.start()
     
-    gateway_api = GatewayApi(master_communicator)
+    power_controller = PowerController(constants.get_power_database_file())
+    
+    power_communicator = PowerCommunicator(power_serial, power_controller)
+    power_communicator.start()
+    
+    gateway_api = GatewayApi(master_communicator, power_communicator, power_controller)
     
     maintenance_service = MaintenanceService(gateway_api, constants.get_ssl_private_key_file(),
                                              constants.get_ssl_certificate_file())

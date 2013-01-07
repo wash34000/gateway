@@ -1,21 +1,22 @@
-'''
-Serial port mockup.
+"""
+Contains the SerialMock. 
 
-Created on Sep 10, 2012
+Created on Dec 29, 2012
 
 @author: fryckbos
-'''
-import unittest
+"""
 import time
 import threading
-from master_command import printable
+import unittest
+
+from serial_utils import printable
 
 def sin(data):
-    """ Input for the master """
+    """ Input for the SerialMock """
     return ('i', data)
 
 def sout(data):
-    """ Output from the master """
+    """ Output from the SerialMock """
     return ('o', data)
 
 class SerialMock:
@@ -26,10 +27,12 @@ class SerialMock:
          inWaiting() returns 3 instead of 0 
     """
     
-    def __init__(self, sequence):
+    def __init__(self, sequence, timeout=0):
         """ Takes a sequence of sin() and sout(). Check if we get the sin bytes on write(),
         gives the sout bytes to read(). """
         self.__sequence = sequence
+        self.__timeout = timeout
+        
         self.bytes_written = 0
         self.bytes_read = 0
     
@@ -49,14 +52,19 @@ class SerialMock:
         while len(self.__sequence) == 0 or self.__sequence[0][0] == 'i':
             time.sleep(0.01)
         
-        ret = self.__sequence[0][1][:size]
-        self.__sequence[0] = (self.__sequence[0][0], self.__sequence[0][1][size:])
-        
-        if len(self.__sequence[0][1]) == 0:
+        if self.__timeout != 0 and self.__sequence[0][1] == '':
+            time.sleep(self.__timeout)
             self.__sequence.pop(0)
+            return ''
+        else:
+            ret = self.__sequence[0][1][:size]
+            self.__sequence[0] = (self.__sequence[0][0], self.__sequence[0][1][size:])
             
-        self.bytes_read += len(ret)
-        return ret
+            if len(self.__sequence[0][1]) == 0:
+                self.__sequence.pop(0)
+                
+            self.bytes_read += len(ret)
+            return ret
     
     def inWaiting(self): #pylint: disable-msg=C0103
         """ Get the number of bytes pending to be read """

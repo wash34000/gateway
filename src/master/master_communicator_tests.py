@@ -9,11 +9,12 @@ import unittest
 import threading
 import time
 
-from master_communicator import MasterCommunicator, CommunicationTimedOutException
+from master_communicator import MasterCommunicator
 from master_communicator import InMaintenanceModeException, BackgroundConsumer
 import master_api
 
-from serial_mock import SerialMock, sin, sout
+from serial_test import SerialMock, sin, sout
+from serial_utils import CommunicationTimedOutException
 
 class MasterCommunicatorTest(unittest.TestCase):
     """ Tests for MasterCommunicator class """

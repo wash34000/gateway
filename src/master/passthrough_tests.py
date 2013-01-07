@@ -9,7 +9,7 @@ import unittest
 import time
 
 import master_api
-from serial_mock import SerialMock, sout, sin
+from serial_test import SerialMock, sout, sin
 from master_communicator import MasterCommunicator
 from passthrough import PassthroughService
 

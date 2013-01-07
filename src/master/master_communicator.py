@@ -16,6 +16,7 @@ from Queue import Queue, Empty
 
 import master_api
 from master_command import printable
+from serial_utils import CommunicationTimedOutException
 
 class MasterCommunicator:
     """ Uses a serial port to communicate with the master and updates the output state.
@@ -371,11 +372,6 @@ class MasterCommunicator:
                         else:
                             self.__maintenance_queue.put(leftovers)                    
 
-
-class CommunicationTimedOutException(Exception):
-    """ An exception that is raised when the master did not respond in time. """
-    def __init__(self):
-        Exception.__init__(self)
 
 class InMaintenanceModeException(Exception):
     """ An excpetion that is raised when the master is in maintenance mode. """
