@@ -5,6 +5,7 @@ thermostats to the cloud, to keep the status information in the cloud in sync. "
 import urllib, urllib2
 import time
 import subprocess
+import os
 
 from ConfigParser import ConfigParser
 from datetime import datetime
@@ -97,7 +98,7 @@ class Gateway:
         webserver. """
         try:
             url = "https://" + self.__host + "/" + uri
-            handler = urllib2.urlopen(url)
+            handler = urllib2.urlopen(url, timeout=60.0)
             return json.loads(handler.read())
         except Exception as exception:
             print "Exception during getting output status: ", exception
@@ -154,11 +155,24 @@ class Gateway:
         else:
             return None
 
+    def get_update_status(self):
+        """ Get the status of an executing update. """
+        update_status_file = '/opt/openmotics/update_status'
+        if os.path.exists(update_status_file):
+            f = open(update_status_file, 'r')
+            status = f.read()
+            f.close()
+            os.remove(update_status_file)
+            return status
+        else:
+            return None
+
 def main():
     """ The main function contains the loop that check if the vpn should be opened every 2 seconds.
     Status data is sent when the vpn is checked. """
     
     physical_frontend = PhysicalFrontend()
+    physical_frontend.set_led('vpn', True)
     
     # Get the configuration
     config = ConfigParser()
@@ -175,6 +189,11 @@ def main():
         monitoring_data = {}
         monitoring_data['thermostats'] = gateway.get_thermostats()
         monitoring_data['outputs'] = gateway.get_enabled_outputs()
+        
+        update_status = gateway.get_update_status()
+        if update_status != None:
+            monitoring_data['update'] = update_status
+        
         extra_data = json.dumps(monitoring_data)
     
         should_open = cloud.should_open_vpn(extra_data)
