@@ -11,10 +11,15 @@ import dbus.mainloop.glib
 import fcntl
 import time
 
+from ConfigParser import ConfigParser
+
+import constants
+
+
 I2C_DEVICE = '/dev/i2c-2'
 IOCTL_I2C_SLAVE = 0x0703
-I2C_SLAVE_ADDRESS = 0x38
-CODES = { 'uart4':2, 'uart5':4, 'vpn':8, 'stat1':16, 'stat2':32, 'alive':64, 'cloud':128 }
+I2C_SLAVE_ADDRESS = None # Read from config file
+CODES = { 'uart4':64, 'uart5':128, 'vpn':16, 'stat1':0, 'stat2':32, 'alive':1, 'cloud':4 }
 
 HOME = 75
 
@@ -185,6 +190,12 @@ class StatusObject(dbus.service.Object):
 def main():
     """ The main function runs a loop that waits for dbus calls, drives the leds and reads the
     switch. """
+    config = ConfigParser()
+    config.read(constants.get_config_file())
+    
+    global I2C_SLAVE_ADDRESS
+    I2C_SLAVE_ADDRESS = int(config.get('OpenMotics', 'leds_i2c_address'), 16)
+    
     dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
 
     system_bus = dbus.SystemBus()
