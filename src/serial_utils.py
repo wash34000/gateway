@@ -34,7 +34,7 @@ class RS485:
     
     def read(self, size):
         """ Read size bytes from serial port """
-        self.__serial.read(size)
+        return self.__serial.read(size)
     
     def inWaiting(self): #pylint: disable-msg=C0103
         """ Get the number of bytes pending to be read """

@@ -69,6 +69,12 @@ class GatewayApi:
     def start_maintenance_mode(self, timeout=600):
         """ Start maintenance mode, if the time between send_maintenance_data calls exceeds the
         timeout, the maintenance mode will be closed automatically. """
+        try:
+            self.set_master_status_leds(True)
+        except Exception as exception:
+            msg = "Exception while setting status leds before maintenance mode:" + str(exception)
+            LOGGER.warning(msg)
+            
         self.__master_communicator.start_maintenance_mode()
         
         def check_maintenance_timeout():
@@ -110,6 +116,12 @@ class GatewayApi:
         if self.__maintenance_timeout_timer != None:
             self.__maintenance_timeout_timer.cancel()
             self.__maintenance_timeout_timer = None
+        
+        try:
+            self.set_master_status_leds(False)
+        except Exception as exception:
+            msg = "Exception while setting status leds after maintenance mode:" + str(exception)
+            LOGGER.warning(msg)
     
     def get_status(self):
         """ Get the status of the Master.
@@ -603,27 +615,66 @@ class GatewayApi:
         self.__master_communicator.do_command(master_api.reset())
         return dict()
 
+    ###### Status led functions
+    
+    def set_master_status_leds(self, status):
+        """ Set the status of the leds on the master.
+        
+        :param status: whether the leds should be on or off.
+        :type status: boolean.
+        :returns: empty dict.
+        """
+        on = 1 if status == True else 0
+        self.__master_communicator.do_command(master_api.basic_action(),
+                    { "action_type" : master_api.BA_STATUS_LEDS, "action_number" : on })
+        return dict()
+
     ###### Power functions
+    
+    def get_power_modules(self):
+        """ Get information on the power modules.
+        
+        :returns: dict with key 'modules' (List of dictionaries with the following keys: id', \
+        'name', 'uid', 'address', 'input0', 'input1', 'input2', 'input3', 'input4', 'input5', \
+        'input6', 'input7'.
+        """
+        return self.__power_controller.get_power_modules().values()
+    
+    def set_power_modules(self, modules):
+        """ Set information for the power modules.
+        
+        :param modules: list of dicts with keys: 'id', 'name', 'input0', 'input1', 'input2', \
+        'input3', 'input4', 'input5', 'input6', 'input7'.
+        :returns: empty dict.
+        """
+        self.__power_controller.update_power_modules(modules)
+        return dict()
     
     def get_realtime_power(self):
         """ Get the realtime power measurement values.
         
-        :returns: dict with ....
+        :returns: dict with the module id as key and the follow array as value: \
+        [voltage, frequency, current, power].
         """
-        output = { }
+        output = dict()
         
         modules = self.__power_controller.get_power_modules()
         for id in sorted(modules.keys()):
-            address = modules[id]['address']
+            addr = modules[id]['address']
             
             try:
-                output[id] = self.__power_communicator.do_command(address, power_api.get_voltage())
+                volt = self.__power_communicator.do_command(addr, power_api.get_voltage())[0]
+                freq = self.__power_communicator.do_command(addr, power_api.get_frequency())[0]
+                current = self.__power_communicator.do_command(addr, power_api.get_current())
+                power = self.__power_communicator.do_command(addr, power_api.get_power())
+                
+                out = []
+                for i in range(0, 8):
+                    out.append([ volt, freq, current[i], power[i] ])
+                
+                output[str(id)] = out
             except CommunicationTimedOutException:
-                output[id] = None
-            
-            #power_api.get_frequency()
-            #power_api.get_current()
-            #power_api.get_power()
+                output[str(id)] = None
         
         return output
     

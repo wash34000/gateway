@@ -181,12 +181,13 @@ class PowerCommunicator:
 
         while phase < 8:
             bytes = self.__serial.read(1)
+            
+            if bytes == None or len(bytes) == 0:
+                raise CommunicationTimedOutException()
+            
             num_bytes = self.__serial.inWaiting()
             if num_bytes > 0:
                 bytes += self.__serial.read(num_bytes)
-                
-            if bytes == None or len(bytes) == 0:
-                raise CommunicationTimedOutException()
             
             self.__serial_bytes_read += len(bytes)
             if self.__verbose:

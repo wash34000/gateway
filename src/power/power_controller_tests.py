@@ -36,17 +36,46 @@ class PowerControllerTest(unittest.TestCase):
         self.assertEquals("E\x01", power_controller.get_free_address())
         
         power_controller.register_power_module("E\x01")
-        self.assertEquals({ 1 : { "id" : 1, "address" : "E\x01" } } ,
+        
+        self.assertEquals({1: {'input2': u'', 'input3': u'', 'input0': u'', 'input1': u'',
+                               'input6': u'', 'uid': None, 'input4': u'', 'input5': u'',
+                               'address': u'E\x01', 'id': 1, 'input7': u'', 'name': u''}},
                           power_controller.get_power_modules())
         
         self.assertEquals("E\x02", power_controller.get_free_address())
         
         power_controller.register_power_module("E\x05")
-        self.assertEquals({ 1 : { "id" : 1, "address" : "E\x01" },
-                            2 : { "id" : 2, "address" : "E\x05" } },
+        self.assertEquals({1: {'input2': u'', 'input3': u'', 'input0': u'', 'input1': u'',
+                               'input6': u'', 'uid': None, 'input4': u'', 'input5': u'',
+                               'address': u'E\x01', 'id': 1, 'input7': u'', 'name': u''},
+                           2: {'input2': u'', 'input3': u'', 'input0': u'', 'input1': u'',
+                               'input6': u'', 'uid': None, 'input4': u'', 'input5': u'',
+                               'address': u'E\x05', 'id': 2, 'input7': u'', 'name': u''}},
                           power_controller.get_power_modules())
         
         self.assertEquals("E\x06", power_controller.get_free_address())
+
+    def test_update(self):
+        """ Test for updating the power module information. """
+        power_controller = self.__get_controller()
+        self.assertEquals({}, power_controller.get_power_modules())
+        
+        power_controller.register_power_module("E\x01")
+        
+        self.assertEquals({1: {'input2': u'', 'input3': u'', 'input0': u'', 'input1': u'',
+                               'input6': u'', 'uid': None, 'input4': u'', 'input5': u'',
+                               'address': u'E\x01', 'id': 1, 'input7': u'', 'name': u''}},
+                          power_controller.get_power_modules())
+        
+        power_controller.update_power_modules([{'id':1, 'name':'module1', 'input0':'in0',
+                                                'input1':'in1', 'input2':'in2', 'input3':'in3',
+                                                'input4':'in4', 'input5':'in5', 'input6':'in6',
+                                                'input7':'in7'}])        
+        
+        self.assertEquals({1: {'id': 1, 'uid': None, 'address': 'E\x01', 'name':'module1',
+                               'input0':'in0', 'input1':'in1', 'input2':'in2', 'input3':'in3',
+                               'input4':'in4', 'input5':'in5', 'input6':'in6', 'input7':'in7' } },
+                          power_controller.get_power_modules())
 
 
 if __name__ == "__main__":

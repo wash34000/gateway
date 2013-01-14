@@ -56,7 +56,9 @@ class PowerCommand:
             raise Exception("Address should be 2 bytes")
         
         data = struct.pack(self.input_format, *data)
-        command = str(address + chr(cid) + self.mode + self.type + chr(len(data)) + data)
+        
+        command = str(address) + chr(cid) + str(self.mode) + str(self.type)
+        command += chr(len(data)) + str(data)
         return "STR" + command + chr(crc7(command)) + "\r\n"
 
     def create_output(self, address, cid, *data):
@@ -73,12 +75,13 @@ class PowerCommand:
             raise Exception("Address should be 2 bytes")
         
         data = struct.pack(self.output_format, *data)
-        command = str(address + chr(cid) + self.mode + self.type + chr(len(data)) + data)
+        command = str(address) + chr(cid) + str(self.mode) + str(self.type)
+        command += chr(len(data)) + str(data)
         return "STR" + command + chr(crc7(command)) + "\r\n"
 
     def check_header(self, header, address, cid):
         """ Check if the header matches the command, when an address and cid is provided. """
-        return header[:-1] == address + chr(cid) + self.mode + self.type
+        return header[:-1] == str(address) + chr(cid) + str(self.mode) + str(self.type)
 
     def check_header_partial(self, header):
         """ Check if the header matches the command, does not check address and cid. """

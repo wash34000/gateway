@@ -10,11 +10,12 @@ import dbus.service
 import dbus.mainloop.glib
 import fcntl
 import time
+import urllib2
 
+from threading import Thread
 from ConfigParser import ConfigParser
 
 import constants
-
 
 I2C_DEVICE = '/dev/i2c-2'
 IOCTL_I2C_SLAVE = 0x0703
@@ -41,12 +42,24 @@ class StatusObject(dbus.service.Object):
         self.__serial_activity = { 4: False, 5: False }
         self.__enabled_leds = {}
         self.__last_code = 0
+
+        self.__times_pressed = 0
+        self.__master_leds_thread = None
+        self.__master_leds_turn_on = False
+        self.__master_leds_on = False
+        self.__master_leds_timeout = 0
         
         self.__authorized_mode = False
         self.__authorized_timeout = 0
         self.__authorized_index = 0
         
         self.clear_leds()
+
+    def start(self):
+        """ Start the master LEDs thread. """
+        self.__master_leds_thread = Thread(target = self.__drive_master_leds)
+        self.__master_leds_thread.daemon = True
+        self.__master_leds_thread.daemon.start()
 
     @dbus.service.method("com.openmotics.status", in_signature='', out_signature='')
     def clear_leds(self):
@@ -152,19 +165,24 @@ class StatusObject(dbus.service.Object):
         fh_l.close()
     
     def input(self):
-        """ Read the input button on the top panel. Enables authorized mode for 60 seconds when the
-        button is pushed. This function registers itself with the gobject creating a loop that runs
-        every 100 ms. While the gateway is in authorized mode, the input button is not checked.
+        """ Read the input button on the top panel. Enables the master LEDs when pressed shortly,  
+        enables authorized mode for 60 seconds when the button is pushed for 5 seconds.
+        This function registers itself with the gobject creating a loop that runs every 100 ms.
+        While the gateway is in authorized mode, the input button is not checked.
         """
         fh_inp = open('/sys/class/gpio/gpio38/value', 'r')
         line = fh_inp.read()
         fh_inp.close()
         button_pressed = (int(line) == 0)
         if button_pressed:
-            self.__authorized_mode = True
-            self.__authorized_timeout = time.time() + 60
-            gobject.timeout_add(100, self.__authorized)
+            self.__master_leds_turn_on = True
+            self.__times_pressed += 1
+            if self.__times_pressed == 50:
+                self.__authorized_mode = True
+                self.__authorized_timeout = time.time() + 60
+                gobject.timeout_add(100, self.__authorized)
         else:
+            self.__times_pressed = 0
             gobject.timeout_add(100, self.input)
     
     def __authorized(self):
@@ -186,6 +204,34 @@ class StatusObject(dbus.service.Object):
         fh_home = open("/sys/class/gpio/gpio%i/value" % HOME, 'w')
         fh_home.write(value)
         fh_home.close()
+        
+    def __drive_master_leds(self):
+        """ Turns the master LEDs on or off if required. """
+        while True:
+            if self.__master_leds_turn_on:
+                self.__master_leds_turn_on = False
+                self.__master_leds_timeout = time.time() + 120
+                
+                if self.__master_leds_on == False:
+                    self.__master_leds_on = True
+                    self.__master_set_leds(True)
+            else:
+                if self.__master_leds_on == True and time.time() > self.__master_leds_timeout:
+                    self.__master_leds_on = False
+                    self.__master_set_leds(False)
+            
+            time.sleep(0.2)
+    
+    def __master_set_leds(self, status):
+        """ Set the status of the leds on the master. """
+        try:
+            uri = "https://127.0.0.1/set_master_status_leds?token=None&status=" + str(status)
+            handler = urllib2.urlopen(uri, timeout=60.0)
+            _ = handler.read()
+            handler.close()
+        except Exception as exception:
+            print "Exception during setting leds : ", exception
+
 
 def main():
     """ The main function runs a loop that waits for dbus calls, drives the leds and reads the
@@ -200,7 +246,9 @@ def main():
 
     system_bus = dbus.SystemBus()
     name = dbus.service.BusName("com.openmotics.status", system_bus)
+    
     status = StatusObject(system_bus, '/com/openmotics/status')
+    status.start()
 
     mainloop = gobject.MainLoop()
     gobject.timeout_add(100, status.network)

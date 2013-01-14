@@ -12,6 +12,25 @@ try:
 except ImportError:
     import simplejson as json
 
+class FloatWrapper(float):
+    """ Wrapper for float value that limits the number of digits when printed. """
+     
+    def __repr__(self):
+        return '%.2f' % self
+
+def limit_floats(struct):
+    """ Usage: json.dumps(limit_floats(struct)). This limits the number of digits in the json
+    string.
+    """
+    if isinstance(struct, (list, tuple)):
+        return map(limit_floats, struct)
+    elif isinstance(struct, dict):
+        return dict((key, limit_floats(value)) for key, value in struct.items())
+    elif isinstance(struct, float):
+        return FloatWrapper(struct)
+    else:
+        return struct
+
 import cherrypy
 
 import constants
@@ -78,7 +97,7 @@ class WebInterface:
     
     def __success(self, **kwargs):
         """ Returns a dict with 'success' = True and the keys and values in **kwargs. """
-        return json.dumps(dict({"success" : True}.items() + kwargs.items()))
+        return json.dumps(limit_floats(dict({"success" : True}.items() + kwargs.items())))
 
     @cherrypy.expose
     def index(self):
@@ -321,6 +340,17 @@ class WebInterface:
         return self.__wrap(lambda: self.__gateway_api.set_thermostat_threshold(float(threshold)))
     
     @cherrypy.expose
+    def set_master_status_leds(self, token, status):
+        """ Set the status of the leds on the master.
+        
+        :param status: whether the leds should be on (true) or off (false).
+        :returns: empty dict.
+        """
+        self.__check_token(token)
+        return self.__wrap(
+                    lambda: self.__gateway_api.set_master_status_leds(status.lower() == "true"))
+    
+    @cherrypy.expose
     def get_master_backup(self, token):
         """ Get a backup of the eeprom of the master.
         
@@ -343,10 +373,33 @@ class WebInterface:
         return self.__wrap(lambda: self.__gateway_api.master_restore(data))
     
     @cherrypy.expose
+    def get_power_modules(self, token):
+        """ Get information on the power modules.
+        
+        :returns: dict with key 'modules' (List of dictionaries with the following keys: id', \
+        'name', 'uid', 'address', 'input0', 'input1', 'input2', 'input3', 'input4', 'input5', \
+        'input6', 'input7'.
+        """
+        self.__check_token(token)
+        return self.__wrap(lambda: self.__gateway_api.get_power_modules())
+    
+    @cherrypy.expose
+    def set_power_modules(self, token, modules):
+        """ Set information (module and input names) for the power modules.
+        
+        :param modules: list of dicts with keys: 'id', 'name', 'input0', 'input1', 'input2', \
+        'input3', 'input4', 'input5', 'input6', 'input7'.
+        :returns: empty dict.
+        """
+        self.__check_token(token)
+        return self.__wrap(lambda: self.__gateway_api.set_power_modules(modules))
+    
+    @cherrypy.expose
     def get_realtime_power(self, token):
         """ Get the realtime power measurements.
         
-        :returns: dict with ...
+        :returns: dict with the module id as key and the follow array as value: \
+        [voltage, frequency, current, power].
         """
         self.__check_token(token)
         return self.__wrap(lambda: self.__gateway_api.get_realtime_power())

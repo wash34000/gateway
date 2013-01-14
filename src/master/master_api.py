@@ -62,6 +62,8 @@ BA_LIGHT_ON_TIMER_1500_NO_OVERRULE = 204
 BA_LIGHT_ON_TIMER_2220_NO_OVERRULE = 205
 BA_LIGHT_ON_TIMER_3120_NO_OVERRULE = 206
 
+BA_STATUS_LEDS = 64
+
 def basic_action():
     """ Basic actions. """
     return MasterCommandSpec("BA",

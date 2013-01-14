@@ -166,6 +166,15 @@ class Gateway:
             return status
         else:
             return None
+    
+    def get_realtime_power(self):
+        """ Get the real time power measurements. """
+        data = self.__do_call("get_realtime_power?token=None")
+        if data == None or data['success'] == False:
+            return None
+        else:
+            del data['success']
+            return data
 
 def main():
     """ The main function contains the loop that check if the vpn should be opened every 2 seconds.
@@ -189,6 +198,7 @@ def main():
         monitoring_data = {}
         monitoring_data['thermostats'] = gateway.get_thermostats()
         monitoring_data['outputs'] = gateway.get_enabled_outputs()
+        monitoring_data['power'] = gateway.get_realtime_power()
         
         update_status = gateway.get_update_status()
         if update_status != None:
