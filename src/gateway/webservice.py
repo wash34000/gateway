@@ -348,7 +348,16 @@ class WebInterface:
         :returns: empty dict.
         """
         self.__check_token(token)
-        return self.__wrap(self.__gateway_api.do_group_action(int(group_action_id)))
+        return self.__wrap(lambda: self.__gateway_api.do_group_action(int(group_action_id)))
+    
+    @cherrypy.expose
+    def get_group_actions(self, token):
+        """ Get the names of the available group actions.
+        
+        :returns: dict with 'group_actions' key, containing array with dict with 'id' and 'name'.
+        """
+        self.__check_token(token)
+        return self.__success(group_actions=self.__gateway_api.get_group_actions())
     
     @cherrypy.expose
     def set_master_status_leds(self, token, status):

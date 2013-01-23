@@ -585,6 +585,25 @@ class GatewayApi:
         
         return dict()
 
+    def get_group_actions(self):
+        """ Get the id and names of the available group actions.
+        
+        :returns: array with dicts containing 'id' and 'name'.
+        """
+        group_actions = []
+        
+        names = []
+        for bank in range(158, 168):
+            data = self.__master_communicator.do_command(master_api.eeprom_list(),
+                { 'bank' : bank })['data']
+            for offset in range(0, 256, 16):
+                names.append(data[offset:offset+16].replace('\xff', ''))
+        
+        for id in range(0, 160):
+            group_actions.append({ 'id':id, 'name':names[id] })
+                    
+        return group_actions
+
     ###### Backup and restore functions
     
     def get_master_backup(self):
