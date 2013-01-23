@@ -7,6 +7,8 @@ Created on Sep 9, 2012
 '''
 from master_command import MasterCommandSpec, Field, OutputFieldType, DimmerFieldType
 
+BA_GROUP_ACTION = 2
+
 BA_ALL_SETPOINT_0 = 134
 BA_ALL_SETPOINT_1 = 135
 BA_ALL_SETPOINT_2 = 136

@@ -340,6 +340,17 @@ class WebInterface:
         return self.__wrap(lambda: self.__gateway_api.set_thermostat_threshold(float(threshold)))
     
     @cherrypy.expose
+    def do_group_action(self, token, group_action_id):
+        """ Execute a group action.
+        
+        :param group_action_id: The id of the group action
+        :type group_action_id: Integer (0 - 159)
+        :returns: empty dict.
+        """
+        self.__check_token(token)
+        return self.__wrap(self.__gateway_api.do_group_action(int(group_action_id)))
+    
+    @cherrypy.expose
     def set_master_status_leds(self, token, status):
         """ Set the status of the leds on the master.
         

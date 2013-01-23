@@ -567,6 +567,24 @@ class GatewayApi:
         return { 'resp': 'OK' }
         
 
+    ###### Group actions
+    
+    def do_group_action(self, group_action_id):
+        """ Execute a group action.
+        
+        :param group_action_id: The id of the group action
+        :type group_action_id: Integer (0 - 159)
+        :returns: empty dict.
+        """
+        if group_action_id < 0 or group_action_id > 159:
+            raise ValueError("group_action_id not in [0, 160]: %d" % group_action_id)
+        
+        self.__master_communicator.do_command(master_api.basic_action(),
+                    { "action_type" : master_api.BA_GROUP_ACTION,
+                      "action_number" : group_action_id })
+        
+        return dict()
+
     ###### Backup and restore functions
     
     def get_master_backup(self):
