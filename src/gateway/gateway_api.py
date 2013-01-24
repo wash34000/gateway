@@ -671,9 +671,8 @@ class GatewayApi:
     def get_power_modules(self):
         """ Get information on the power modules.
         
-        :returns: dict with key 'modules' (List of dictionaries with the following keys: id', \
-        'name', 'uid', 'address', 'input0', 'input1', 'input2', 'input3', 'input4', 'input5', \
-        'input6', 'input7'.
+        :returns: List of dictionaries with the following keys: id', 'name', 'uid', 'address', \
+        'input0', 'input1', 'input2', 'input3', 'input4', 'input5', 'input6', 'input7'.
         """
         return self.__power_controller.get_power_modules().values()
     

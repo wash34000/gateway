@@ -401,7 +401,7 @@ class WebInterface:
         'input6', 'input7'.
         """
         self.__check_token(token)
-        return self.__wrap(lambda: self.__gateway_api.get_power_modules())
+        return self.__success(modules=self.__gateway_api.get_power_modules())
     
     @cherrypy.expose
     def set_power_modules(self, token, modules):
