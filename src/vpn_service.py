@@ -84,14 +84,10 @@ class Cloud:
         return self.__last_connect
 
 class Gateway:
-    """ Class to get the current status of the gateway. Outputs are fetched from the webservice on
-    each call, fetching the thermostats is cached for one minute to reduce the load on the
-    webservice. """
+    """ Class to get the current status of the gateway. """
     
     def __init__(self, host="127.0.0.1"):
-        self.__host = host 
-        self.__last_thermostats_fetch = 0
-        self.__last_thermostats_data = None
+        self.__host = host
 
     def __do_call(self, uri):
         """ Do a call to the webservice, returns a dict parsed from the json returned by the
@@ -119,7 +115,7 @@ class Gateway:
                     ret.append((output["output_nr"], output["dimmer"]))
             return ret
     
-    def __fetch_thermostats(self):
+    def get_thermostats(self):
         """ Fetch the setpoints for the enabled thermostats from the webservice.
         
         :returns: a dict with 'thermostats_on', 'automatic' and an array of dicts in 'thermostats'
@@ -139,21 +135,6 @@ class Gateway:
                 thermostats.append(to_add)
             ret['thermostats'] = thermostats
             return ret
-
-    def get_thermostats(self):
-        """ Get the setpoints for the enabled thermostats, fetched from web interface
-        once per minute.
-        
-        :returns: a dict with 'thermostats_on', 'automatic' and an array of dicts in 'thermostats'
-        with the following fields: 'thermostat', 'act', 'csetp' and 'mode'. None on error.
-        """
-        now = time.time()
-        if self.__last_thermostats_data == None or now >= self.__last_thermostats_fetch + 60:
-            self.__last_thermostats_fetch = now
-            self.__last_thermostats_data = self.__fetch_thermostats()
-            return self.__last_thermostats_data
-        else:
-            return None
 
     def get_update_status(self):
         """ Get the status of an executing update. """
@@ -176,6 +157,31 @@ class Gateway:
             del data['success']
             return data
 
+class DataCollector:
+    
+    def __init__(self, name, function, period=0):
+        """
+        Create a collector with a name, function to call and period.
+        If the period is 0, the collector will be executed on each call.
+        """
+        self.name = name
+        self.__function = function
+        self.__period = period
+        self.__last_collect = 0
+    
+    def __should_collect(self):
+        """ Should we execute the collect ? """
+        return self.__period == 0 or time.time() >= self.__last_collect + self.__period
+    
+    def collect(self):
+        """ Execute the collect if required, return None otherwise. """
+        if self.__should_collect():
+            if self.__period != 0:
+                self.__last_collect = time.time()
+            return self.__function()
+        else:
+            return None
+
 def main():
     """ The main function contains the loop that check if the vpn should be opened every 2 seconds.
     Status data is sent when the vpn is checked. """
@@ -193,16 +199,18 @@ def main():
     cloud = Cloud(check_url, physical_frontend)
     gateway = Gateway()
 
+    collectors = [ DataCollector('thermostats', gateway.get_thermostats, 60),
+                   DataCollector('outputs', gateway.get_enabled_outputs),
+                   DataCollector('power', gateway.get_realtime_power),
+                   DataCollector('update', gateway.get_update_status) ]
+
     # Loop: check vpn and open/close if needed
     while True:
         monitoring_data = {}
-        monitoring_data['thermostats'] = gateway.get_thermostats()
-        monitoring_data['outputs'] = gateway.get_enabled_outputs()
-        monitoring_data['power'] = gateway.get_realtime_power()
-        
-        update_status = gateway.get_update_status()
-        if update_status != None:
-            monitoring_data['update'] = update_status
+        for collector in collectors:
+            data = collector.collect()
+            if data != None:
+                monitoring_data[collector.name] = data
         
         extra_data = json.dumps(monitoring_data)
     
