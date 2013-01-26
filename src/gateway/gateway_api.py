@@ -666,6 +666,17 @@ class GatewayApi:
                     { "action_type" : master_api.BA_STATUS_LEDS, "action_number" : on })
         return dict()
 
+    ###### Pulse counter functions
+    
+    def get_pulse_counter_values(self):
+        """ Get the pulse counter values.
+        
+        :returns: array with the 8 pulse counter values.
+        """
+        out_dict = self.__master_communicator.do_command(master_api.pulse_list())
+        return [ out_dict['pv0'], out_dict['pv1'], out_dict['pv2'], out_dict['pv3'],
+                 out_dict['pv4'], out_dict['pv5'], out_dict['pv6'], out_dict['pv7'] ]
+
     ###### Power functions
     
     def get_power_modules(self):

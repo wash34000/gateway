@@ -182,6 +182,13 @@ def write_setpoint():
         [ Field.byte("thermostat"), Field.byte("config"), Field.svt("temp"), Field.padding(10),
           Field.lit('\r\n')])
 
+def pulse_list():
+    """ List the pulse counter values. """
+    return MasterCommandSpec("PL", 
+        [ Field.padding(13) ],
+        [ Field.int('pv0'), Field.int('pv1'), Field.int('pv2'), Field.int('pv3'), Field.int('pv4'), 
+          Field.int('pv5'), Field.int('pv6'), Field.int('pv7'), Field.lit('\r\n') ])
+
 def to_cli_mode():
     """ Go to CLI mode """
     return MasterCommandSpec("CM",

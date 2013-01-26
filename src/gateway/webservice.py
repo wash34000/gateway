@@ -443,6 +443,15 @@ class WebInterface:
         return self.__wrap(lambda: self.__gateway_api.stop_power_address_mode())
     
     @cherrypy.expose
+    def get_pulse_counter_values(self, token):
+        """ Get the pulse counter values.
+        
+        :returns: dict with key 'counters' (value is array with the 8 pulse counter values).
+        """
+        self.__check_token(token)
+        return self.__success(counters=self.__gateway_api.get_pulse_counter_values())
+    
+    @cherrypy.expose
     def get_version(self, token):
         """ Get the version of the openmotics software.
         
