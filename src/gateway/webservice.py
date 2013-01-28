@@ -533,18 +533,30 @@ class WebService:
 
     def run(self):
         """ Run the web service: start cherrypy. """
-        cherrypy.config.update({
-            'server.socket_host': '0.0.0.0',
-            'server.socket_port': 443,
-            'engine.autoreload_on': False,
-
-            'server.ssl_module':'pyopenssl',
-            'server.ssl_certificate':constants.get_ssl_certificate_file(),
-            'server.ssl_private_key':constants.get_ssl_private_key_file(),
-        })
-        cherrypy.server.socket_timeout = 60
-        cherrypy.quickstart(WebInterface(self.__user_controller, self.__gateway_api,
+        cherrypy.tree.mount(WebInterface(self.__user_controller, self.__gateway_api,
                                          self.__maintenance_service, self.__authorized_check))
+        
+        cherrypy.server.unsubscribe()
+
+        https_server = cherrypy._cpserver.Server()
+        https_server.socket_port = 443
+        https_server._socket_host = '0.0.0.0'
+        https_server.socket_timeout = 60
+        https_server.ssl_module = 'pyopenssl'
+        https_server.ssl_certificate = constants.get_ssl_certificate_file()
+        https_server.ssl_private_key = constants.get_ssl_private_key_file()
+        https_server.subscribe()
+
+        http_server = cherrypy._cpserver.Server()
+        http_server.socket_port = 80
+        http_server._socket_host = '127.0.0.1'
+        http_server.socket_timeout = 60
+        http_server.subscribe()
+
+        cherrypy.engine.autoreload_on = False
+        
+        cherrypy.engine.start()
+        cherrypy.engine.block()
         
     def start(self):
         """ Start the web service in a new thread. """
