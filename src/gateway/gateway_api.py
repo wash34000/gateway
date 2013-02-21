@@ -682,7 +682,7 @@ class GatewayApi:
     def get_power_modules(self):
         """ Get information on the power modules.
         
-        :returns: List of dictionaries with the following keys: id', 'name', 'uid', 'address', \
+        :returns: List of dictionaries with the following keys: id', 'name', 'address', \
         'input0', 'input1', 'input2', 'input3', 'input4', 'input5', 'input6', 'input7'.
         """
         return self.__power_controller.get_power_modules().values()
@@ -694,7 +694,8 @@ class GatewayApi:
         'input3', 'input4', 'input5', 'input6', 'input7'.
         :returns: empty dict.
         """
-        self.__power_controller.update_power_modules(modules)
+        for module in modules:
+            self.__power_controller.update_power_modules(module)
         return dict()
     
     def get_realtime_power(self):

@@ -397,7 +397,7 @@ class WebInterface:
         """ Get information on the power modules.
         
         :returns: dict with key 'modules' (List of dictionaries with the following keys: id', \
-        'name', 'uid', 'address', 'input0', 'input1', 'input2', 'input3', 'input4', 'input5', \
+        'name', 'address', 'input0', 'input1', 'input2', 'input3', 'input4', 'input5', \
         'input6', 'input7'.
         """
         self.__check_token(token)
