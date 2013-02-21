@@ -139,7 +139,11 @@ class PowerCommunicator:
                     (old_address, cid) = (header[:2], header[2:3])
                     # Ask power_controller for new address, and register it.
                     new_address = self.__power_controller.get_free_address()
-                    self.__power_controller.register_power_module(new_address)
+                    
+                    if self.__power_controller.module_exists(old_address):
+                        self.__power_controller.readdress_power_module(old_address, new_address)
+                    else:
+                        self.__power_controller.register_power_module(new_address)
                     
                     # Send new address to power module 
                     bytes = set_address.create_input(old_address, ord(cid), ord(new_address[1]))
