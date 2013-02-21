@@ -59,7 +59,7 @@ class StatusObject(dbus.service.Object):
         """ Start the master LEDs thread. """
         self.__master_leds_thread = Thread(target = self.__drive_master_leds)
         self.__master_leds_thread.daemon = True
-        self.__master_leds_thread.daemon.start()
+        self.__master_leds_thread.start()
 
     @dbus.service.method("com.openmotics.status", in_signature='', out_signature='')
     def clear_leds(self):

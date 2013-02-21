@@ -43,7 +43,7 @@ def main():
         master_serial = Serial(port, 19200)
         master_communicator = MasterCommunicator(master_serial)
         master_communicator.start()
-        gateway_api = GatewayApi(master_communicator)
+        gateway_api = GatewayApi(master_communicator, None, None)
         time.sleep(10) # Wait 10 seconds for communictor initialization
         
         if args.sync:
