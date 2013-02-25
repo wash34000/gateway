@@ -1,6 +1,9 @@
 #!/bin/bash
 cd python
 
+echo "Running master api tests"
+python -m master.master_api_tests
+
 echo "Running master command tests"
 python -m master.master_command_tests
 
@@ -12,6 +15,9 @@ python -m master.outputs_tests
 
 echo "Running passthrough tests"
 python -m master.passthrough_tests
+
+echo "Running thermostats tests"
+python -m master.thermostats_tests
 
 echo "Running users tests"
 python -m gateway.users_tests

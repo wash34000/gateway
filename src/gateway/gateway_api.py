@@ -16,6 +16,7 @@ from serial_utils import CommunicationTimedOutException
 
 import master.master_api as master_api
 from master.outputs import OutputStatus
+from master.thermostats import ThermostatStatus
 from master.master_communicator import BackgroundConsumer
 
 import power.power_api as power_api
@@ -32,6 +33,8 @@ class GatewayApi:
         self.__output_status = None
         self.__master_communicator.register_consumer(
                     BackgroundConsumer(master_api.output_list(), 0, self.__update_outputs))
+        
+        self.__thermostat_status = None
         
         self.__power_communicator = power_communicator
         self.__power_controller = power_controller
@@ -112,7 +115,12 @@ class GatewayApi:
     def stop_maintenance_mode(self):
         """ Stop maintenance mode. """
         self.__master_communicator.stop_maintenance_mode()
-        self.__output_status.force_refresh()
+        if self.__output_status != None:
+            self.__output_status.force_refresh()
+        
+        if self.__thermostat_status != None:
+            self.__thermostat_status.force_refresh()
+        
         if self.__maintenance_timeout_timer != None:
             self.__maintenance_timeout_timer.cancel()
             self.__maintenance_timeout_timer = None
@@ -296,7 +304,8 @@ class GatewayApi:
             { "bank" : 33 + module, "address": 157 + output, "data": chr(floor_level) })
         
         # Make sure the floor level is updated on the next get_outputs
-        self.__output_status.force_refresh()
+        if self.__output_status != None:
+            self.__output_status.force_refresh()
         
         return dict()
         
@@ -337,7 +346,7 @@ class GatewayApi:
         """ Get the configuration of the thermostats.
         
         :returns: dict with global status information about the thermostats: 'thermostats_on',
-        'automatic' and 'setpoints' and a list ('thermostats') with status information for each
+        'automatic' and 'setpoint' and a list ('thermostats') with status information for each
         active thermostats, each element in the list is a dict with the following keys:
         'thermostat', 'act', 'csetp', 'psetp0', 'psetp1', 'psetp2', 'psetp3', 'psetp4', 'psetp5',
         'sensor_nr', 'output0_nr', 'output1_nr', 'output0', 'output1', 'outside', 'mode', 'name',
@@ -391,6 +400,80 @@ class GatewayApi:
                 if tries == 3 and not success:
                     thermostats.append({ 'thermostat' : thermostat_id, 'error' : msg })
 
+        return { 'thermostats_on' : thermostats_on, 'automatic' : automatic,
+                 'setpoint' : setpoint, 'thermostats' : thermostats }
+    
+    def __get_all_thermostats(self):
+        """ Get basic information about all thermostats.
+        
+        :returns: array containing 24 dicts (one for each thermostats) with the following keys: \
+        'active', 'output0_nr', 'output1_nr'.
+        """
+        thermostats = []
+        for thermostat_id in range(0, 24):
+            thermostat = self.__master_communicator.do_command(master_api.read_setpoint(),
+                                                               { 'thermostat' :  thermostat_id })
+            if self.check_crc(master_api.read_setpoint(), thermostat) == False:
+                raise Exception("CRC error in communication")
+            
+            info = {}
+            info['active'] = (thermostat['sensor_nr'] < 30 or thermostat['sensor_nr'] == 240) and thermostat['output0_nr'] < 240
+            info['output0_nr'] = thermostat['output0_nr']
+            info['output1_nr'] = thermostat['output1_nr']
+            
+            thermostats.append(info)
+        
+        return thermostats
+    
+    def get_thermostats_short(self):
+        """ Get the short configuration of the thermostats.
+        
+        :returns: dict with global status information about the thermostats: 'thermostats_on',
+        'automatic' and 'setpoint' and a list ('thermostats') with status information for all
+        thermostats, each element in the list is a dict with the following keys:
+        'thermostat', 'act', 'csetp', 'output0', 'output1', 'outside', 'mode'.
+        """
+        if self.__thermostat_status == None:
+            self.__thermostat_status = ThermostatStatus(self.__get_all_thermostats(), 1800)
+        elif self.__thermostat_status.should_refresh():
+            self.__thermostat_status.update(self.__get_all_thermostats())
+        cached_thermostats = self.__thermostat_status.get_thermostats()
+        
+        thermostat_info = self.__master_communicator.do_command(master_api.thermostat_list())
+        if self.check_crc(master_api.thermostat_list(), thermostat_info) == False:
+            raise Exception("CRC error in communication")
+        
+        mode = thermostat_info['mode']
+        
+        thermostats_on = (mode & 128 == 128)
+        automatic = (mode & 8 == 8)
+        setpoint = (mode & 7)
+        
+        thermostats = []
+        outputs = self.get_outputs()
+        
+        for thermostat_id in range(0, 24):
+            if cached_thermostats[thermostat_id]['active'] == True:
+                thermostat = { 'thermostat' : thermostat_id }
+                thermostat['act'] = thermostat_info['tmp' + str(thermostat_id)].get_temperature()
+                thermostat['csetp'] = thermostat_info['setp' + str(thermostat_id)].get_temperature()
+                thermostat['outside'] = thermostat_info['outside'].get_temperature()
+                thermostat['mode'] = thermostat_info['mode']
+                
+                output0_nr = cached_thermostats[thermostat_id]['output0_nr']
+                if output0_nr < len(outputs) and outputs[output0_nr]['status'] == 1:
+                    thermostat['output0'] = outputs[output0_nr]['dimmer']
+                else:
+                    thermostat['output0'] = 0
+                
+                output1_nr = cached_thermostats[thermostat_id]['output1_nr']
+                if output1_nr < len(outputs) and outputs[output1_nr]['status'] == 1:
+                    thermostat['output1'] = outputs[output1_nr]['dimmer']
+                else:
+                    thermostat['output1'] = 0
+                
+                thermostats.append(thermostat)
+        
         return { 'thermostats_on' : thermostats_on, 'automatic' : automatic,
                  'setpoint' : setpoint, 'thermostats' : thermostats }
     

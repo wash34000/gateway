@@ -182,6 +182,69 @@ def write_setpoint():
         [ Field.byte("thermostat"), Field.byte("config"), Field.svt("temp"), Field.padding(10),
           Field.lit('\r\n')])
 
+def thermostat_list():
+    """ Read the thermostat mode, the outside temperature, the temperature of each thermostat,
+    as well as the setpoint.
+    """
+    return MasterCommandSpec("tl",
+        [ Field.padding(13) ],
+        [ Field.byte('mode'), Field.svt('outside'),
+          Field.svt('tmp0'), Field.svt('tmp1'), Field.svt('tmp2'), Field.svt('tmp3'),
+          Field.svt('tmp4'), Field.svt('tmp5'), Field.svt('tmp6'), Field.svt('tmp7'),
+          Field.svt('tmp8'), Field.svt('tmp9'), Field.svt('tmp10'), Field.svt('tmp11'),
+          Field.svt('tmp12'), Field.svt('tmp13'), Field.svt('tmp14'), Field.svt('tmp15'),
+          Field.svt('tmp16'), Field.svt('tmp17'), Field.svt('tmp18'), Field.svt('tmp19'),
+          Field.svt('tmp20'), Field.svt('tmp21'), Field.svt('tmp22'), Field.svt('tmp23'),
+          Field.svt('setp0'), Field.svt('setp1'), Field.svt('setp2'), Field.svt('setp3'),
+          Field.svt('setp4'), Field.svt('setp5'), Field.svt('setp6'), Field.svt('setp7'),
+          Field.svt('setp8'), Field.svt('setp9'), Field.svt('setp10'), Field.svt('setp11'),
+          Field.svt('setp12'), Field.svt('setp13'), Field.svt('setp14'), Field.svt('setp15'),
+          Field.svt('setp16'), Field.svt('setp17'), Field.svt('setp18'), Field.svt('setp19'),
+          Field.svt('setp20'), Field.svt('setp21'), Field.svt('setp22'), Field.svt('setp23'),
+          Field.bytes('crc', 3), Field.lit('\r\n') ])
+
+def sensor_humidity_list():
+    """ Reads the list humidity values of the 32 (0-31) sensors. """
+    return MasterCommandSpec("hl",
+        [ Field.padding(13) ],
+        [ Field.byte('hum0'), Field.byte('hum1'), Field.byte('hum2'), Field.byte('hum3'),
+          Field.byte('hum4'), Field.byte('hum5'), Field.byte('hum6'), Field.byte('hum7'),
+          Field.byte('hum8'), Field.byte('hum9'), Field.byte('hum10'), Field.byte('hum11'),
+          Field.byte('hum12'), Field.byte('hum13'), Field.byte('hum14'), Field.byte('hum15'),
+          Field.byte('hum16'), Field.byte('hum17'), Field.byte('hum18'), Field.byte('hum19'),
+          Field.byte('hum20'), Field.byte('hum21'), Field.byte('hum22'), Field.byte('hum23'),
+          Field.byte('hum24'), Field.byte('hum25'), Field.byte('hum26'), Field.byte('hum27'),
+          Field.byte('hum28'), Field.byte('hum29'), Field.byte('hum30'), Field.byte('hum31'),
+          Field.bytes('crc', 3), Field.lit('\r\n') ])
+
+def sensor_temperature_list():
+    """ Reads the list temperature values of the 32 (0-31) sensors. """
+    return MasterCommandSpec("cl",
+        [ Field.padding(13) ],
+        [ Field.svt('tmp0'), Field.svt('tmp1'), Field.svt('tmp2'), Field.svt('tmp3'),
+          Field.svt('tmp4'), Field.svt('tmp5'), Field.svt('tmp6'), Field.svt('tmp7'),
+          Field.svt('tmp8'), Field.svt('tmp9'), Field.svt('tmp10'), Field.svt('tmp11'),
+          Field.svt('tmp12'), Field.svt('tmp13'), Field.svt('tmp14'), Field.svt('tmp15'),
+          Field.svt('tmp16'), Field.svt('tmp17'), Field.svt('tmp18'), Field.svt('tmp19'),
+          Field.svt('tmp20'), Field.svt('tmp21'), Field.svt('tmp22'), Field.svt('tmp23'),
+          Field.svt('tmp24'), Field.svt('tmp25'), Field.svt('tmp26'), Field.svt('tmp27'),
+          Field.svt('tmp28'), Field.svt('tmp29'), Field.svt('tmp30'), Field.svt('tmp31'),
+          Field.bytes('crc', 3), Field.lit('\r\n') ])
+
+def sensor_brightness_list():
+    """ Reads the list brightness values of the 32 (0-31) sensors. """
+    return MasterCommandSpec("bl",
+        [ Field.padding(13) ],
+        [ Field.byte('bri0'), Field.byte('bri1'), Field.byte('bri2'), Field.byte('bri3'),
+          Field.byte('bri4'), Field.byte('bri5'), Field.byte('bri6'), Field.byte('bri7'),
+          Field.byte('bri8'), Field.byte('bri9'), Field.byte('bri10'), Field.byte('bri11'),
+          Field.byte('bri12'), Field.byte('bri13'), Field.byte('bri14'), Field.byte('bri15'),
+          Field.byte('bri16'), Field.byte('bri17'), Field.byte('bri18'), Field.byte('bri19'),
+          Field.byte('bri20'), Field.byte('bri21'), Field.byte('bri22'), Field.byte('bri23'),
+          Field.byte('bri24'), Field.byte('bri25'), Field.byte('bri26'), Field.byte('bri27'),
+          Field.byte('bri28'), Field.byte('bri29'), Field.byte('bri30'), Field.byte('bri31'),
+          Field.bytes('crc', 3), Field.lit('\r\n') ]) 
+
 def pulse_list():
     """ List the pulse counter values. """
     return MasterCommandSpec("PL", 

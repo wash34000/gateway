@@ -213,7 +213,19 @@ class WebInterface:
         """
         self.__check_token(token)
         return self.__wrap(self.__gateway_api.get_thermostats)
+    
+    @cherrypy.expose
+    def get_thermostats_short(self, token):
+        """ Get the short configuration of the thermostats.
         
+        :returns: dict with global status information about the thermostats: 'thermostats_on',
+        'automatic' and 'setpoint' and a list ('thermostats') with status information for all
+        thermostats, each element in the list is a dict with the following keys:
+        'thermostat', 'act', 'csetp', 'output0', 'output1', 'outside', 'mode'.
+        """
+        self.__check_token(token)
+        return self.__wrap(self.__gateway_api.get_thermostats_short)
+    
     @cherrypy.expose
     def set_programmed_setpoint(self, token, thermostat, setpoint, temperature):
         """ Set a programmed setpoint of a thermostat.

@@ -121,7 +121,7 @@ class Gateway:
         :returns: a dict with 'thermostats_on', 'automatic' and an array of dicts in 'thermostats'
         with the following fields: 'thermostat', 'act', 'csetp' and 'mode'. None on error.
         """
-        data = self.__do_call("get_thermostats?token=None")
+        data = self.__do_call("get_thermostats_short?token=None")
         if data == None or data['success'] == False:
             return None
         else:
