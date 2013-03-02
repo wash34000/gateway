@@ -35,30 +35,34 @@ def update(version, md5_server):
         raise Exception("MD5 of client (" + str(md5_client) + ") and server (" + str(md5_server) +
                         ") don't match")
     
-    extract = subprocess.Popen("cd `dirname " + update_file + "`; tar xzf " + update_file + " 2>&1",
-                               stdout=subprocess.PIPE, shell=True)
+    extract = subprocess.Popen("cd `dirname " + update_file + "`; tar xzf " + update_file,
+                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True)
     ret = extract.wait()
-    output = extract.stdout.read()
+    extract_output = extract.stdout.read()
     
     if ret != 0:
-        raise Exception("Extraction failed: " + output)
+        raise Exception("Extraction failed: " + extract_output)
     
-    update_script = subprocess.Popen(get_update_script() + " `dirname " + update_file + "` 2>&1",
-                              stdout=subprocess.PIPE, shell=True)
+    update_script = subprocess.Popen(get_update_script() + " `dirname " + update_file + "`",
+                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True)
     ret = update_script.wait()
-    output = update_script.stdout.read()
+    update_output = update_script.stdout.read()
 
-    cleanup = subprocess.Popen("rm -Rf `dirname " + update_file + "`/*", shell=True)
+    cleanup = subprocess.Popen("rm -Rf `dirname " + update_file + "`/*",
+                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True)
     cleanup.wait()
+    cleanup_output = update_script.stdout.read()
 
     if ret != 0:
-        raise Exception("Error during update (ret=" + str(ret) + ") : " + output)
+        raise Exception("Error during update (ret=" + str(ret) + ") : " + update_output)
     else:
         config = ConfigParser()
         config.read(get_config_file())
         config.set('OpenMotics', 'version', version)
         with open(get_config_file(), 'wb') as configfile:
             config.write(configfile)
+        
+        return extract_output + "\n" + update_output + "\n" + cleanup_output
 
 
 def main():
@@ -69,9 +73,10 @@ def main():
     else:
         (version, md5_sum) = (sys.argv[1], sys.argv[2])
         error = None
+        output = None
 
         try:
-            update(version, md5_sum)
+            output = update(version, md5_sum)
         except:
             error = traceback.format_exc()
         finally:
@@ -79,6 +84,8 @@ def main():
             update_output_file.write(version + "\n")
             if error != None:
                 update_output_file.write("Update failed " + traceback.format_exc())
+            else:
+                update_output_file.write(output)
             update_output_file.close()
 
 

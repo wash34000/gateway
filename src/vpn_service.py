@@ -94,7 +94,7 @@ class Gateway:
         webserver. """
         try:
             url = "http://" + self.__host + "/" + uri
-            handler = urllib2.urlopen(url, timeout=60.0)
+            handler = urllib2.urlopen(url, timeout=15.0)
             return json.loads(handler.read())
         except Exception as exception:
             print "Exception during getting output status: ", exception
@@ -195,7 +195,6 @@ def main():
     Status data is sent when the vpn is checked. """
     
     physical_frontend = PhysicalFrontend()
-    physical_frontend.set_led('vpn', True)
     
     # Get the configuration
     config = ConfigParser()
@@ -204,6 +203,8 @@ def main():
     check_url = config.get('OpenMotics', 'vpn_check_url') % config.get('OpenMotics', 'uuid')
 
     vpn = VpnController()
+    physical_frontend.set_led('vpn', vpn.check_vpn())
+    
     cloud = Cloud(check_url, physical_frontend)
     gateway = Gateway()
 
