@@ -519,6 +519,41 @@ class WebInterface:
         
         return self.__success(output=output)
     
+    @cherrypy.expose
+    def set_timezone(self, token, timezone):
+        """ Set the timezone for the gateway.
+        
+        :type timezone: string
+        :param timezone: in format 'Continent/City'.
+        :returns: dict with 'msg' key.
+        """
+        self.__check_token(token)
+        
+        timezone_file_path = "/usr/share/zoneinfo/" + timezone
+        if os.path.isfile(timezone_file_path):
+            if os.path.exists(constants.get_timezone_file()):
+                os.remove(constants.get_timezone_file())
+            
+            os.symlink(timezone_file_path, constants.get_timezone_file())
+            return self.__success(msg='Timezone set successfully')
+        else:
+            return self.__error("Could not find timezone '" + timezone + "'")
+    
+    @cherrypy.expose
+    def get_timezone(self, token):
+        """ Get the timezone for the gateway.
+        
+        :returns: dict with 'timezone' key containing the timezone in 'Continent/City' format.
+        """
+        self.__check_token(token)
+        
+        path = os.path.realpath(constants.get_timezone_file())
+        if path.startswith("/usr/share/zoneinfo/"):
+            return self.__success(timezone=path[20:])
+        else:
+            return self.__error("Could not determine timezone.")
+        
+    
     def __wrap(self, func):
         """ Wrap a gateway_api function and catches a possible ValueError. 
         

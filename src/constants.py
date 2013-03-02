@@ -49,3 +49,8 @@ def get_update_script():
     """ Get the bash script that runs the update after the tgz file is extracted. """
     return "/opt/openmotics/Updater/updater.sh"
 
+
+def get_timezone_file():
+    """ Get the path of the timezone file. """
+    return "/opt/openmotics/etc/timezone"
+

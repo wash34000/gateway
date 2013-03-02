@@ -145,6 +145,10 @@ cat << EOF > /etc/dbus-1/system.d/com.openmotics.status.conf
 </busconfig>
 EOF
 
+rm /etc/localtime
+cp /usr/share/zoneinfo/UTC /opt/openmotics/etc/timezone
+ln -s /opt/openmotics/etc/timezone /etc/localtime
+
 mount -o remount,ro /
 
 echo OpenMotics installed successfully
