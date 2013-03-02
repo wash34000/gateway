@@ -824,3 +824,20 @@ class GatewayApi:
         """
         self.__power_communicator.stop_address_mode()
         return dict()
+
+    def get_power_peak_times(self):
+        """ Get the start and stop times of the peak time of the day.
+        
+        :returns: dict with key 'times' and value array containing 7 tuples (start time, stop time)
+        for Monday-Sunday.
+        """
+        return { 'times' : self.__power_controller.get_time_configuration() }
+
+    def set_power_peak_times(self, times):
+        """ Set the start and stop times of the peak time configuration.
+        
+        :param times: Array with 7 tuples (start time, stop time) for Monday-Sunday.
+        :returns: empty dict
+        """
+        self.__power_controller.set_time_configuration(times)
+        return dict()

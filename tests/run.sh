@@ -27,3 +27,6 @@ python -m power.power_controller_tests
 
 echo "Running power communicator tests"
 python -m power.power_communicator_tests
+
+echo "Running time keeper tests"
+python -m power.time_keeper_tests

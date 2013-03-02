@@ -19,6 +19,7 @@ from Queue import Queue, Empty
 import power_api
 from power_command import crc7
 from serial_utils import printable, CommunicationTimedOutException
+from time_keeper import TimeKeeper
 
 class PowerCommunicator:
     """ Uses a serial port to communicate with the power modules. """
@@ -42,11 +43,13 @@ class PowerCommunicator:
         self.__address_thread = None
         self.__power_controller = power_controller
         
+        self.__time_keeper = TimeKeeper(self, power_controller)
+        
         self.__verbose = verbose
     
     def start(self):
         """ Start the power communicator. """
-        pass
+        self.__time_keeper.start()
     
     def get_bytes_written(self):
         """ Get the number of bytes written to the power modules. """
@@ -94,12 +97,16 @@ class PowerCommunicator:
             bytes = cmd.create_input(address, cid, *data)
             
             self.__write_to_serial(bytes)
-            (header, data) = self.__read_from_serial()
             
-            if not cmd.check_header(header, address, cid):
-                raise Exception("Header did not match command")
-            
-            return cmd.read_output(data)
+            if address == power_api.BROADCAST_ADDRESS:
+                return None # No reply on broadcast messages !
+            else:
+                (header, data) = self.__read_from_serial()
+                
+                if not cmd.check_header(header, address, cid):
+                    raise Exception("Header did not match command")
+                
+                return cmd.read_output(data)
     
     def start_address_mode(self):
         """ Start address mode.
@@ -125,7 +132,8 @@ class PowerCommunicator:
         set_address = power_api.set_address()
         
         # AGT start
-        bytes = address_mode.create_input('E\xff', self.__get_cid(), power_api.ADDRESS_MODE)
+        bytes = address_mode.create_input(power_api.BROADCAST_ADDRESS, self.__get_cid(),
+                                          power_api.ADDRESS_MODE)
         self.__write_to_serial(bytes)
         
         # Wait for WAA and answer.
@@ -156,7 +164,8 @@ class PowerCommunicator:
                 LOGGER.warning("Got exception in address mode: " + str(e))
         
         # AGT stop
-        bytes = address_mode.create_input('E\xff', self.__get_cid(), power_api.NORMAL_MODE)
+        bytes = address_mode.create_input(power_api.BROADCAST_ADDRESS, self.__get_cid(),
+                                          power_api.NORMAL_MODE)
         self.__write_to_serial(bytes)
     
     def stop_address_mode(self):
