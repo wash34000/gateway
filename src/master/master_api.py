@@ -1,5 +1,6 @@
 '''
 Contains the definition of the Master Api.
+Requires Firmware 3.137.17 -- Caution on update: status api changed (used in update mechanism !)
 
 Created on Sep 9, 2012
 
@@ -79,13 +80,21 @@ def reset():
         [ Field.str("resp", 2), Field.padding(11), Field.lit("\r\n") ])
 
 def status():
-    """ Get the status of the gateway. """
+    """ Get the status of the master. """
     return MasterCommandSpec("ST", 
         [ Field.padding(13) ],
-        [ Field.lit('\x00\x00'), Field.byte('hours'), Field.byte('minutes'), Field.byte('year'),
-          Field.byte('month'), Field.byte('day'), Field.byte('weekday'), Field.byte('mode'),
-          Field.byte('f1'), Field.byte('f2'), Field.byte('f3'), Field.byte('h'),
-          Field.lit('\r\n') ])
+        [ Field.byte('seconds'), Field.byte('minutes'), Field.byte('hours'), Field.byte('weekday'),
+          Field.byte('day'), Field.byte('month'), Field.byte('year'), Field.lit('\x00'),
+          Field.byte('mode'), Field.byte('f1'), Field.byte('f2'), Field.byte('f3'),
+          Field.byte('h'), Field.lit('\r\n') ])
+
+def set_time():
+    """ Set the time on the master. """
+    return MasterCommandSpec("st",
+        [ Field.byte('sec'), Field.byte('min'), Field.byte('hours'), Field.byte('day'),
+          Field.byte('date'), Field.byte('month'), Field.byte('year'), Field.padding(6) ],
+        [ Field.byte('sec'), Field.byte('min'), Field.byte('hours'), Field.byte('day'),
+          Field.byte('date'), Field.byte('month'), Field.byte('year'), Field.padding(6) ])
 
 def eeprom_list():
     """ List all bytes from a certain eeprom bank """

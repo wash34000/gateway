@@ -483,6 +483,14 @@ class WebInterface:
         
         return self.__wrap(lambda: self.__gateway_api.set_power_peak_times(times_parsed)) 
             
+    @cherrypy.expose
+    def get_pulse_counters(self, token):
+        """ Get the id, name, linked input and count value of the pulse counters.
+        
+        :returns: dict with key 'counters' (value is array with dicts containing 'id', 'name', 'input' and 'count'.) 
+        """
+        self.__check_token(token)
+        return self.__success(counters=self.__gateway_api.get_pulse_counters())
     
     @cherrypy.expose
     def get_pulse_counter_values(self, token):

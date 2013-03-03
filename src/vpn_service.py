@@ -88,6 +88,7 @@ class Gateway:
     
     def __init__(self, host="127.0.0.1"):
         self.__host = host
+        self.__last_pulse_counters = None
 
     def __do_call(self, uri):
         """ Do a call to the webservice, returns a dict parsed from the json returned by the
@@ -163,7 +164,22 @@ class Gateway:
         if data == None or data['success'] == False:
             return None
         else:
-            return data['counters']
+            counters = data['counters']
+            
+            if self.__last_pulse_counters == None:
+                ret = [ 0 for i in range(0, 8) ]
+            else:
+                ret = [ self.__counter_diff(counters[i], self.__last_pulse_counters[i]) 
+                         for i in range(0, 8) ]
+            
+            self.__last_pulse_counters = counters
+            return ret
+    
+    def __counter_diff(self, current, previous):
+        """ Calculate the diff between two counter values. """
+        diff = current - previous
+        return diff if diff >= 0 else 65536 - previous + current
+
 
 class DataCollector:
     
