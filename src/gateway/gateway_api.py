@@ -751,6 +751,31 @@ class GatewayApi:
 
     ###### Pulse counter functions
     
+    def get_pulse_counters(self):
+        """ Get the id, name, linked input and count value of the pulse counters.
+        
+        :returns: array with dicts containing 'id', 'name', 'input' and 'count'. 
+        """
+        pulse_counters = []
+        
+        name_data = self.__master_communicator.do_command(master_api.eeprom_list(),
+                                                     { 'bank' : 195 })['data']
+        
+        input_data = self.__master_communicator.do_command(master_api.eeprom_list(),
+                                                           { 'bank' : 0 })['data']
+
+        value_data = self.__master_communicator.do_command(master_api.pulse_list())
+
+        for id in range(0, 8):
+            input = ord(input_data[160+id])
+            if input != 255:
+                pulse_counters.append({ 'id':id, 
+                                        'name': name_data[id*16:(id+1)*16].replace('\xff', ''),
+                                        'input': ord(input_data[160+id]),
+                                        'count': value_data['pv%d'%id] })
+        
+        return pulse_counters
+    
     def get_pulse_counter_values(self):
         """ Get the pulse counter values.
         
