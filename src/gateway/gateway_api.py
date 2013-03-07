@@ -10,6 +10,8 @@ import logging
 LOGGER = logging.getLogger("openmotics")
 
 import time as pytime
+import datetime
+import traceback
 from threading import Timer
 
 from serial_utils import CommunicationTimedOutException
@@ -39,7 +41,8 @@ class GatewayApi:
         self.__power_communicator = power_communicator
         self.__power_controller = power_controller
         
-        self.init_master()
+        self.init_master()    
+        self.__run_master_timer()
     
     def init_master(self):
         """ Initialize the master: disable the async RO messages, enable async OL messages. """
@@ -66,6 +69,37 @@ class GatewayApi:
             
         except CommunicationTimedOutException:
             LOGGER.error("Got CommunicationTimedOutException during gateway_api initialization.")
+    
+    def __run_master_timer(self):
+        """ Run the master timer, this sets the masters clock every day at 2:01am and 3:01 am. """
+        self.sync_master_time()
+        
+        # Calculate the time to sleep until the next sync.
+        now = datetime.datetime.now()
+        today = datetime.datetime(now.year, now.month, now.day)
+        if now.hour < 3: # Check again at 3:01 am
+            next_check = today + datetime.timedelta(0, 3600 * 3 + 60)
+        else:
+            next_check = today + datetime.timedelta(1, 3600 * 2 + 60)
+        
+        to_sleep = (next_check - now).seconds
+        if to_sleep <= 0:
+            to_sleep = 60 
+        
+        Timer(to_sleep, self.__run_master_timer).start()
+    
+    def sync_master_time(self):
+        """ Set the time on the master. """
+        LOGGER.info("Setting the time on the master.")
+        now = datetime.datetime.now()
+        try:
+            self.__master_communicator.do_command(master_api.set_time(), 
+                      {'sec': now.second, 'min': now.minute, 'hours': now.hour,
+                       'weekday': now.isoweekday(), 'day': now.day, 'month': now.month,
+                       'year': now.year % 100 })
+        except:
+            LOGGER.error("Got error while setting the time on the master.")
+            traceback.print_exc()
     
     ###### Maintenance functions
     

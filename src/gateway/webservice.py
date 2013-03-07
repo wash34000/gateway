@@ -573,6 +573,8 @@ class WebInterface:
                 os.remove(constants.get_timezone_file())
             
             os.symlink(timezone_file_path, constants.get_timezone_file())
+            
+            self.__gateway_api.sync_master_time()
             return self.__success(msg='Timezone set successfully')
         else:
             return self.__error("Could not find timezone '" + timezone + "'")
