@@ -20,7 +20,7 @@ import constants
 I2C_DEVICE = '/dev/i2c-2'
 IOCTL_I2C_SLAVE = 0x0703
 I2C_SLAVE_ADDRESS = None # Read from config file
-CODES = { 'uart4':64, 'uart5':128, 'vpn':16, 'stat1':0, 'stat2':32, 'alive':1, 'cloud':4 }
+CODES = { 'uart4':64, 'uart5':128, 'vpn':16, 'stat1':0, 'stat2':0, 'alive':1, 'cloud':4 }
 
 HOME = 75
 

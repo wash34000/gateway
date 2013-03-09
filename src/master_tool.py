@@ -40,7 +40,7 @@ def main():
     if args.port:
         print port
     elif args.sync or args.version or args.reset:
-        master_serial = Serial(port, 19200)
+        master_serial = Serial(port, 115200)
         master_communicator = MasterCommunicator(master_serial)
         master_communicator.start()
         gateway_api = GatewayApi(master_communicator, None, None)
