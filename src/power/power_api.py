@@ -1,6 +1,6 @@
 from power_command import PowerCommand
 
-BROADCAST_ADDRESS = u'E\xff'
+BROADCAST_ADDRESS = 255
 
 NIGHT = 0
 DAY = 1

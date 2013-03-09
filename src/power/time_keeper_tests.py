@@ -18,7 +18,7 @@ class TimeKeeperTest(unittest.TestCase):
 
     def test_is_day_time(self):
         """ Test for is_day_time. """
-        tk = TimeKeeper(None, PowerControllerDummy())
+        tk = TimeKeeper(None, PowerControllerDummy(), 10)
         
         self.assertFalse(tk.is_day_time(datetime(2013, 3, 4, 0, 0, 0))) # Monday 12AM
         self.assertTrue(tk.is_day_time(datetime(2013, 3, 4, 1, 0, 0))) # Monday 1AM

@@ -13,9 +13,10 @@ import power_api
 class TimeKeeper:
     """ The TimeKeeper keeps track of time and sets the day or night mode on the power modules. """
 
-    def __init__(self, power_communicator, power_controller):
+    def __init__(self, power_communicator, power_controller, period):
         self.__power_communicator = power_communicator
         self.__power_controller = power_controller
+        self.__period = period
         
         self.__in_day_mode = None # First time None, thereafter True or False
         
@@ -48,7 +49,7 @@ class TimeKeeper:
             else:
                 self.__set_night_mode()
             
-            time.sleep(60)
+            time.sleep(self.__period)
             
         self.__thread = None
     

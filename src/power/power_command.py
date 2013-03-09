@@ -28,7 +28,7 @@ def crc7(to_send):
 
 class PowerCommand:
     """ A PowerCommand is an command that can be send to a Power Module over RS485. The commands
-    look like this: 'STR' Address CID Mode(G/S) Type LEN Data CRC7 '\r\n'.
+    look like this: 'STR' 'E' Address CID Mode(G/S) Type LEN Data CRC7 '\r\n'.
     """
 
     def __init__(self, mode, type, input_format, output_format):
@@ -48,16 +48,13 @@ class PowerCommand:
     def create_input(self, address, cid, *data):
         """ Create an input string for the power module using this command and the provided fields.
 
-        :param address: 2 byte string, containing the address of the module (eg. E\x01)
+        :param address: 1 byte, the address of the module
         :param cid: 1 byte, communication id
         :param data: data to send to the power module
         """
-        if len(address) != 2:
-            raise Exception("Address should be 2 bytes")
-        
         data = struct.pack(self.input_format, *data)
         
-        command = str(address) + chr(cid) + str(self.mode) + str(self.type)
+        command = "E" + chr(address) + chr(cid) + str(self.mode) + str(self.type)
         command += chr(len(data)) + str(data)
         return "STR" + command + chr(crc7(command)) + "\r\n"
 
@@ -65,23 +62,19 @@ class PowerCommand:
         """ Create an output command from the power module using this command and the provided
         fields. --- Only used for testing !
         
-        :param address: communication id
-        :type address: 2 byte string, containing the address of the module (eg. E\x01)
+        :param address: 1 byte, the address of the module
         :param cid: dictionary with values for the fields
         :type fields: dict
         :rtype: string
         """
-        if len(address) != 2:
-            raise Exception("Address should be 2 bytes")
-        
         data = struct.pack(self.output_format, *data)
-        command = str(address) + chr(cid) + str(self.mode) + str(self.type)
+        command = "E" + chr(address) + chr(cid) + str(self.mode) + str(self.type)
         command += chr(len(data)) + str(data)
         return "STR" + command + chr(crc7(command)) + "\r\n"
 
     def check_header(self, header, address, cid):
         """ Check if the header matches the command, when an address and cid is provided. """
-        return header[:-1] == str(address) + chr(cid) + str(self.mode) + str(self.type)
+        return header[:-1] == "E" + chr(address) + chr(cid) + str(self.mode) + str(self.type)
 
     def check_header_partial(self, header):
         """ Check if the header matches the command, does not check address and cid. """

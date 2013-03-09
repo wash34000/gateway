@@ -827,7 +827,11 @@ class GatewayApi:
         :returns: List of dictionaries with the following keys: id', 'name', 'address', \
         'input0', 'input1', 'input2', 'input3', 'input4', 'input5', 'input6', 'input7'.
         """
-        return self.__power_controller.get_power_modules().values()
+        modules = self.__power_controller.get_power_modules().values();
+        def translate_address(module):
+            module['address'] = "E" + str(module['address'])
+            return module
+        return map(translate_address, modules)
     
     def set_power_modules(self, modules):
         """ Set information for the power modules.

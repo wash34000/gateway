@@ -24,7 +24,7 @@ class PowerController:
     def __create_tables(self):
         """ Create the power tables. """
         self.__cursor.execute("CREATE TABLE power_modules (id INTEGER PRIMARY KEY, " 
-                              "name TEXT default '', address TEXT UNIQUE, "
+                              "name TEXT default '', address INTEGER, "
                               "input0 TEXT default '', input1 TEXT default '', "
                               "input2 TEXT default '', input3 TEXT default '', "
                               "input4 TEXT default '', input5 TEXT default '', "
@@ -86,9 +86,8 @@ class PowerController:
         """ Get a free address for a power module. """
         max_address = 0
         for row in self.__cursor.execute("SELECT address FROM power_modules;"):
-            address_byte = ord(row[0][1])
-            max_address = max(max_address, address_byte)
-        return 'E' + chr(max_address + 1)
+            max_address = max(max_address, row[0])
+        return max_address + 1 if max_address < 255 else 1
     
     def get_time_configuration(self):
         """ Get the time configuration for the low and high periods.

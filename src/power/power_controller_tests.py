@@ -33,37 +33,37 @@ class PowerControllerTest(unittest.TestCase):
         """ Test an empty database. """
         power_controller = self.__get_controller()
         self.assertEquals({}, power_controller.get_power_modules())
-        self.assertEquals("E\x01", power_controller.get_free_address())
+        self.assertEquals(1, power_controller.get_free_address())
         
-        power_controller.register_power_module("E\x01")
+        power_controller.register_power_module(1)
         
         self.assertEquals({1: {'input2': u'', 'input3': u'', 'input0': u'', 'input1': u'',
-                               'input6': u'', 'input4': u'', 'input5': u'', 'address': u'E\x01',
+                               'input6': u'', 'input4': u'', 'input5': u'', 'address': 1,
                                'id': 1, 'input7': u'', 'name': u''}},
                           power_controller.get_power_modules())
         
-        self.assertEquals("E\x02", power_controller.get_free_address())
+        self.assertEquals(2, power_controller.get_free_address())
         
-        power_controller.register_power_module("E\x05")
+        power_controller.register_power_module(5)
         self.assertEquals({1: {'input2': u'', 'input3': u'', 'input0': u'', 'input1': u'',
-                               'input6': u'', 'input4': u'', 'input5': u'', 'address': u'E\x01',
+                               'input6': u'', 'input4': u'', 'input5': u'', 'address': 1,
                                'id': 1, 'input7': u'', 'name': u''},
                            2: {'input2': u'', 'input3': u'', 'input0': u'', 'input1': u'',
-                               'input6': u'', 'input4': u'', 'input5': u'', 'address': u'E\x05',
+                               'input6': u'', 'input4': u'', 'input5': u'', 'address': 5,
                                'id': 2, 'input7': u'', 'name': u''}},
                           power_controller.get_power_modules())
         
-        self.assertEquals("E\x06", power_controller.get_free_address())
+        self.assertEquals(6, power_controller.get_free_address())
 
     def test_update(self):
         """ Test for updating the power module information. """
         power_controller = self.__get_controller()
         self.assertEquals({}, power_controller.get_power_modules())
         
-        power_controller.register_power_module("E\x01")
+        power_controller.register_power_module(1)
         
         self.assertEquals({1: {'input2': u'', 'input3': u'', 'input0': u'', 'input1': u'',
-                               'input6': u'', 'input4': u'', 'input5': u'', 'address': u'E\x01',
+                               'input6': u'', 'input4': u'', 'input5': u'', 'address': 1,
                                'id': 1, 'input7': u'', 'name': u''}},
                           power_controller.get_power_modules())
         
@@ -72,7 +72,7 @@ class PowerControllerTest(unittest.TestCase):
                                                 'input4':'in4', 'input5':'in5', 'input6':'in6',
                                                 'input7':'in7'})        
         
-        self.assertEquals({1: {'id': 1, 'address': 'E\x01', 'name':'module1', 'input0':'in0',
+        self.assertEquals({1: {'id': 1, 'address': 1, 'name':'module1', 'input0':'in0',
                                'input1':'in1', 'input2':'in2', 'input3':'in3', 'input4':'in4',
                                'input5':'in5', 'input6':'in6', 'input7':'in7' } },
                           power_controller.get_power_modules())
@@ -81,25 +81,25 @@ class PowerControllerTest(unittest.TestCase):
         """ Test for module_exists. """
         power_controller = self.__get_controller()
         
-        self.assertFalse(power_controller.module_exists("E\x01"))
+        self.assertFalse(power_controller.module_exists(1))
         
-        power_controller.register_power_module("E\x01")
+        power_controller.register_power_module(1)
         
-        self.assertTrue(power_controller.module_exists("E\x01"))
-        self.assertFalse(power_controller.module_exists("E\x02"))
+        self.assertTrue(power_controller.module_exists(1))
+        self.assertFalse(power_controller.module_exists(2))
     
     def test_readdress_power_module(self):
         """ Test for readdress_power_module. """
         power_controller = self.__get_controller()
-        power_controller.register_power_module("E\x01")
+        power_controller.register_power_module(1)
 
-        power_controller.readdress_power_module("E\x01", "E\x02")
+        power_controller.readdress_power_module(1, 2)
         
-        self.assertFalse(power_controller.module_exists("E\x01"))
-        self.assertTrue(power_controller.module_exists("E\x02"))
+        self.assertFalse(power_controller.module_exists(1))
+        self.assertTrue(power_controller.module_exists(2))
         
         self.assertEquals({1: {'input2': u'', 'input3': u'', 'input0': u'', 'input1': u'',
-                               'input6': u'', 'input4': u'', 'input5': u'', 'address': u'E\x02',
+                               'input6': u'', 'input4': u'', 'input5': u'', 'address': 2,
                                'id': 1, 'input7': u'', 'name': u''}},
                           power_controller.get_power_modules())
     
