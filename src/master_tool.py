@@ -13,8 +13,10 @@ from ConfigParser import ConfigParser
 from serial import Serial
 
 import constants
-from gateway.gateway_api import GatewayApi
+
+import master.master_api as master_api
 from master.master_communicator import MasterCommunicator
+
 from serial_utils import CommunicationTimedOutException
 
 
@@ -43,12 +45,10 @@ def main():
         master_serial = Serial(port, 115200)
         master_communicator = MasterCommunicator(master_serial)
         master_communicator.start()
-        gateway_api = GatewayApi(master_communicator, None, None)
-        time.sleep(10) # Wait 10 seconds for communictor initialization
         
         if args.sync:
             try:
-                _ = gateway_api.get_status()
+                master_communicator.do_command(master_api.status())
             except CommunicationTimedOutException:
                 print "Failed"
                 sys.exit(1)
@@ -56,10 +56,10 @@ def main():
                 print "Done"
                 sys.exit(0)
         elif args.version:
-            status = gateway_api.get_status()
-            print status['version'] + " H" + str(status['hw_version'])
+            status = master_communicator.do_command(master_api.status())
+            print "%d.%d.%d H%d" % (status['f1'], status['f2'], status['f3'], status['h'])
         elif args.reset:
-            gateway_api.master_reset()
+            master_communicator.do_command(master_api.reset())
             print "Reset !"
     else:
         parser.print_help()
