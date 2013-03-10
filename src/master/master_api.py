@@ -127,7 +127,7 @@ def read_output():
         [ Field.byte('output_nr'), Field.str('type', 1), Field.byte('light'), Field.int('timer'),
           Field.int('ctimer'), Field.byte('status'), Field.dimmer('dimmer'),
           Field.byte('controller_out'), Field.byte('max_power'), Field.byte('floor_level'),
-          Field.bytes('menu_position', 3), Field.str('name', 16), Field.bytes('crc', 3),
+          Field.bytes('menu_position', 3), Field.str('name', 16), Field.crc(),
           Field.lit('\r\n\r\n') ])
 
 def read_input():
@@ -135,7 +135,7 @@ def read_input():
     return MasterCommandSpec("ri", 
         [ Field.byte("input_nr"), Field.padding(12) ],
         [ Field.byte('input_nr'), Field.byte('output_action'), Field.bytes('output_list', 30),
-          Field.str('input_name', 8), Field.bytes('crc', 3), Field.lit('\r\n\r\n') ])
+          Field.str('input_name', 8), Field.crc(), Field.lit('\r\n\r\n') ])
 
 def temperature_list():
     """ Read the temperature thermostat sensor list for a series of 12 sensors """
@@ -181,7 +181,7 @@ def read_setpoint():
           Field.byte('fri_stop_d1'), Field.byte('fri_start_d2'), Field.byte('fri_stop_d2'),
           Field.byte('sat_start_d1'), Field.byte('sat_stop_d1'), Field.byte('sat_start_d2'),
           Field.byte('sat_stop_d2'), Field.byte('sun_start_d1'), Field.byte('sun_stop_d1'),
-          Field.byte('sun_start_d2'), Field.byte('sun_stop_d2'), Field.bytes('crc', 3),
+          Field.byte('sun_start_d2'), Field.byte('sun_stop_d2'), Field.crc(),
           Field.lit('\r\n\r\n') ])        
 
 def write_setpoint():
@@ -210,7 +210,7 @@ def thermostat_list():
           Field.svt('setp12'), Field.svt('setp13'), Field.svt('setp14'), Field.svt('setp15'),
           Field.svt('setp16'), Field.svt('setp17'), Field.svt('setp18'), Field.svt('setp19'),
           Field.svt('setp20'), Field.svt('setp21'), Field.svt('setp22'), Field.svt('setp23'),
-          Field.bytes('crc', 3), Field.lit('\r\n') ])
+          Field.crc(), Field.lit('\r\n') ])
 
 def sensor_humidity_list():
     """ Reads the list humidity values of the 32 (0-31) sensors. """
@@ -224,7 +224,7 @@ def sensor_humidity_list():
           Field.byte('hum20'), Field.byte('hum21'), Field.byte('hum22'), Field.byte('hum23'),
           Field.byte('hum24'), Field.byte('hum25'), Field.byte('hum26'), Field.byte('hum27'),
           Field.byte('hum28'), Field.byte('hum29'), Field.byte('hum30'), Field.byte('hum31'),
-          Field.bytes('crc', 3), Field.lit('\r\n') ])
+          Field.crc(), Field.lit('\r\n') ])
 
 def sensor_temperature_list():
     """ Reads the list temperature values of the 32 (0-31) sensors. """
@@ -238,7 +238,7 @@ def sensor_temperature_list():
           Field.svt('tmp20'), Field.svt('tmp21'), Field.svt('tmp22'), Field.svt('tmp23'),
           Field.svt('tmp24'), Field.svt('tmp25'), Field.svt('tmp26'), Field.svt('tmp27'),
           Field.svt('tmp28'), Field.svt('tmp29'), Field.svt('tmp30'), Field.svt('tmp31'),
-          Field.bytes('crc', 3), Field.lit('\r\n') ])
+          Field.crc(), Field.lit('\r\n') ])
 
 def sensor_brightness_list():
     """ Reads the list brightness values of the 32 (0-31) sensors. """
@@ -252,7 +252,7 @@ def sensor_brightness_list():
           Field.byte('bri20'), Field.byte('bri21'), Field.byte('bri22'), Field.byte('bri23'),
           Field.byte('bri24'), Field.byte('bri25'), Field.byte('bri26'), Field.byte('bri27'),
           Field.byte('bri28'), Field.byte('bri29'), Field.byte('bri30'), Field.byte('bri31'),
-          Field.bytes('crc', 3), Field.lit('\r\n') ]) 
+          Field.crc(), Field.lit('\r\n') ]) 
 
 def pulse_list():
     """ List the pulse counter values. """

@@ -5,6 +5,8 @@ Created on Sep 9, 2012
 
 @author: fryckbos
 """
+import math
+
 import master_api
 from serial_utils import printable
 
@@ -108,7 +110,14 @@ class MasterCommandSpec:
                 
         partial_result.complete = True
         return (index - from_pending, partial_result, True)
+    
+    def output_has_crc(self):
+        """ Check if the MasterCommandSpec output contains a crc field. """
+        for field in self.output_fields:
+            if Field.is_crc(field):
+                return True
         
+        return False
 
 class Result:
     """ Result of a communication with the master. Can be accessed as a dict,
@@ -179,6 +188,17 @@ class Field:
     def dimmer(name):
         """ Dimmer type (byte in [0, 63] converted to integer in [0, 100]. """
         return Field(name, DimmerFieldType())
+    
+    @staticmethod
+    def crc():
+        """ Create a crc field type (3-byte string) """
+        return Field.bytes('crc', 3)
+    
+    @staticmethod
+    def is_crc(field):
+        """ Is the field a crc field ? """
+        return isinstance(field, Field) and field.name == 'crc' \
+                and isinstance(field.field_type, BytesFieldType) and field.field_type.length == 3
     
     def __init__(self, name, field_type):
         """ Create a MasterComandField.
@@ -311,7 +331,7 @@ class BytesFieldType:
     
     def encode(self, byte_arr):
         """ Generates a string of bytes from the byte array. """
-        return [ chr(x) for x in byte_arr ]
+        return ''.join([ chr(x) for x in byte_arr ])
     
     def decode(self, byte_str):
         """ Generates an array of bytes. """
@@ -394,15 +414,12 @@ class DimmerFieldType:
     
     def encode(self, field_value):
         """ Encode a dimmer value. """
-        raise Exception("DimmerFieldType is one way !")
+        return chr(int(math.ceil(field_value * 6.3 / 10.0)))
     
     def decode(self, byte_str):
         """ Decode a byte [0, 63] to an integer [0, 100]. """
         dimmer_value = ord(byte_str[0])
-        if dimmer_value == 63:
-            return 100
-        else:
-            return dimmer_value * 10 / 6
+        return int(dimmer_value * 10.0 / 6.3)
     
     def get_min_decode_bytes(self):
         """ The dimmer type is always 1 byte. """

@@ -8,7 +8,7 @@ Created on Sep 9, 2012
 import unittest
 
 import master_api
-from master_command import MasterCommandSpec, Field, OutputFieldType
+from master_command import MasterCommandSpec, Field, OutputFieldType, DimmerFieldType
 
 class MasterCommandSpecTest(unittest.TestCase):
     """ Tests for :class`MasterCommandSpec` """
@@ -127,11 +127,28 @@ class MasterCommandSpecTest(unittest.TestCase):
             pass
     
     def test_svt(self):
-        """ Test for SvtFieldType.encode and SvtFieldType.decode"""
+        """ Test for SvtFieldType.encode and SvtFieldType.decode """
         svt_field_type = Field.svt("test")
         self.assertEquals('\x42', svt_field_type.encode(master_api.Svt.temp(1.0)))
         self.assertEquals(64.0, svt_field_type.decode(svt_field_type.encode(
                                                     master_api.Svt.temp(64.0))).get_temperature())
+    
+    def test_dimmer(self):
+        """ Test for DimmerFieldType.encode and DimmerFieldType.decode """
+        dimmer_type = DimmerFieldType()
+        for value in range(0, 64):
+            val = chr(value)
+            self.assertEquals(dimmer_type.encode(dimmer_type.decode(val)), val)
+    
+    def test_crc(self):
+        """ Test crc and is_crc functions. """
+        field = Field.crc()
+        
+        self.assertEquals('crc', field.name)
+        self.assertTrue(Field.is_crc(field))
+        
+        field = Field.padding(1)
+        self.assertFalse(Field.is_crc(field))
     
     def test_create_input(self):
         """ Test for MasterCommandSpec.create_input """
@@ -216,7 +233,7 @@ class MasterCommandSpecTest(unittest.TestCase):
         """ Test for MasterCommandSpec.consume_output with a variable length output field. """
         def dim(byte_value):
             """ Convert a dimmer byte value to the api value. """
-            return byte_value * 10 / 6
+            return int(byte_value * 10.0 / 6.3)
         
         basic_action = MasterCommandSpec("OL", [],
                                 [Field("outputs", OutputFieldType()), Field.lit("\r\n\r\n")])
@@ -257,6 +274,11 @@ class MasterCommandSpecTest(unittest.TestCase):
         self.assertEquals((2, True), (bytes_consumed, done))
         
         self.assertEquals([(5, dim(16)), (1, dim(2)), (3, dim(4))], result["outputs"])
+
+    def test_output_has_crc(self):
+        """ Test for MasterCommandSpec.output_has_crc. """
+        self.assertFalse(master_api.basic_action().output_has_crc())
+        self.assertTrue(master_api.read_output().output_has_crc())
         
     
 if __name__ == "__main__":
