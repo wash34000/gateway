@@ -846,6 +846,13 @@ class GatewayApi:
         self.__power_communicator.stop_address_mode()
         return dict()
 
+    def in_power_address_mode(self):
+        """ Check if the power modules are in address mode
+        
+        :returns: dict with key 'address_mode' and value True or False.
+        """
+        return { 'address_mode' : self.__power_communicator.in_address_mode() }
+
     def get_power_peak_times(self):
         """ Get the start and stop times of the peak time of the day.
         

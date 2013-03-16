@@ -455,6 +455,15 @@ class WebInterface:
         return self.__wrap(self.__gateway_api.stop_power_address_mode)
     
     @cherrypy.expose
+    def in_power_address_mode(self, token):
+        """ Check if the power modules are in address mode
+        
+        :returns: dict with key 'address_mode' and value True or False.
+        """
+        self.__check_token(token)
+        return self.__wrap(self.__gateway_api.in_power_address_mode)
+    
+    @cherrypy.expose
     def get_power_peak_times(self, token):
         """ Get the start and stop times of the peak time of the day.
         
