@@ -126,9 +126,9 @@ class PowerCommunicatorTest(unittest.TestCase):
         """ Test the address mode. """
         serial_mock = SerialMock(
             [ sin(power_api.set_addressmode().create_input(power_api.BROADCAST_ADDRESS, 1, power_api.ADDRESS_MODE)),
-              sout(power_api.want_an_address().create_input(0, 0)),
+              sout(power_api.want_an_address().create_output(0, 0)),
               sin(power_api.set_address().create_input(0, 0, 1)),
-              sout(power_api.want_an_address().create_input(0, 0)),
+              sout(power_api.want_an_address().create_output(0, 0)),
               sin(power_api.set_address().create_input(0, 0, 2)),
               sout(''), ## Timeout read after 1 second
               sin(power_api.set_addressmode().create_input(power_api.BROADCAST_ADDRESS, 2, power_api.NORMAL_MODE))

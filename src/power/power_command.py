@@ -70,7 +70,7 @@ class PowerCommand:
         data = struct.pack(self.output_format, *data)
         command = "E" + chr(address) + chr(cid) + str(self.mode) + str(self.type)
         command += chr(len(data)) + str(data)
-        return "STR" + command + chr(crc7(command)) + "\r\n"
+        return "RTR" + command + chr(crc7(command)) + "\r\n"
 
     def check_header(self, header, address, cid):
         """ Check if the header matches the command, when an address and cid is provided. """

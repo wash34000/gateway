@@ -211,8 +211,8 @@ class PowerCommunicator:
                 print "%.3f read from power: %s" % (time.time(), printable(bytes))
 
             for byte in bytes:
-                if phase == 0:         ## Skip non 'S' bytes
-                    if byte == 'S':
+                if phase == 0:         ## Skip non 'R' bytes
+                    if byte == 'R':
                         phase = 1
                     else:
                         phase = 0

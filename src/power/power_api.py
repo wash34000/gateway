@@ -45,7 +45,7 @@ def get_normal_energy():
     return PowerCommand('G', 'ENO', '', '8L')
 
 def get_day_energy():
-    """ Get the energy measured durig the day by the power module (8x in Wh) """
+    """ Get the energy measured during the day by the power module (8x in Wh) """
     return PowerCommand('G', 'EDA', '', '8L')
 
 def get_night_energy():
@@ -83,3 +83,11 @@ def want_an_address():
 def set_address():
     """ Reply on want_an_address, setting a new address for the power module. """
     return PowerCommand('S', 'SAD', 'b', 'b')
+
+def get_sensor_types():
+    """ Get the sensor types used on the power modules (8x sensor type) """
+    return PowerCommand('G', 'CDU', '', '8b')
+
+def set_sensor_types():
+    """ Set the sensor types used on the power modules (8x sensor type) """
+    return PowerCommand('G', 'CDU', '8b', '8b')
