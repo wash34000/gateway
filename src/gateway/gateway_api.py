@@ -12,6 +12,7 @@ LOGGER = logging.getLogger("openmotics")
 import time as pytime
 import datetime
 import traceback
+import math
 from threading import Timer
 
 from serial_utils import CommunicationTimedOutException
@@ -22,6 +23,10 @@ from master.thermostats import ThermostatStatus
 from master.master_communicator import BackgroundConsumer
 
 import power.power_api as power_api
+
+def checkNaN(number):
+    """ Convert NaN to 0. """
+    return 0.0 if math.isnan(number) else number
 
 class GatewayApi:
     """ The GatewayApi combines master_api functions into high level functions. """
@@ -783,7 +788,8 @@ class GatewayApi:
         """ Get information on the power modules.
         
         :returns: List of dictionaries with the following keys: id', 'name', 'address', \
-        'input0', 'input1', 'input2', 'input3', 'input4', 'input5', 'input6', 'input7'.
+        'input0', 'input1', 'input2', 'input3', 'input4', 'input5', 'input6', 'input7', 'sensor0', \
+        'sensor1', 'sensor2', 'sensor3', 'sensor4', 'sensor5', 'sensor6', 'sensor7'.
         """
         modules = self.__power_controller.get_power_modules().values();
         def translate_address(module):
@@ -794,18 +800,27 @@ class GatewayApi:
     def set_power_modules(self, modules):
         """ Set information for the power modules.
         
-        :param modules: list of dicts with keys: 'id', 'name', 'input0', 'input1', 'input2', \
-        'input3', 'input4', 'input5', 'input6', 'input7'.
+        :param modules: list of dicts with keys: 'id', 'name', 'input0', 'input1', \
+        'input2', 'input3', 'input4', 'input5', 'input6', 'input7', 'sensor0', 'sensor1', \
+        'sensor2', 'sensor3', 'sensor4', 'sensor5', 'sensor6', 'sensor7'.
         :returns: empty dict.
         """
         for module in modules:
-            self.__power_controller.update_power_modules(module)
+            self.__power_controller.update_power_module(module)
+            addr = self.__power_controller.get_address(module['id'])
+            
+            sensors = []
+            for i in range(8):
+                sensors.append(module["sensor%d"%i])
+            
+            self.__power_communicator.do_command(addr, power_api.set_sensor_types(), sensors)
+            
         return dict()
     
     def get_realtime_power(self):
         """ Get the realtime power measurement values.
         
-        :returns: dict with the module id as key and the follow array as value: \
+        :returns: dict with the module id as key and the following array as value: \
         [voltage, frequency, current, power].
         """
         output = dict()
@@ -822,9 +837,39 @@ class GatewayApi:
                 
                 out = []
                 for i in range(0, 8):
-                    out.append([ volt, freq, current[i], power[i] ])
+                    out.append([ checkNaN(volt), checkNaN(freq), checkNaN(current[i]),
+                                 checkNaN(power[i]) ])
                 
                 output[str(id)] = out
+                
+                pytime.sleep(0.1)
+            except CommunicationTimedOutException:
+                output[str(id)] = None
+        
+        return output
+    
+    def get_total_energy(self):
+        """ Get the total energy (kWh) consumed by the power modules.
+        
+        :returns: dict with the module id as key and the following array as value: [day, night]. 
+        """
+        output = dict()
+        
+        modules = self.__power_controller.get_power_modules()
+        for id in sorted(modules.keys()):
+            addr = modules[id]['address']
+            
+            try:
+                day = self.__power_communicator.do_command(addr, power_api.get_day_energy())
+                night = self.__power_communicator.do_command(addr, power_api.get_night_energy())
+                
+                out = []
+                for i in range(0, 8):
+                    out.append([ checkNaN(day[i]), checkNaN(night[i]) ])
+                
+                output[str(id)] = out
+                
+                pytime.sleep(0.1)
             except CommunicationTimedOutException:
                 output[str(id)] = None
         

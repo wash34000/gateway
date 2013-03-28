@@ -158,6 +158,15 @@ class Gateway:
             del data['success']
             return data
     
+    def get_total_energy(self):
+        """ Get the total energy. """
+        data = self.__do_call("get_total_energy?token=None")
+        if data == None or data['success'] == False:
+            return None
+        else:
+            del data['success']
+            return data
+    
     def get_pulse_counter_values(self):
         """ Get the pulse counter values. """
         data = self.__do_call("get_pulse_counter_values?token=None")
@@ -224,7 +233,8 @@ def main():
     cloud = Cloud(check_url, physical_frontend)
     gateway = Gateway()
 
-    collectors = [ DataCollector('thermostats', gateway.get_thermostats, 60),
+    collectors = [ DataCollector('energy', gateway.get_total_energy, 300),
+                   DataCollector('thermostats', gateway.get_thermostats, 60),
                    DataCollector('pulses', gateway.get_pulse_counter_values, 60),
                    DataCollector('outputs', gateway.get_enabled_outputs),
                    DataCollector('power', gateway.get_realtime_power),

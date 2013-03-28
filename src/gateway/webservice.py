@@ -408,23 +408,24 @@ class WebInterface:
     def get_power_modules(self, token):
         """ Get information on the power modules.
         
-        :returns: dict with key 'modules' (List of dictionaries with the following keys: id', \
-        'name', 'address', 'input0', 'input1', 'input2', 'input3', 'input4', 'input5', \
-        'input6', 'input7'.
+        :returns: List of dictionaries with the following keys: id', 'name', 'address', \
+        'input0', 'input1', 'input2', 'input3', 'input4', 'input5', 'input6', 'input7', 'sensor0', \
+        'sensor1', 'sensor2', 'sensor3', 'sensor4', 'sensor5', 'sensor6', 'sensor7'.
         """
         self.__check_token(token)
         return self.__success(modules=self.__gateway_api.get_power_modules())
     
     @cherrypy.expose
     def set_power_modules(self, token, modules):
-        """ Set information (module and input names) for the power modules.
+        """ Set information for the power modules.
         
-        :param modules: list of dicts with keys: 'id', 'name', 'input0', 'input1', 'input2', \
-        'input3', 'input4', 'input5', 'input6', 'input7'.
+        :param modules: list of dicts with keys: 'id', 'name', 'input0', 'input1', \
+        'input2', 'input3', 'input4', 'input5', 'input6', 'input7', 'sensor0', 'sensor1', \
+        'sensor2', 'sensor3', 'sensor4', 'sensor5', 'sensor6', 'sensor7'.
         :returns: empty dict.
         """
         self.__check_token(token)
-        return self.__wrap(lambda: self.__gateway_api.set_power_modules(modules))
+        return self.__wrap(lambda: self.__gateway_api.set_power_modules(json.loads(modules)))
     
     @cherrypy.expose
     def get_realtime_power(self, token):
@@ -435,6 +436,15 @@ class WebInterface:
         """
         self.__check_token(token)
         return self.__wrap(self.__gateway_api.get_realtime_power)
+    
+    @cherrypy.expose
+    def get_total_energy(self, token):
+        """ Get the total energy (kWh) consumed by the power modules.
+        
+        :returns: dict with the module id as key and the following array as value: [day, night]. 
+        """
+        self.__check_token(token)
+        return self.__wrap(self.__gateway_api.get_total_energy)
     
     @cherrypy.expose
     def start_power_address_mode(self, token):
@@ -612,6 +622,9 @@ class WebInterface:
             ret = func()
         except ValueError:
             return self.__error(traceback.format_exc())
+        except:
+            traceback.print_exc()
+            raise
         else:
             return self.__success(**ret)
 
