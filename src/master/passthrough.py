@@ -11,15 +11,17 @@ LOGGER = logging.getLogger("openmotics")
 
 import threading
 from master_communicator import InMaintenanceModeException
+from master_command import printable
 
 class PassthroughService:
     """ The Passthrough service creates two threads: one for reading from and one for writing
     to the master.
     """
     
-    def __init__(self, master_communicator, passthrough_serial):
+    def __init__(self, master_communicator, passthrough_serial, verbose=False):
         self.__master_communicator = master_communicator
         self.__passthrough_serial = passthrough_serial
+        self.__verbose = verbose
         
         self.__stopped = False
         self.__reader_thread = None
@@ -43,6 +45,8 @@ class PassthroughService:
         while not self.__stopped:
             data = self.__master_communicator.get_passthrough_data()
             if data and len(data) > 0:
+                if self.__verbose:
+                    LOGGER.info("Data for passthrough: %s" % printable(data))
                 self.__passthrough_serial.write(data)
     
     def __writer(self):
@@ -54,6 +58,8 @@ class PassthroughService:
                 if num_bytes > 0:
                     data += self.__passthrough_serial.read(num_bytes)
                 try:
+                    if self.__verbose:
+                        LOGGER.info("Data from passthrough: %s" % printable(data))
                     self.__master_communicator.send_passthrough_data(data)
                 except InMaintenanceModeException:
                     LOGGER.info("Dropped passthrough communication in maintenance mode.")
