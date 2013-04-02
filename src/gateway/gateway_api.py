@@ -829,22 +829,17 @@ class GatewayApi:
         for id in sorted(modules.keys()):
             addr = modules[id]['address']
             
-            try:
-                volt = self.__power_communicator.do_command(addr, power_api.get_voltage())[0]
-                freq = self.__power_communicator.do_command(addr, power_api.get_frequency())[0]
-                current = self.__power_communicator.do_command(addr, power_api.get_current())
-                power = self.__power_communicator.do_command(addr, power_api.get_power())
-                
-                out = []
-                for i in range(0, 8):
-                    out.append([ checkNaN(volt), checkNaN(freq), checkNaN(current[i]),
-                                 checkNaN(power[i]) ])
-                
-                output[str(id)] = out
-                
-                pytime.sleep(0.1)
-            except CommunicationTimedOutException:
-                output[str(id)] = None
+            volt = self.__power_communicator.do_command(addr, power_api.get_voltage())[0]
+            freq = self.__power_communicator.do_command(addr, power_api.get_frequency())[0]
+            current = self.__power_communicator.do_command(addr, power_api.get_current())
+            power = self.__power_communicator.do_command(addr, power_api.get_power())
+            
+            out = []
+            for i in range(0, 8):
+                out.append([ checkNaN(volt), checkNaN(freq), checkNaN(current[i]),
+                             checkNaN(power[i]) ])
+            
+            output[str(id)] = out
         
         return output
     
@@ -859,19 +854,14 @@ class GatewayApi:
         for id in sorted(modules.keys()):
             addr = modules[id]['address']
             
-            try:
-                day = self.__power_communicator.do_command(addr, power_api.get_day_energy())
-                night = self.__power_communicator.do_command(addr, power_api.get_night_energy())
-                
-                out = []
-                for i in range(0, 8):
-                    out.append([ checkNaN(day[i]), checkNaN(night[i]) ])
-                
-                output[str(id)] = out
-                
-                pytime.sleep(0.1)
-            except CommunicationTimedOutException:
-                output[str(id)] = None
+            day = self.__power_communicator.do_command(addr, power_api.get_day_energy())
+            night = self.__power_communicator.do_command(addr, power_api.get_night_energy())
+            
+            out = []
+            for i in range(0, 8):
+                out.append([ checkNaN(day[i]), checkNaN(night[i]) ])
+            
+            output[str(id)] = out
         
         return output
     

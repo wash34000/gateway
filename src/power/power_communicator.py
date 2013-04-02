@@ -94,7 +94,7 @@ class PowerCommunicator:
         if self.__address_mode:
             raise InAddressModeException()
         
-        with self.__serial_lock:
+        def do_once(address, cmd, *data):
             cid = self.__get_cid()
             bytes = cmd.create_input(address, cid, *data)
             
@@ -109,6 +109,15 @@ class PowerCommunicator:
                     raise Exception("Header did not match command")
                 
                 return cmd.read_output(data)
+        
+        with self.__serial_lock:
+            try:
+                return do_once(address, cmd, *data)
+            except:
+                # Communication timed out, or header did not match, try again in 100 ms.
+                print "First communication timed out !"
+                time.sleep(0.1)
+                return do_once(address, cmd, *data)
     
     def start_address_mode(self):
         """ Start address mode.

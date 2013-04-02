@@ -15,7 +15,10 @@ class CommunicationTimedOutException(Exception):
 
 def printable(string):
     """ Converts non-printable characters into hex notation """
-    return "".join([c if ord(c) >= 32 and ord(c) <= 126 else '\\x%02d' % ord(c) for c in string])
+    
+    hex = " ".join(['%3d' % ord(c) for c in string])
+    readable = "".join([c if ord(c) > 32 and ord(c) <= 126 else '.' for c in string])
+    return hex + "    " + readable 
 
 class RS485:
     """ Replicates the pyserial interface. """
