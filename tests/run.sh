@@ -13,6 +13,9 @@ python -m master.master_communicator_tests
 echo "Running outputs tests"
 python -m master.outputs_tests
 
+echo "Running inputs tests"
+python -m master.inputs_tests
+
 echo "Running passthrough tests"
 python -m master.passthrough_tests
 

@@ -19,6 +19,7 @@ from serial_utils import CommunicationTimedOutException
 
 import master.master_api as master_api
 from master.outputs import OutputStatus
+from master.inputs import InputStatus
 from master.thermostats import ThermostatStatus
 from master.master_communicator import BackgroundConsumer
 
@@ -40,6 +41,10 @@ class GatewayApi:
         self.__output_status = None
         self.__master_communicator.register_consumer(
                     BackgroundConsumer(master_api.output_list(), 0, self.__update_outputs))
+        
+        self.__input_status = InputStatus()
+        self.__master_communicator.register_consumer(
+                    BackgroundConsumer(master_api.input_list(), 0, self.__update_inputs))
         
         self.__thermostat_status = None
         
@@ -68,7 +73,13 @@ class GatewayApi:
                 self.__master_communicator.do_command(master_api.write_eeprom(),
                     { "bank" : 0, "address": 18, "data": chr(0) })
                 write = True
-                
+            
+            if eeprom_data[20] != chr(0):
+                LOGGER.info("Enabling async IL messages.")
+                self.__master_communicator.do_command(master_api.write_eeprom(),
+                    { "bank" : 0, "address": 20, "data": chr(0) })
+                write = True
+            
             if write:
                 self.__master_communicator.do_command(master_api.activate_eeprom(), { 'eep' : 0 })
             
@@ -378,6 +389,20 @@ class GatewayApi:
                     { "action_type" : master_api.BA_LIGHTS_ON_FLOOR, "action_number" : floor })
         
         return dict()
+    
+    ###### Input functions
+    
+    def __update_inputs(self, api_data):
+        """ Update the InputStatus with data from an IL message. """
+        self.__input_status.add_data((api_data['input'], api_data['output']))
+    
+    def get_last_inputs(self):
+        """ Get the 5 last pressed inputs during the last 5 minutes. 
+        
+        :returns: a list of tuples (input, output).
+        """
+        print "data = " + str(self.__input_status.get_status())
+        return self.__input_status.get_status()
     
     ###### Thermostat functions
     
@@ -811,9 +836,9 @@ class GatewayApi:
             
             sensors = []
             for i in range(8):
-                sensors.append(module["sensor%d"%i])
+                sensors.append(int(module["sensor%d"%i]))
             
-            self.__power_communicator.do_command(addr, power_api.set_sensor_types(), sensors)
+            self.__power_communicator.do_command(addr, power_api.set_sensor_types(), tuple(sensors))
             
         return dict()
     
@@ -903,4 +928,15 @@ class GatewayApi:
         :returns: empty dict
         """
         self.__power_controller.set_time_configuration(times)
+        return dict()
+
+    def set_power_voltage(self, module_id, voltage):
+        """ Set the voltage for a given module.
+        
+        :param module_id: The id of the power module.
+        :param voltage: The voltage to set for the power module.
+        :returns: empty dict
+        """
+        addr = self.__power_controller.get_address(module_id)
+        self.__power_communicator.do_command(addr, power_api.set_voltage(), voltage)
         return dict()

@@ -271,7 +271,13 @@ def output_list():
     """ The message sent by the master whenever the outputs change. """
     return MasterCommandSpec("OL",
         [],
-        [Field("outputs", OutputFieldType()), Field.lit("\r\n\r\n")])
+        [ Field("outputs", OutputFieldType()), Field.lit("\r\n\r\n") ])
+
+def input_list():
+    """ The message sent by the master whenever an input is enabled. """
+    return MasterCommandSpec("IL", 
+        [],
+        [ Field.byte('input'), Field.byte('output'), Field.lit("\r\n\r\n") ])
 
 class Svt:
     """ Class for the system value type, this can be either a time or a temperature. """

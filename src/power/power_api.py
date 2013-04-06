@@ -90,4 +90,12 @@ def get_sensor_types():
 
 def set_sensor_types():
     """ Set the sensor types used on the power modules (8x sensor type) """
-    return PowerCommand('G', 'CDU', '8b', '8b')
+    return PowerCommand('S', 'CDU', '8b', '8b')
+
+def get_sensor_names():
+    """ Get the names of the available sensor types. """
+    return PowerCommand('G', 'CSN', '', '16s16s16s16s16s16s16s16s16s16s')
+
+def set_voltage():
+    """ Calibrate the voltage of the power module. """
+    return PowerCommand('S', 'SVO', 'f', 'f')

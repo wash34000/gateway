@@ -195,6 +195,15 @@ class WebInterface:
                                         int(output_nr), int(floor_level)))
     
     @cherrypy.expose
+    def get_last_inputs(self, token):
+        """ Get the 5 last pressed inputs during the last 5 minutes. 
+        
+        :returns: dict with 'inputs' key containing a list of tuples (input, output).
+        """
+        self.__check_token(token)
+        return self.__success(inputs=self.__gateway_api.get_last_inputs())
+    
+    @cherrypy.expose
     def get_thermostats(self, token):
         """ Get the configuration of the thermostats.
         
@@ -501,12 +510,26 @@ class WebInterface:
                          ( int(parts[12]), int(parts[13]) ) ]
         
         return self.__wrap(lambda: self.__gateway_api.set_power_peak_times(times_parsed)) 
-            
+    
+    @cherrypy.expose
+    def set_power_voltage(self, token, module_id, voltage):
+        """ Set the voltage for a given module.
+        
+        :param module_id: The id of the power module.
+        :type module_id: int
+        :param voltage: The voltage to set for the power module.
+        :type voltage: float
+        :returns: empty dict
+        """
+        self.__check_token(token)
+        return self.__wrap(lambda: self.__gateway_api.set_power_voltage(int(module_id), float(voltage)))
+    
     @cherrypy.expose
     def get_pulse_counters(self, token):
         """ Get the id, name, linked input and count value of the pulse counters.
         
-        :returns: dict with key 'counters' (value is array with dicts containing 'id', 'name', 'input' and 'count'.) 
+        :returns: dict with key 'counters' (value is array with dicts containing 'id', 'name', \
+        'input' and 'count'.) 
         """
         self.__check_token(token)
         return self.__success(counters=self.__gateway_api.get_pulse_counters())
