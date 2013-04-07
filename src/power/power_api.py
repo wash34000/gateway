@@ -86,11 +86,11 @@ def set_address():
 
 def get_sensor_types():
     """ Get the sensor types used on the power modules (8x sensor type) """
-    return PowerCommand('G', 'CDU', '', '8b')
+    return PowerCommand('G', 'CSU', '', '8b')
 
 def set_sensor_types():
     """ Set the sensor types used on the power modules (8x sensor type) """
-    return PowerCommand('S', 'CDU', '8b', '8b')
+    return PowerCommand('S', 'CSU', '8b', '')
 
 def get_sensor_names():
     """ Get the names of the available sensor types. """

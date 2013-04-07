@@ -401,7 +401,6 @@ class GatewayApi:
         
         :returns: a list of tuples (input, output).
         """
-        print "data = " + str(self.__input_status.get_status())
         return self.__input_status.get_status()
     
     ###### Thermostat functions
@@ -834,12 +833,10 @@ class GatewayApi:
             self.__power_controller.update_power_module(module)
             addr = self.__power_controller.get_address(module['id'])
             
-            sensors = []
-            for i in range(8):
-                sensors.append(int(module["sensor%d"%i]))
-            
-            self.__power_communicator.do_command(addr, power_api.set_sensor_types(), tuple(sensors))
-            
+            self.__power_communicator.do_command(addr, power_api.set_sensor_types(),
+                    module["sensor0"], module["sensor1"], module["sensor2"], module["sensor3"],
+                    module["sensor4"], module["sensor5"], module["sensor6"], module["sensor7"])
+        
         return dict()
     
     def get_realtime_power(self):
