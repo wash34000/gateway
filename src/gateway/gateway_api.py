@@ -811,9 +811,10 @@ class GatewayApi:
     def get_power_modules(self):
         """ Get information on the power modules.
         
-        :returns: List of dictionaries with the following keys: id', 'name', 'address', \
+        :returns: List of dictionaries with the following keys: 'id', 'name', 'address', \
         'input0', 'input1', 'input2', 'input3', 'input4', 'input5', 'input6', 'input7', 'sensor0', \
-        'sensor1', 'sensor2', 'sensor3', 'sensor4', 'sensor5', 'sensor6', 'sensor7'.
+        'sensor1', 'sensor2', 'sensor3', 'sensor4', 'sensor5', 'sensor6', 'sensor7', 'times0', \
+        'times1', 'times2', 'times3', 'times4', 'times5', 'times6', 'times7'.
         """
         modules = self.__power_controller.get_power_modules().values();
         def translate_address(module):
@@ -826,7 +827,8 @@ class GatewayApi:
         
         :param modules: list of dicts with keys: 'id', 'name', 'input0', 'input1', \
         'input2', 'input3', 'input4', 'input5', 'input6', 'input7', 'sensor0', 'sensor1', \
-        'sensor2', 'sensor3', 'sensor4', 'sensor5', 'sensor6', 'sensor7'.
+        'sensor2', 'sensor3', 'sensor4', 'sensor5', 'sensor6', 'sensor7', 'times0', 'times1', \
+        'times2', 'times3', 'times4', 'times5', 'times6', 'times7'.
         :returns: empty dict.
         """
         for module in modules:
@@ -909,23 +911,6 @@ class GatewayApi:
         :returns: dict with key 'address_mode' and value True or False.
         """
         return { 'address_mode' : self.__power_communicator.in_address_mode() }
-
-    def get_power_peak_times(self):
-        """ Get the start and stop times of the peak time of the day.
-        
-        :returns: dict with key 'times' and value array containing 7 tuples (start time, stop time)
-        for Monday-Sunday.
-        """
-        return { 'times' : self.__power_controller.get_time_configuration() }
-
-    def set_power_peak_times(self, times):
-        """ Set the start and stop times of the peak time configuration.
-        
-        :param times: Array with 7 tuples (start time, stop time) for Monday-Sunday.
-        :returns: empty dict
-        """
-        self.__power_controller.set_time_configuration(times)
-        return dict()
 
     def set_power_voltage(self, module_id, voltage):
         """ Set the voltage for a given module.

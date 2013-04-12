@@ -3,6 +3,9 @@ Created on Mar 2, 2013
 
 @author: fryckbos
 '''
+import logging
+LOGGER = logging.getLogger("openmotics")
+
 import time
 import traceback
 from datetime import datetime
@@ -18,7 +21,7 @@ class TimeKeeper:
         self.__power_controller = power_controller
         self.__period = period
         
-        self.__in_day_mode = None # First time None, thereafter True or False
+        self.__mode = {}
         
         self.__thread = None
         self.__stop = False
@@ -26,6 +29,7 @@ class TimeKeeper:
     def start(self):
         """ Start the background thread of the TimeKeeper. """
         if self.__thread == None:
+            LOGGER.info("Starting Power TimeKeeper")
             self.__stop = False
             self.__thread = Thread(target=self.__run, name="TimeKeeper thread")
             self.__thread.daemon = True
@@ -44,46 +48,43 @@ class TimeKeeper:
         """ Code for the background thread. """
         while not self.__stop:
             date = datetime.now()
-            if self.is_day_time(date):
-                self.__set_day_mode()
-            else:
-                self.__set_night_mode()
+            for module in self.__power_controller.get_power_modules().values():
+                daynight = []
+                for i in range(8):
+                    if self.is_day_time(module['times%d' % i], date):
+                        daynight.append(power_api.DAY)
+                    else:
+                        daynight.append(power_api.NIGHT)
+                
+                self.__set_mode(module['address'], daynight)
             
             time.sleep(self.__period)
             
         self.__thread = None
     
-    def is_day_time(self, date):
+    def is_day_time(self, times, date):
         """ Check if a date is in day time. """
+        if times == None:
+            times = [ 0 for _ in range(14) ]
+        else:
+            times = map(lambda time: int(time.replace(":", "")), times.split(","))
+        
         day_of_week = date.weekday() # 0 = Monday, 6 = Sunday
-        hour_of_day = date.hour
+        current_time = date.hour * 100 + date.minute
     
-        times = self.__power_controller.get_time_configuration()
-        start = times[day_of_week][0]
-        stop = times[day_of_week][1]
+        start = times[day_of_week * 2]
+        stop = times[day_of_week * 2 + 1]
     
-        return hour_of_day >= start and hour_of_day < stop
+        return current_time >= start and current_time < stop
 
-    def __set_day_mode(self):
-        """ Set the power modules in day mode. """
+    def __set_mode(self, address, bytes):
+        """ Set the power modules mode. """
         try:
-            if self.__in_day_mode == None or self.__in_day_mode == False:
-                self.__power_communicator.do_command(power_api.BROADCAST_ADDRESS,
-                                                     power_api.set_day_night(), power_api.DAY)
-                self.__in_day_mode = True
+            if address not in self.__mode or self.__mode[address] != bytes:
+                LOGGER.info("Setting day/night mode to " + str(bytes))
+                self.__power_communicator.do_command(address, power_api.set_day_night(), *bytes)
+                self.__mode[address] = bytes
         except:
             ## Got an exception, we'll just try again later
-            print "Exception while setting day mode for power modules."
-            traceback.print_exc()
-    
-    def __set_night_mode(self):
-        """ Set the power modules in night mode. """
-        try:
-            if self.__in_day_mode == None or self.__in_day_mode == True:
-                self.__power_communicator.do_command(power_api.BROADCAST_ADDRESS,
-                                                     power_api.set_day_night(), power_api.NIGHT)
-                self.__in_day_mode = False
-        except:
-            ## Got an exception, we'll just try again later
-            print "Exception while setting night mode for power modules."
+            print "Exception while setting mode for power modules."
             traceback.print_exc()

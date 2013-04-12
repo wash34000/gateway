@@ -66,15 +66,15 @@ def get_display_screen_menu():
 
 def set_display_screen_menu():
     """ Set the index of the displayed menu on the power module display. """
-    return PowerCommand('S', 'DSM', 'b', 'b')
+    return PowerCommand('S', 'DSM', 'b', '')
 
 def set_day_night():
     """ Set the power module in night (0) or day (1) mode. """
-    return PowerCommand('S', 'SDN', 'b', 'b')
+    return PowerCommand('S', 'SDN', '8b', '')
 
 def set_addressmode():
     """ Set the address mode of the power module, 1 = address mode, 0 = normal mode"""
-    return PowerCommand('S', 'AGT', 'b', 'b')
+    return PowerCommand('S', 'AGT', 'b', '')
 
 def want_an_address():
     """ The Want An Address command, send by the power modules in address mode. """
@@ -82,7 +82,7 @@ def want_an_address():
 
 def set_address():
     """ Reply on want_an_address, setting a new address for the power module. """
-    return PowerCommand('S', 'SAD', 'b', 'b')
+    return PowerCommand('S', 'SAD', 'b', '')
 
 def get_sensor_types():
     """ Get the sensor types used on the power modules (8x sensor type) """
@@ -98,4 +98,4 @@ def get_sensor_names():
 
 def set_voltage():
     """ Calibrate the voltage of the power module. """
-    return PowerCommand('S', 'SVO', 'f', 'f')
+    return PowerCommand('S', 'SVO', 'f', '')

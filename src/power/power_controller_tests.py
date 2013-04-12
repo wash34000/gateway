@@ -41,7 +41,9 @@ class PowerControllerTest(unittest.TestCase):
                                 'input2': u'', 'input3': u'', 'input4': u'', 'input5': u'',
                                 'input6': u'', 'input7': u'', 'sensor0': 0, 'sensor1': 0,
                                 'sensor2': 0, 'sensor3': 0, 'sensor4': 0, 'sensor5': 0,
-                                'sensor6': 0, 'sensor7': 0 }},
+                                'sensor6': 0, 'sensor7': 0, 'times0': None, 'times1': None, 
+                                'times2': None, 'times3': None, 'times4': None, 'times5': None, 
+                                'times6': None, 'times7': None }},
                           power_controller.get_power_modules())
         
         self.assertEquals(2, power_controller.get_free_address())
@@ -51,12 +53,16 @@ class PowerControllerTest(unittest.TestCase):
                                 'input2': u'', 'input3': u'', 'input4': u'', 'input5': u'',
                                 'input6': u'', 'input7': u'', 'sensor0': 0, 'sensor1': 0,
                                 'sensor2': 0, 'sensor3': 0, 'sensor4': 0, 'sensor5': 0,
-                                'sensor6': 0, 'sensor7': 0 },
+                                'sensor6': 0, 'sensor7': 0, 'times0': None, 'times1': None, 
+                                'times2': None, 'times3': None, 'times4': None, 'times5': None, 
+                                'times6': None, 'times7': None },
                            2: { 'id': 2, 'address': 5, 'name': u'', 'input0': u'', 'input1': u'', 
                                  'input2': u'', 'input3': u'', 'input4': u'', 'input5': u'',
                                  'input6': u'', 'input7': u'', 'sensor0': 0, 'sensor1': 0,
                                  'sensor2': 0, 'sensor3': 0, 'sensor4': 0, 'sensor5': 0,
-                                 'sensor6': 0, 'sensor7': 0 }},
+                                 'sensor6': 0, 'sensor7': 0, 'times0': None, 'times1': None, 
+                                'times2': None, 'times3': None, 'times4': None, 'times5': None, 
+                                'times6': None, 'times7': None }},
                           power_controller.get_power_modules())
         
         self.assertEquals(6, power_controller.get_free_address())
@@ -72,18 +78,26 @@ class PowerControllerTest(unittest.TestCase):
                                 'input2': u'', 'input3': u'', 'input4': u'', 'input5': u'',
                                 'input6': u'', 'input7': u'', 'sensor0': 0, 'sensor1': 0,
                                 'sensor2': 0, 'sensor3': 0, 'sensor4': 0, 'sensor5': 0,
-                                'sensor6': 0, 'sensor7': 0 }},
+                                'sensor6': 0, 'sensor7': 0, 'times0': None, 'times1': None, 
+                                'times2': None, 'times3': None, 'times4': None, 'times5': None, 
+                                'times6': None, 'times7': None }},
                           power_controller.get_power_modules())
+        
+        times = ",".join([ "00:00" for _ in range(14) ])
         
         power_controller.update_power_module({'id':1, 'name':'module1', 'input0':'in0',
                 'input1':'in1', 'input2':'in2', 'input3':'in3', 'input4':'in4', 'input5':'in5',
                 'input6':'in6', 'input7':'in7', 'sensor0':0, 'sensor1':1, 'sensor2':2, 'sensor3':3, 
-                'sensor4':4, 'sensor5':5, 'sensor6':6, 'sensor7':7})
+                'sensor4':4, 'sensor5':5, 'sensor6':6, 'sensor7':7, 'times0': times,
+                'times1': times, 'times2': times, 'times3': times, 'times4': times, 'times5': times, 
+                'times6': times, 'times7': times})
         
         self.assertEquals({1: {'id':1, 'address': 1, 'name':'module1', 'input0':'in0',
                 'input1':'in1', 'input2':'in2', 'input3':'in3', 'input4':'in4', 'input5':'in5',
                 'input6':'in6', 'input7':'in7', 'sensor0':0, 'sensor1':1, 'sensor2':2, 'sensor3':3, 
-                'sensor4':4, 'sensor5':5, 'sensor6':6, 'sensor7':7} },
+                'sensor4':4, 'sensor5':5, 'sensor6':6, 'sensor7':7, 'times0': times,
+                'times1': times, 'times2': times, 'times3': times, 'times4': times, 'times5': times, 
+                'times6': times, 'times7': times } },
                 power_controller.get_power_modules())
         
     def test_module_exists(self):
@@ -111,7 +125,9 @@ class PowerControllerTest(unittest.TestCase):
                                 'input2': u'', 'input3': u'', 'input4': u'', 'input5': u'',
                                 'input6': u'', 'input7': u'', 'sensor0': 0, 'sensor1': 0,
                                 'sensor2': 0, 'sensor3': 0, 'sensor4': 0, 'sensor5': 0,
-                                'sensor6': 0, 'sensor7': 0 }},
+                                'sensor6': 0, 'sensor7': 0, 'times0': None, 'times1': None, 
+                                'times2': None, 'times3': None, 'times4': None, 'times5': None, 
+                                'times6': None, 'times7': None }},
                           power_controller.get_power_modules())
     
     def test_get_address(self):
@@ -123,32 +139,6 @@ class PowerControllerTest(unittest.TestCase):
         power_controller.readdress_power_module(1, 3)
         
         self.assertEquals(3, power_controller.get_address(1))
-    
-    def test_time_configuration(self):
-        """ Test for the time configuration functions. """
-        power_controller = self.__get_controller()
-
-        config = power_controller.get_time_configuration()
-        self.assertEquals([(0,0),(0,0),(0,0),(0,0),(0,0),(0,0),(0,0)], config)
-        
-        new_config = [(0,1),(2,3),(4,5),(6,7),(8,9),(10,11),(12,13)]
-        power_controller.set_time_configuration(new_config)
-        
-        config = power_controller.get_time_configuration()
-        self.assertEquals(new_config, config)
-    
-    def test_set_time_configuration_error(self):
-        """ Test error handling in set_time_configuration. """
-        power_controller = self.__get_controller()
-
-        new_config = [(0,1),(2,3),(4,5),(6,7),(8,9),(10,11)]
-        error = False
-        try:
-            power_controller.set_time_configuration(new_config)
-        except ValueError:
-            error = True
-        
-        self.assertTrue(error)
 
 
 if __name__ == "__main__":

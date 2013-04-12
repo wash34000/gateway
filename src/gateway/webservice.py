@@ -415,11 +415,14 @@ class WebInterface:
     
     @cherrypy.expose
     def get_power_modules(self, token):
-        """ Get information on the power modules.
+        """ Get information on the power modules. The times format is a comma seperated list of 
+        HH:MM formatted times times (index 0 = start Monday, index 1 = stop Monday,
+        index 2 = start Tuesday, ...).
         
-        :returns: List of dictionaries with the following keys: id', 'name', 'address', \
+        :returns: List of dictionaries with the following keys: 'id', 'name', 'address', \
         'input0', 'input1', 'input2', 'input3', 'input4', 'input5', 'input6', 'input7', 'sensor0', \
-        'sensor1', 'sensor2', 'sensor3', 'sensor4', 'sensor5', 'sensor6', 'sensor7'.
+        'sensor1', 'sensor2', 'sensor3', 'sensor4', 'sensor5', 'sensor6', 'sensor7', 'times0', \
+        'times1', 'times2', 'times3', 'times4', 'times5', 'times6', 'times7'.
         """
         self.__check_token(token)
         return self.__success(modules=self.__gateway_api.get_power_modules())
@@ -430,7 +433,8 @@ class WebInterface:
         
         :param modules: list of dicts with keys: 'id', 'name', 'input0', 'input1', \
         'input2', 'input3', 'input4', 'input5', 'input6', 'input7', 'sensor0', 'sensor1', \
-        'sensor2', 'sensor3', 'sensor4', 'sensor5', 'sensor6', 'sensor7'.
+        'sensor2', 'sensor3', 'sensor4', 'sensor5', 'sensor6', 'sensor7', 'times0', 'times1', \
+        'times2', 'times3', 'times4', 'times5', 'times6', 'times7'.
         :returns: empty dict.
         """
         self.__check_token(token)
