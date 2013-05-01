@@ -99,3 +99,25 @@ def get_sensor_names():
 def set_voltage():
     """ Calibrate the voltage of the power module. """
     return PowerCommand('S', 'SVO', 'f', '')
+
+## Below are the bootloader functions
+
+def bootloader_goto():
+    """ Go to bootloader and wait for a number of seconds (b parameter) """
+    return PowerCommand('S', 'BGT', 'B', '')
+
+def bootloader_read_id():
+    """ Get the device id """
+    return PowerCommand('G', 'BRI', '', '8B')
+
+def bootloader_write_code():
+    """ Write code """
+    return PowerCommand('S', 'BWC', '195B', '')
+
+def bootloader_write_configuration():
+    """ Write configuration """
+    return PowerCommand('S', 'BWF', '24B', '')
+
+def bootloader_jump_application():
+    """ Go from bootloader to applications """
+    return PowerCommand('S', 'BJA', '', '')
