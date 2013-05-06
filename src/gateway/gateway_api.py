@@ -450,7 +450,7 @@ class GatewayApi:
         """ Get basic information about all thermostats.
         
         :returns: array containing 24 dicts (one for each thermostats) with the following keys: \
-        'active', 'output0_nr', 'output1_nr'.
+        'active', 'output0_nr', 'output1_nr', 'name'.
         """
         thermostats = []
         for thermostat_id in range(0, 24):
@@ -460,6 +460,7 @@ class GatewayApi:
             info['active'] = (thermostat['sensor_nr'] < 30 or thermostat['sensor_nr'] == 240) and thermostat['output0_nr'] < 240
             info['output0_nr'] = thermostat['output0_nr']
             info['output1_nr'] = thermostat['output1_nr']
+            info['name'] = thermostat['name']
             
             thermostats.append(info)
         
@@ -471,7 +472,7 @@ class GatewayApi:
         :returns: dict with global status information about the thermostats: 'thermostats_on',
         'automatic' and 'setpoint' and a list ('thermostats') with status information for all
         thermostats, each element in the list is a dict with the following keys:
-        'thermostat', 'act', 'csetp', 'output0', 'output1', 'outside', 'mode'.
+        'thermostat', 'act', 'csetp', 'output0', 'output1', 'outside', 'mode', 'name'.
         """
         if self.__thermostat_status == None:
             self.__thermostat_status = ThermostatStatus(self.__get_all_thermostats(), 1800)
@@ -509,6 +510,8 @@ class GatewayApi:
                     thermostat['output1'] = outputs[output1_nr]['dimmer']
                 else:
                     thermostat['output1'] = 0
+                
+                thermostat['name'] = cached_thermostats[thermostat_id]['name']
                 
                 thermostats.append(thermostat)
         

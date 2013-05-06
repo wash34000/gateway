@@ -22,11 +22,11 @@ def get_power_database_file():
 
 def get_ssl_certificate_file():
     """ Get the filename of the ssl certificate. """
-    return "/etc/openvpn/client.crt"
+    return "/opt/openmotics/etc/https.crt"
 
 def get_ssl_private_key_file():
     """ Get the filename of the ssl private key. """
-    return "/etc/openvpn/client.key"
+    return "/opt/openmotics/etc/https.key"
 
 
 def get_update_dir():

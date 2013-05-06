@@ -32,6 +32,7 @@ def limit_floats(struct):
         return struct
 
 import cherrypy
+from cherrypy.lib.static import serve_file
 
 import constants
 from master.master_communicator import InMaintenanceModeException
@@ -105,7 +106,7 @@ class WebInterface:
         
         :returns: msg (String)
         """
-        return self.__success(msg="OpenMotics is up and running !")
+        return serve_file('/opt/openmotics/static/index.html', content_type='text/html')
     
     @cherrypy.expose
     def login(self, username, password):
@@ -670,7 +671,9 @@ class WebService:
     def run(self):
         """ Run the web service: start cherrypy. """
         cherrypy.tree.mount(WebInterface(self.__user_controller, self.__gateway_api,
-                                         self.__maintenance_service, self.__authorized_check))
+                                         self.__maintenance_service, self.__authorized_check),
+                            config={'/static' : {'tools.staticdir.on' : True,
+                                                 'tools.staticdir.dir' : '/opt/openmotics/static'}})
         
         cherrypy.server.unsubscribe()
 
