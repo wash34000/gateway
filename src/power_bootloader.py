@@ -87,13 +87,13 @@ def bootload(port, paddr, hex_file, verbose=False):
         raise Exception("Unknown chip id: %d" % id[0])
 
     print("Writing vector tabel")
-    for address in range(0, 512, 128):      # 0x000 - 0x200
+    for address in range(0, 1024, 128):      # 0x000 - 0x400
         print(" Writing %d" % address)
         bytes = reader.get_bytes(address)
         power_communicator.do_command(paddr, bootloader_write_code(), *bytes)
 
     print("Writing code")
-    for address in range(8192, 44032, 128): # 0x2000 - 0xAC00
+    for address in range(8192, 44032, 128):  # 0x2000 - 0xAC00
         print(" Writing %d" % address)
         bytes = reader.get_bytes(address)
         power_communicator.do_command(paddr, bootloader_write_code(), *bytes)
