@@ -650,6 +650,7 @@ class WebInterface:
         :param data: (optional) Bytes to send in the body of the request.
         :param auth: (optional) Json encoded tuple (username, password).
         :param timeout: (optional) Timeout in seconds for the http request (default = 10 sec).
+        :returns: dict with 'headers' and 'data' keys.
         """
         self.__check_token(token)
         
