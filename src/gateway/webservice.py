@@ -6,6 +6,7 @@ import subprocess
 import os
 from types import MethodType
 import traceback
+import requests
 
 try:
     import json
@@ -638,7 +639,32 @@ class WebInterface:
             return self.__success(timezone=path[20:])
         else:
             return self.__error("Could not determine timezone.")
+    
+    @cherrypy.expose
+    def do_url_action(self, token, url, method='GET', headers=None, data=None, auth=None, timeout=10):
+        """ Execute an url action.
         
+        :param url: The url to fetch.
+        :param method: (optional) The http method (defaults to GET).
+        :param headers: (optional) The http headers to send (format: json encoded dict)
+        :param data: (optional) Bytes to send in the body of the request.
+        :param auth: (optional) Json encoded tuple (username, password).
+        :param timeout: (optional) Timeout in seconds for the http request (default = 10 sec).
+        """
+        self.__check_token(token)
+        
+        try:
+            headers = json.loads(headers) if headers != None else None
+            auth = json.loads(auth) if auth != None else None
+            
+            r = requests.request(method, url, headers=headers, data=data, auth=auth, timeout=timeout)
+            
+            if r.status_code == requests.codes.ok:
+                return self.__success(headers=r.headers._store, data=r.text)  
+            else:
+                return self.__error("Got bad resonse code: %d" % r.status_code)
+        except Exception as e:
+            return self.__error("Got exception '%s'" % str(e))
     
     def __wrap(self, func):
         """ Wrap a gateway_api function and catches a possible ValueError. 
