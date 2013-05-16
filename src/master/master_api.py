@@ -181,8 +181,15 @@ def read_setpoint():
           Field.byte('fri_stop_d1'), Field.byte('fri_start_d2'), Field.byte('fri_stop_d2'),
           Field.byte('sat_start_d1'), Field.byte('sat_stop_d1'), Field.byte('sat_start_d2'),
           Field.byte('sat_stop_d2'), Field.byte('sun_start_d1'), Field.byte('sun_stop_d1'),
-          Field.byte('sun_start_d2'), Field.byte('sun_stop_d2'), Field.crc(),
-          Field.lit('\r\n\r\n') ])        
+          Field.byte('sun_start_d2'), Field.byte('sun_stop_d2'), Field.lit('T'),
+          Field.byte('mon_temp_d1'), Field.byte('tue_temp_d1'), Field.byte('wed_temp_d1'),
+          Field.byte('thu_temp_d1'), Field.byte('fri_temp_d1'), Field.byte('sat_temp_d1'),
+          Field.byte('sun_temp_d1'), Field.byte('mon_temp_d2'), Field.byte('tue_temp_d2'), 
+          Field.byte('wed_temp_d2'), Field.byte('thu_temp_d2'), Field.byte('fri_temp_d2'),
+          Field.byte('sat_temp_d2'), Field.byte('sun_temp_d2'),  Field.byte('mon_temp_n'),
+          Field.byte('tue_temp_n'), Field.byte('wed_temp_n'), Field.byte('thu_temp_n'),
+          Field.byte('fri_temp_n'), Field.byte('sat_temp_n'), Field.byte('sun_temp_n'),
+          Field.crc(), Field.lit('\r\n\r\n') ])
 
 def write_setpoint():
     """ Write a setpoints of a thermostats """

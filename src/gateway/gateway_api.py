@@ -418,7 +418,11 @@ class GatewayApi:
         'tue_start_d2', 'tue_stop_d2', 'wed_start_d1', 'wed_stop_d1', 'wed_start_d2', 'wed_stop_d2',
         'thu_start_d1', 'thu_stop_d1', 'thu_start_d2', 'thu_stop_d2', 'fri_start_d1', 'fri_stop_d1',
         'fri_start_d2', 'fri_stop_d2', 'sat_start_d1', 'sat_stop_d1', 'sat_start_d2', 'sat_stop_d2',
-        'sun_start_d1', 'sun_stop_d1', 'sun_start_d2', 'sun_stop_d2' and 'crc'.
+        'sun_start_d1', 'sun_stop_d1', 'sun_start_d2', 'sun_stop_d2', 'mon_temp_d1', 'tue_temp_d1',
+        'wed_temp_d1', 'thu_temp_d1', 'fri_temp_d1', 'sat_temp_d1', 'sun_temp_d1', 'mon_temp_d2',
+        'tue_temp_d2', 'wed_temp_d2', 'thu_temp_d2', 'fri_temp_d2', 'sat_temp_d2', 'sun_temp_d2',
+        'mon_temp_n', 'tue_temp_n', 'wed_temp_n', 'thu_temp_n', 'fri_temp_n', 'sat_temp_n',
+        'sun_temp_n'.
         """
         mode = self.__master_communicator.do_command(master_api.thermostat_mode())['mode']
         
@@ -435,7 +439,11 @@ class GatewayApi:
             if (thermostat['sensor_nr'] < 30 or thermostat['sensor_nr'] == 240) and thermostat['output0_nr'] < 240:
                 # Convert the Svt instances into temperatures
                 for temperature_key in [ 'act', 'csetp', 'psetp0', 'psetp1', 'psetp2', 'psetp3',
-                                         'psetp4', 'psetp5', 'outside', 'threshold_temp' ]:
+                                         'psetp4', 'psetp5', 'outside', 'threshold_temp',
+                                         'mon_temp_d1', 'tue_temp_d1', 'wed_temp_d1', 'thu_temp_d1',
+                                         'fri_temp_d1', 'sat_temp_d1', 'sun_temp_d1', 'mon_temp_d2',
+                                         'tue_temp_d2', 'wed_temp_d2', 'thu_temp_d2', 'fri_temp_d2',
+                                         'sat_temp_d2', 'sun_temp_d2' ]:
                     thermostat[temperature_key] = thermostat[temperature_key].get_temperature()
                 
                 for output_key in [ 'output0', 'output1' ]:
@@ -515,6 +523,16 @@ class GatewayApi:
         return { 'thermostats_on' : thermostats_on, 'automatic' : automatic,
                  'setpoint' : setpoint, 'thermostats' : thermostats }
     
+    def __check_thermostat(self, thermostat):
+        """ :raises ValueError if thermostat not in range [0, 24]. """
+        if thermostat not in range(0, 25):
+            raise ValueError("Thermostat not in [0,24]: %d" % thermostat)
+    
+    def __check_day_of_week(self, day_of_week):
+        """ :raises ValueError if day_of_week not in range [1, 7]. """
+        if day_of_week not in range(1, 8):
+            raise ValueError("Day of week not in [1, 7]: %d" % day_of_week)
+    
     def set_programmed_setpoint(self, thermostat, setpoint, temperature):
         """ Set a programmed setpoint of a thermostat.
         
@@ -526,8 +544,7 @@ class GatewayApi:
         :type temperature: float
         :returns: dict with 'thermostat', 'config' and 'temp'
         """
-        if thermostat not in range(0, 25):
-            raise ValueError("Thermostat not in [0,24]: %d" % thermostat)
+        self.__check_thermostat(thermostat)
         if setpoint not in range(0, 6):
             raise ValueError("Setpoint not in [0,5]: %d" % setpoint)
         
@@ -547,76 +564,75 @@ class GatewayApi:
         :type temperature: float
         :returns: dict with 'thermostat', 'config' and 'temp'
         """
-        if thermostat not in range(0, 25):
-            raise ValueError("Thermostat not in [0,24]: %d" % thermostat)
+        self.__check_thermostat(thermostat)
+        
         ret = self.__master_communicator.do_command(master_api.write_setpoint(),
             { 'thermostat' : thermostat, 'config' : 0, 'temp' : master_api.Svt.temp(temperature) })
         ret['temp'] = ret['temp'].get_temperature()
         return ret
     
-    def set_setpoint_start_time(self, thermostat, day_of_week, setpoint, time):
-        """ Set the start time of setpoint 0 or 2 for a certain day of the week and thermostat.
+    def set_thermostat_automatic_configuration(self, thermostat, day_of_week, temperature_night,
+                                          start_time_day1, stop_time_day1, temperature_day1,
+                                          start_time_day2, stop_time_day2, temperature_day2):
+        """ Set the configuration for automatic mode for a certain thermostat for a given day of 
+        the week. This contains the night and 2 day temperatures and the start and stop times for
+        the 2 day periods.
         
         :param thermostat: The id of the thermostat to set
         :type thermostat: Integer [0, 24]
         :param day_of_week: The day of the week
         :type day_of_week: Integer [1, 7]
-        :param setpoint: The id of the setpoint to set
-        :type setpoint: Integer: 0 or 2
-        :param time: The start or end (see start) time of the interval
-        :type time: String HH:MM format
-        
-        :returns: dict with 'thermostat', 'config' and 'temp'
+        :param temperature_night: The low temperature (in degrees Celcius)
+        :type temperature_night: float
+        :param start_time_day1: The start time of the first high period.
+        :type start_time_day1: String HH:MM format
+        :param stop_time_day1: The stop time of the first high period.
+        :type stop_time_day1: String HH:MM format
+        :param temperature_day1: The temperature for the first high interval (in degrees Celcius)
+        :type temperature_day1: float
+        :param start_time_day2: The start time of the second high period.
+        :type start_time_day2: String HH:MM format
+        :param stop_time_day2: The stop time of the second high period.
+        :type stop_time_day2: String HH:MM format
+        :param temperature_day2: The temperature for the second high interval (in degrees Celcius)
+        :type temperature_day2: float
+        :return: empty dict
         """
-        return self.__set_setpoint_time(thermostat, day_of_week, setpoint, time, True)
+        self.__check_thermostat(thermostat)
+        self.__check_day_of_week(day_of_week)
+        
+        day_of_week = day_of_week - 1
+        
+        for config in [ (18 + day_of_week * 4 + 0, master_api.Svt.time(start_time_day1)),
+                        (18 + day_of_week * 4 + 1, master_api.Svt.time(stop_time_day1)),
+                        (18 + day_of_week * 4 + 2, master_api.Svt.time(start_time_day2)),
+                        (18 + day_of_week * 4 + 3, master_api.Svt.time(stop_time_day2)),
+                        (46 + day_of_week,         master_api.Svt.temp(temperature_day1)),
+                        (53 + day_of_week,         master_api.Svt.temp(temperature_day2)),
+                        (60 + day_of_week,         master_api.Svt.temp(temperature_night)) ]:
+            self.__master_communicator.do_command(master_api.write_setpoint(),
+                { 'thermostat' : thermostat, 'config' : config[0], 'temp' : config[1] })
+        
+        return dict()
     
-    def set_setpoint_stop_time(self, thermostat, day_of_week, setpoint, time):
-        """ Set the stop time of setpoint 0 or 2 for a certain day of the week and thermostat.
+    def set_thermostat_automatic_configuration_batch(self, batch):
+        """ Set a batch of automatic configurations. For more info see
+        set_thermostat_automatic_configuration.
         
-        :param thermostat: The id of the thermostat to set
-        :type thermostat: Integer [0, 24]
-        :param day_of_week: The day of the week
-        :type day_of_week: Integer [1, 7]
-        :param setpoint: The id of the setpoint to set
-        :type setpoint: Integer: 0 or 2
-        :param time: The start or end (see start) time of the interval
-        :type time: String HH:MM format
-        
-        :returns: dict with 'thermostat', 'config' and 'temp'
+        :param batch: array of dictionaries with keys 'thermostat', 'day_of_week', \
+        'temperature_night', 'start_time_day1', 'stop_time_day1', 'temperature_day1', \
+        'start_time_day2', 'stop_time_day2', 'temperature_day2'.
         """
-        return self.__set_setpoint_time(thermostat, day_of_week, setpoint, time, False)
+        for settings in batch:
+            self.__check_thermostat(settings['thermostat'])
+            self.__check_day_of_week(settings['day_of_week'])
         
-    def __set_setpoint_time(self, thermostat, day_of_week, setpoint, time, start):
-        """ Set the start or stop time (boolean start) of setpoint 0 or 2 for a certain day of the
-        week and thermostat.
-        
-        :param thermostat: The id of the thermostat to set
-        :type thermostat: Integer [0, 24]
-        :param day_of_week: The day of the week
-        :type day_of_week: Integer [1, 7]
-        :param setpoint: The id of the setpoint to set
-        :type setpoint: Integer: 0 or 2
-        :param time: The start or end (see start) time of the interval
-        :type time: String HH:MM format
-        :param start: Set the start time if True, set the end time if False
-        :type start: boolean
-        
-        :returns: dict with 'thermostat', 'config' and 'temp'
-        """
-        if setpoint != 0 and setpoint != 2:
-            raise ValueError("Setpoint is not 0 nor 2: %d" % setpoint)
-        if day_of_week not in range(1, 8):
-            raise ValueError("Day of week not in [1, 7]: %d" % day_of_week)
-    
-        config_point = 18 + ((day_of_week-1) * 4)
-        config_point += 0 if start else 1
-        config_point += setpoint
-        
-        ret = self.__master_communicator.do_command(master_api.write_setpoint(),
-            { 'thermostat' : thermostat, 'config' : config_point,
-              'temp' : master_api.Svt.time(time) })
-        ret['temp'] = ret['temp'].get_time()
-        return ret
+        for settings in batch:
+            self.set_thermostat_automatic_configuration(
+                settings['thermostat'], settings['day_of_week'], settings['temperature_night'],
+                settings['start_time_day1'], settings['stop_time_day1'],
+                settings['temperature_day1'], settings['start_time_day2'],
+                settings['stop_time_day2'], settings['temperature_day2'])
     
     def set_thermostat_mode(self, thermostat_on, automatic, setpoint):
         """ Set the mode of the thermostats. Thermostats can be on or off, automatic or manual
