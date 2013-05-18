@@ -431,7 +431,7 @@ class GatewayApi:
         setpoint = (mode & 7)
         
         thermostats = []
-        for thermostat_id in range(0, 1): # TODO Fix this -> for testing !
+        for thermostat_id in range(0, 24):
             thermostat = self.__master_communicator.do_command(master_api.read_setpoint(),
                             { 'thermostat' :  thermostat_id })
             
