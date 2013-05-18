@@ -431,20 +431,32 @@ class GatewayApi:
         setpoint = (mode & 7)
         
         thermostats = []
-        for thermostat_id in range(0, 24):
+        for thermostat_id in range(0, 1): # TODO Fix this -> for testing !
             thermostat = self.__master_communicator.do_command(master_api.read_setpoint(),
                             { 'thermostat' :  thermostat_id })
             
             # Check if the thermostat is activated
             if (thermostat['sensor_nr'] < 30 or thermostat['sensor_nr'] == 240) and thermostat['output0_nr'] < 240:
-                # Convert the Svt instances into temperatures
+                # Convert the Svt temperature instances into temperatures
                 for temperature_key in [ 'act', 'csetp', 'psetp0', 'psetp1', 'psetp2', 'psetp3',
                                          'psetp4', 'psetp5', 'outside', 'threshold_temp',
                                          'mon_temp_d1', 'tue_temp_d1', 'wed_temp_d1', 'thu_temp_d1',
                                          'fri_temp_d1', 'sat_temp_d1', 'sun_temp_d1', 'mon_temp_d2',
                                          'tue_temp_d2', 'wed_temp_d2', 'thu_temp_d2', 'fri_temp_d2',
-                                         'sat_temp_d2', 'sun_temp_d2' ]:
+                                         'sat_temp_d2', 'sun_temp_d2', 'mon_temp_n', 'tue_temp_n',
+                                         'wed_temp_n', 'thu_temp_n', 'fri_temp_n', 'sat_temp_n',
+                                         'sun_temp_n' ]:
                     thermostat[temperature_key] = thermostat[temperature_key].get_temperature()
+                
+                # Convert the Svt time instances into times (HH:MM)
+                for time_key in [ 'mon_start_d1', 'mon_stop_d1', 'mon_start_d2', 'mon_stop_d2',
+                                  'tue_start_d1', 'tue_stop_d1', 'tue_start_d2', 'tue_stop_d2',
+                                  'wed_start_d1', 'wed_stop_d1', 'wed_start_d2', 'wed_stop_d2',
+                                  'thu_start_d1', 'thu_stop_d1', 'thu_start_d2', 'thu_stop_d2',
+                                  'fri_start_d1', 'fri_stop_d1', 'fri_start_d2', 'fri_stop_d2',
+                                  'sat_start_d1', 'sat_stop_d1', 'sat_start_d2', 'sat_stop_d2',
+                                  'sun_start_d1', 'sun_stop_d1', 'sun_start_d2', 'sun_stop_d2' ]:
+                    thermostat[time_key] = thermostat[time_key].get_time()
                 
                 for output_key in [ 'output0', 'output1' ]:
                     thermostat[output_key] = master_api.dimmer_to_percentage(thermostat[output_key])

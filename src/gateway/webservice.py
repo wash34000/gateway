@@ -327,7 +327,7 @@ class WebInterface:
         """
         self.__check_token(token)
         return self.__wrap(
-            lambda: self.__gateway_api.set_thermostat_auto_configuration(
+            lambda: self.__gateway_api.set_thermostat_automatic_configuration(
                 int(thermostat), int(day_of_week), float(temperature_night),
                 start_time_day1, stop_time_day1, float(temperature_day1),
                 start_time_day2, stop_time_day2, float(temperature_day2)))
@@ -344,7 +344,7 @@ class WebInterface:
         """
         self.__check_token(token)
         return self.__wrap(
-            lambda: self.__gateway_api.set_thermostat_auto_configuration_batch(json.loads(batch)))
+            lambda: self.__gateway_api.set_thermostat_automatic_configuration_batch(json.loads(batch)))
 
     @cherrypy.expose
     def set_thermostat_mode(self, token, thermostat_on, automatic, setpoint):
