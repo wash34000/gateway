@@ -196,6 +196,33 @@ class WebInterface:
                                         int(output_nr), int(floor_level)))
     
     @cherrypy.expose
+    def set_all_lights_off(self, token):
+        """ Turn all lights off.
+        
+        :returns: empty dict.
+        """
+        self.__check_token(token)
+        return self.__wrap(lambda: self.__gateway_api.set_all_lights_off())
+    
+    @cherrypy.expose
+    def set_all_lights_floor_off(self, token, floor):
+        """ Turn all lights on a given floor off.
+        
+        :returns: empty dict.
+        """
+        self.__check_token(token)
+        return self.__wrap(lambda: self.__gateway_api.set_all_lights_floor_off(int(floor)))
+    
+    @cherrypy.expose
+    def set_all_lights_floor_on(self, token, floor):
+        """ Turn all lights on a given floor on.
+        
+        :returns: empty dict.
+        """
+        self.__check_token(token)
+        return self.__wrap(lambda: self.__gateway_api.set_all_lights_floor_on(int(floor)))
+    
+    @cherrypy.expose
     def get_last_inputs(self, token):
         """ Get the 5 last pressed inputs during the last 5 minutes. 
         
@@ -219,7 +246,11 @@ class WebInterface:
         'wed_start_d2', 'wed_stop_d2', 'thu_start_d1', 'thu_stop_d1', 'thu_start_d2', \
         'thu_stop_d2', 'fri_start_d1', 'fri_stop_d1', 'fri_start_d2', 'fri_stop_d2', \
         'sat_start_d1', 'sat_stop_d1', 'sat_start_d2', 'sat_stop_d2', 'sun_start_d1', \
-        'sun_stop_d1', 'sun_start_d2', 'sun_stop_d2' and 'crc'.
+        'sun_stop_d1', 'sun_start_d2', 'sun_stop_d2', 'mon_temp_d1', 'tue_temp_d1', \
+        'wed_temp_d1', 'thu_temp_d1', 'fri_temp_d1', 'sat_temp_d1', 'sun_temp_d1', 'mon_temp_d2', \
+        'tue_temp_d2', 'wed_temp_d2', 'thu_temp_d2', 'fri_temp_d2', 'sat_temp_d2', 'sun_temp_d2', \
+        'mon_temp_n', 'tue_temp_n', 'wed_temp_n', 'thu_temp_n', 'fri_temp_n', 'sat_temp_n', \
+        'sun_temp_n'.
         """
         self.__check_token(token)
         return self.__wrap(self.__gateway_api.get_thermostats)
@@ -267,69 +298,53 @@ class WebInterface:
                                             int(thermostat), float(temperature)))
     
     @cherrypy.expose
-    def set_setpoint_start_time(self, token, thermostat, day_of_week, setpoint, time):
-        """ Set the start time of setpoint 0 or 2 for a certain day of the week and thermostat.
+    def set_thermostat_automatic_configuration(self, token, thermostat, day_of_week,
+                temperature_night, start_time_day1, stop_time_day1, temperature_day1,
+                start_time_day2, stop_time_day2, temperature_day2):
+        """ Set the configuration for automatic mode for a certain thermostat for a given day of 
+        the week. This contains the night and 2 day temperatures and the start and stop times for
+        the 2 day periods.
         
         :param thermostat: The id of the thermostat to set
         :type thermostat: Integer [0, 24]
         :param day_of_week: The day of the week
         :type day_of_week: Integer [1, 7]
-        :param setpoint: The id of the setpoint to set
-        :type setpoint: Integer: 0 or 2
-        :param time: The start or end (see start) time of the interval
-        :type time: String HH:MM format
-        
-        :return: dict with 'thermostat', 'config' and 'temp'
+        :param temperature_night: The low temperature (in degrees Celcius)
+        :type temperature_night: float
+        :param start_time_day1: The start time of the first high period.
+        :type start_time_day1: String HH:MM format
+        :param stop_time_day1: The stop time of the first high period.
+        :type stop_time_day1: String HH:MM format
+        :param temperature_day1: The temperature for the first high interval (in degrees Celcius)
+        :type temperature_day1: float
+        :param start_time_day2: The start time of the second high period.
+        :type start_time_day2: String HH:MM format
+        :param stop_time_day2: The stop time of the second high period.
+        :type stop_time_day2: String HH:MM format
+        :param temperature_day2: The temperature for the second high interval (in degrees Celcius)
+        :type temperature_day2: float
+        :return: empty dict
         """
         self.__check_token(token)
-        return self.__wrap(lambda: self.__gateway_api.set_setpoint_start_time(
-                                            int(thermostat), int(day_of_week), int(setpoint), time))
-    
+        return self.__wrap(
+            lambda: self.__gateway_api.set_thermostat_automatic_configuration(
+                int(thermostat), int(day_of_week), float(temperature_night),
+                start_time_day1, stop_time_day1, float(temperature_day1),
+                start_time_day2, stop_time_day2, float(temperature_day2)))
+
     @cherrypy.expose
-    def set_all_lights_off(self, token):
-        """ Turn all lights off.
+    def set_thermostat_automatic_configuration_batch(self, token, batch):
+        """ Set a batch of automatic configurations. For more info see
+        set_thermostat_automatic_configuration.
         
-        :returns: empty dict.
+        :param batch: Json encoded array of dictionaries with keys 'thermostat', 'day_of_week', \
+        'temperature_night', 'start_time_day1', 'stop_time_day1', 'temperature_day1', \
+        'start_time_day2', 'stop_time_day2', 'temperature_day2'.
+        :return: empty dict
         """
         self.__check_token(token)
-        return self.__wrap(lambda: self.__gateway_api.set_all_lights_off())
-    
-    @cherrypy.expose
-    def set_all_lights_floor_off(self, token, floor):
-        """ Turn all lights on a given floor off.
-        
-        :returns: empty dict.
-        """
-        self.__check_token(token)
-        return self.__wrap(lambda: self.__gateway_api.set_all_lights_floor_off(int(floor)))
-    
-    @cherrypy.expose
-    def set_all_lights_floor_on(self, token, floor):
-        """ Turn all lights on a given floor on.
-        
-        :returns: empty dict.
-        """
-        self.__check_token(token)
-        return self.__wrap(lambda: self.__gateway_api.set_all_lights_floor_on(int(floor)))
-    
-    @cherrypy.expose
-    def set_setpoint_stop_time(self, token, thermostat, day_of_week, setpoint, time):
-        """ Set the stop time of setpoint 0 or 2 for a certain day of the week and thermostat.
-        
-        :param thermostat: The id of the thermostat to set
-        :type thermostat: Integer [0, 24]
-        :param day_of_week: The day of the week
-        :type day_of_week: Integer [1, 7]
-        :param setpoint: The id of the setpoint to set
-        :type setpoint: Integer: 0 or 2
-        :param time: The start or end (see start) time of the interval
-        :type time: String HH:MM format
-        
-        :return: dict with 'thermostat', 'config' and 'temp'
-        """
-        self.__check_token(token)
-        return self.__wrap(lambda: self.__gateway_api.set_setpoint_stop_time(
-                                            int(thermostat), int(day_of_week), int(setpoint), time))
+        return self.__wrap(
+            lambda: self.__gateway_api.set_thermostat_automatic_configuration_batch(json.loads(batch)))
 
     @cherrypy.expose
     def set_thermostat_mode(self, token, thermostat_on, automatic, setpoint):

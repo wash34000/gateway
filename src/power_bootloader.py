@@ -16,6 +16,7 @@ from serial_utils import RS485
 import constants
 
 from power.power_communicator import PowerCommunicator
+from power.power_controller import PowerController
 from power.power_api import bootloader_goto, bootloader_read_id, bootloader_write_code, bootloader_write_configuration, bootloader_jump_application
 
 class HexReader:
@@ -78,33 +79,36 @@ def bootload(port, paddr, hex_file, verbose=False):
 
     reader = HexReader(hex_file)
     
-    print("Going to bootloader")
+    print("E%d - Going to bootloader" % paddr)
     power_communicator.do_command(paddr, bootloader_goto(), 10)
 
-    print("Reading chip id")
+    print("E%d - Reading chip id" % paddr)
     id = power_communicator.do_command(paddr, bootloader_read_id())
     if id[0] != 213:
         raise Exception("Unknown chip id: %d" % id[0])
 
-    print("Writing vector tabel")
+    print("E%d - Writing vector tabel" % paddr)
     for address in range(0, 1024, 128):      # 0x000 - 0x400
         print(" Writing %d" % address)
         bytes = reader.get_bytes(address)
         power_communicator.do_command(paddr, bootloader_write_code(), *bytes)
 
-    print("Writing code")
+    print("E%d -  Writing code" % paddr)
     for address in range(8192, 44032, 128):  # 0x2000 - 0xAC00
         print(" Writing %d" % address)
         bytes = reader.get_bytes(address)
         power_communicator.do_command(paddr, bootloader_write_code(), *bytes)
     
-    print("Jumping to application")
+    print("E%d - Jumping to application" % paddr)
     power_communicator.do_command(paddr, bootloader_jump_application())
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Tool to bootload a power module.')
     parser.add_argument('--address', dest='address', type=int,
                         help='the address of the power module to bootload')
+    parser.add_argument('--all', dest='all', action='store_true',
+                        help='bootload all power modules')
     parser.add_argument('--file', dest='file',
                         help='the filename of the hex file to bootload')
     parser.add_argument('--verbose', dest='verbose', action='store_true',
@@ -117,7 +121,15 @@ if __name__ == '__main__':
     
     port = config.get('OpenMotics', 'power_serial')
     
-    if args.address and args.file:
-        bootload(port, args.address, args.file, verbose=args.verbose)
+    if args.file and (args.address or args.all):
+        if args.all:
+            power_controller = PowerController(constants.get_power_database_file())
+            power_modules = power_controller.get_power_modules()
+            
+            for module_id in power_modules:
+                bootload(port, power_modules[module_id]['address'], args.file, verbose=args.verbose)
+            
+        else:
+            bootload(port, args.address, args.file, verbose=args.verbose)
     else:
         parser.print_help()
