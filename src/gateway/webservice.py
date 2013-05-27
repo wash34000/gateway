@@ -6,7 +6,11 @@ import subprocess
 import os
 from types import MethodType
 import traceback
+import inspect
+import time
 import requests
+
+from gateway.scheduling import SchedulingController
 
 try:
     import json
@@ -67,13 +71,16 @@ class GatewayApiWrapper:
 class WebInterface:
     """ This class defines the web interface served by cherrypy. """
 
-    def __init__(self, user_controller, gateway_api, maintenance_service, authorized_check):
+    def __init__(self, user_controller, gateway_api, scheduling_filename, maintenance_service,
+                 authorized_check):
         """ Constructor for the WebInterface.
         
         :param user_controller: used to create and authenticate users.
         :type user_controller: instance of :class`UserController`.
         :param gateway_api: used to communicate with the master.
         :type gateway_api: instance of :class`GatewayApi`.
+        :param scheduling_filename: the filename of the scheduling controller database.
+        :type scheduling_filename: string.
         :param maintenance_service: used when opening maintenance mode.
         :type maintenance_server: instance of :class`MaintenanceService`.
         :param authorized_check: check if the gateway is in authorized mode.
@@ -81,6 +88,8 @@ class WebInterface:
         """
         self.__user_controller = user_controller
         self.__gateway_api = GatewayApiWrapper(gateway_api)
+        self.__scheduling_controller = SchedulingController(scheduling_filename,
+                                                            self.__exec_scheduled_action)
         self.__maintenance_service = maintenance_service
         self.__authorized_check = authorized_check
 
@@ -682,6 +691,96 @@ class WebInterface:
         except Exception as e:
             return self.__error("Got exception '%s'" % str(e))
     
+    @cherrypy.expose
+    def schedule_action(self, token, timestamp, action):
+        """ Schedule an action at a given point in the future. An action can be any function of the
+        OpenMotics webservice. The action is JSON encoded dict with keys: 'type', 'action', 'params'
+        and 'description'. At the moment 'type' can only be 'basic'. 'action' contains the name of
+        the function on the webservice. 'params' is a dict maps the names of the parameters given to
+        the function to their desired values. 'description' can be used to identify the scheduled
+        action.
+         
+        :param timestamp: UNIX timestamp.
+        :type timestamp: integer.
+        :param action: JSON encoded dict.
+        :type action: string.
+        """
+        self.__check_token(token)
+        action = json.loads(action)
+        
+        if not ('type' in action and action['type'] == 'basic' and 'action' in action):
+            self.__error("action does not contain the required keys 'type' and 'action'")
+        else:
+            func_name = action['action']
+            if func_name in self.__dict__:
+                func = self.__dict__[func_name]
+                if 'exposed' in func.__dict__ and func.exposed == True:
+                    params = action.get('params', {})
+                    
+                    args = inspect.getargspec(func).args
+                    args = [ arg for arg in args if arg != "token" ]
+                    
+                    if len(args) != len(params):
+                        return self.__error("The number of params (%d) does not match the number "
+                                            "of arguments (%d) for function %s" %
+                                            (len(params), len(args), func_name)) 
+                    
+                    bad_args = [ arg for arg in args if arg not in params ]
+                    if len(bad_args) > 0:
+                        return self.__error("The following param are missing for function %s: %s" %
+                                            (func_name, str(bad_args)))
+                    else:
+                        action = json.dumps({ 'type' : 'basic', 'action': func_name,
+                                              'params': params })
+                        
+                        self.__scheduling_controller.schedule_action(timestamp,
+                                                                     action.get('description', ''),
+                                                                     action)
+                        
+                        return self.__success()
+                    
+            return self.__error("Could not find function WebInterface.%s" % func_name)
+                    
+    @cherrypy.expose
+    def list_scheduled_actions(self, token):
+        """ Get a list of all scheduled actions.
+        :returns: dict with key 'actions' containing a list of dicts with keys: 'timestamp',
+        'from_now', 'id', 'description' and 'action'. 'timestamp' is the UNIX timestamp when the 
+        action will be executed. 'from_now' is the number of seconds until the action will be
+        scheduled. 'id' is a unique integer for the scheduled action. 'description' contains a
+        user set description for the action. 'action' contains the function and params that will be 
+        used to execute the scheduled action. 
+        """
+        self.__check_token(token)
+        now = time.time()
+        actions = self.__scheduling_controller.list_scheduled_actions()
+        for action in actions:
+            action['from_now'] = action['timestamp'] - now
+        
+        return self.__success(actions=actions)
+    
+    @cherrypy.expose
+    def remove_scheduled_action(self, token, id):
+        """ Remove a scheduled action when the id of the action is given.
+        :param id: the id of the scheduled action to remove.
+        :returns: { 'success' : True }
+        """
+        self.__check_token(token)
+        self.__scheduling_controller.remove_scheduled_action(id)
+        return self.__success() 
+    
+    def __exec_scheduled_action(self, action):
+        """ Callback for the SchedulingController executing a scheduled actions.
+        :param action: JSON encoded action.
+        """
+        action = json.loads(action)
+        func_name = action['action']
+        kwargs = action['params']
+        kwargs['token'] = None
+        
+        if func_name in self.__dict__:
+            self.__dict__[func_name](**kwargs)
+        
     def __wrap(self, func):
         """ Wrap a gateway_api function and catches a possible ValueError. 
         
@@ -703,16 +802,19 @@ class WebService:
     
     name = 'web'
 
-    def __init__(self, user_controller, gateway_api, maintenance_service, authorized_check):
+    def __init__(self, user_controller, gateway_api, scheduling_filename, maintenance_service,
+                 authorized_check):
         self.__user_controller = user_controller
         self.__gateway_api = gateway_api
+        self.__scheduling_filename = scheduling_filename 
         self.__maintenance_service = maintenance_service
         self.__authorized_check = authorized_check
 
     def run(self):
         """ Run the web service: start cherrypy. """
         cherrypy.tree.mount(WebInterface(self.__user_controller, self.__gateway_api,
-                                         self.__maintenance_service, self.__authorized_check))
+                                         self.__scheduling_filename, self.__maintenance_service,
+                                         self.__authorized_check))
         
         cherrypy.server.unsubscribe()
 

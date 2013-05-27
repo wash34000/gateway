@@ -19,6 +19,10 @@ def get_power_database_file():
     """ Get the filename of the power database file. This file is in sqlite format. """
     return "/opt/openmotics/etc/power.db"
 
+def get_scheduling_database_file():
+    """ Get the filename of the scheduling database file. This file is in sqlite format. """
+    return "/opt/openmotics/etc/sched.db"
+
 
 def get_ssl_certificate_file():
     """ Get the filename of the ssl certificate. """

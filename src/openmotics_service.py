@@ -95,8 +95,8 @@ def main():
     passthrough_service = PassthroughService(master_communicator, passthrough_serial)
     passthrough_service.start()
     
-    web_service = WebService(user_controller, gateway_api, maintenance_service,
-                             physical_frontend.in_authorized_mode)
+    web_service = WebService(user_controller, gateway_api, constants.get_scheduling_database_file(),
+                             maintenance_service, physical_frontend.in_authorized_mode)
     web_service.start()
     
     physical_frontend.set_led('stat2', True)

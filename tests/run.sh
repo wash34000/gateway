@@ -25,6 +25,9 @@ python -m master.thermostats_tests
 echo "Running users tests"
 python -m gateway.users_tests
 
+echo "Running scheduling tests"
+python -m gateway.scheduling_tests
+
 echo "Running power controller tests"
 python -m power.power_controller_tests
 
