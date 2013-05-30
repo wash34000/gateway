@@ -88,8 +88,11 @@ class WebInterface:
         """
         self.__user_controller = user_controller
         self.__gateway_api = GatewayApiWrapper(gateway_api)
+        
         self.__scheduling_controller = SchedulingController(scheduling_filename,
                                                             self.__exec_scheduled_action)
+        self.__scheduling_controller.start()
+        
         self.__maintenance_service = maintenance_service
         self.__authorized_check = authorized_check
 
@@ -706,36 +709,36 @@ class WebInterface:
         :type action: string.
         """
         self.__check_token(token)
+        timestamp = int(timestamp)
         action = json.loads(action)
         
         if not ('type' in action and action['type'] == 'basic' and 'action' in action):
             self.__error("action does not contain the required keys 'type' and 'action'")
         else:
             func_name = action['action']
-            if func_name in self.__dict__:
-                func = self.__dict__[func_name]
+            if func_name in WebInterface.__dict__:
+                func = WebInterface.__dict__[func_name]
                 if 'exposed' in func.__dict__ and func.exposed == True:
                     params = action.get('params', {})
                     
                     args = inspect.getargspec(func).args
-                    args = [ arg for arg in args if arg != "token" ]
+                    args = [ arg for arg in args if arg != "token" and arg != "self" ]
                     
                     if len(args) != len(params):
                         return self.__error("The number of params (%d) does not match the number "
                                             "of arguments (%d) for function %s" %
-                                            (len(params), len(args), func_name)) 
+                                            (len(params), len(args), func_name))
                     
                     bad_args = [ arg for arg in args if arg not in params ]
                     if len(bad_args) > 0:
                         return self.__error("The following param are missing for function %s: %s" %
                                             (func_name, str(bad_args)))
                     else:
+                        description = action.get('description', '')
                         action = json.dumps({ 'type' : 'basic', 'action': func_name,
                                               'params': params })
                         
-                        self.__scheduling_controller.schedule_action(timestamp,
-                                                                     action.get('description', ''),
-                                                                     action)
+                        self.__scheduling_controller.schedule_action(timestamp, description, action)
                         
                         return self.__success()
                     
