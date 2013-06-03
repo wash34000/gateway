@@ -1,4 +1,7 @@
 """ Includes the WebService class """
+import logging
+LOGGER = logging.getLogger("openmotics")
+
 import threading
 import random
 import ConfigParser
@@ -35,6 +38,17 @@ def limit_floats(struct):
         return FloatWrapper(struct)
     else:
         return struct
+
+def boolean(object):
+    """ Convert object (bool, int, float, str) to bool (True of False). """
+    if type(object) == bool:
+        return object
+    elif type(object) == int:
+        return object != 0
+    elif type(object) == float:
+        return object != 0.0
+    elif type(object) == str:
+        return object.lower() == 'true'
 
 import cherrypy
 
@@ -374,7 +388,7 @@ class WebInterface:
         """
         self.__check_token(token)
         return self.__wrap(lambda: self.__gateway_api.set_thermostat_mode(
-                       thermostat_on.lower() == 'true', automatic.lower() == 'true', int(setpoint)))
+                       boolean(thermostat_on), boolean(automatic), int(setpoint)))
     
     @cherrypy.expose
     def set_thermostat_threshold(self, token, threshold):
@@ -779,10 +793,16 @@ class WebInterface:
         action = json.loads(action)
         func_name = action['action']
         kwargs = action['params']
+        kwargs['self'] = self
         kwargs['token'] = None
         
-        if func_name in self.__dict__:
-            self.__dict__[func_name](**kwargs)
+        if func_name in WebInterface.__dict__:
+            try:
+                WebInterface.__dict__[func_name](**kwargs)
+            except:
+                LOGGER.exception("Exception while executing scheduled action")
+        else:
+            LOGGER.error("Could not find function WebInterface.%s" % func_name)
         
     def __wrap(self, func):
         """ Wrap a gateway_api function and catches a possible ValueError. 
