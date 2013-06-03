@@ -1,0 +1,319 @@
+<html lang="en">
+<head>
+<title>OpenMotics</title>
+<script type="text/javascript" src="/static/jquery-1.9.1.min.js"></script>
+<style type="text/css">
+    .hidden {
+        display: none;
+    }
+    .enabled {
+        color: green;
+    }
+</style>
+<script type="text/javascript">
+    var loggedIn = false;
+    var token = null;
+
+    function refresh_outputs() {
+        $(".output").remove();
+        load_data("outputs");
+    }
+
+    function trigger_output(output_nr, on) {
+        var data = {  token: token, output_nr: output_nr, is_on: on == 1 };
+        
+        if ($('#dimmer_' + output_nr).length != 0) {
+            var dimmer = parseInt($("#dimmer_" + output_nr).val(), 10);
+            if (dimmer >= 0 && dimmer <= 100) {
+                data['dimmer'] = dimmer;
+            } else {
+                alert("Dimmer should be between 0 and 100.");
+                return;
+            }
+        }
+        
+        $.ajax({
+            url: "/set_output",
+            type: 'POST',
+            dataType: 'json',
+            data: data,
+            success: refresh_outputs,
+            error: function() {
+                alert("Failed to set output " + output_nr + ".");
+            }
+        });
+    }
+
+    function show_outputs(data) {
+        var output_div = $("#outputs");
+        $.each(data['outputs'], function(index, output) {
+            if (output['light'] == 1) {
+                var div = "<div class='output'>";
+                div += "<span>" + output['name'] + "</span>";
+                if (output['status'] == 0) {
+                    div += "<span>Off</span>";
+                } else {
+                    div += "<span>On</span>";
+                }
+
+                if (output['type'] == 'D') {
+                    div += "<span>Dimmer <input type='text' id='dimmer_" + output['output_nr'] + "' value='" + output['dimmer'] + "' /></span>";
+                }
+
+                if (output['status'] == 0) {
+                    div += "<input type='submit' value='Turn on' onclick='trigger_output(" + output['output_nr'] + ", 1);' />";
+                } else {
+                    div += "<input type='submit' value='Turn off' onclick='trigger_output(" + output['output_nr'] + ", 0);' />";
+                }
+
+                div += "</div>";
+                output_div.append(div);
+            }
+        });
+    }
+
+    function show_group_actions(data) {
+        var group_actions_div = $("#group_actions");
+        $.each(data['group_actions'], function(index, ga) {
+            if (ga['name'] != "") {
+                var div = "<div class='group_action'>";
+                div += "<span>" + ga['name'] + "</span>";
+                div += "<a href='#' id='ga_" + ga['id'] + "'>Execute</a>";
+                div += "</div>";
+                group_actions_div.append(div);
+                
+                $("#ga_" + ga['id']).on("click", {id: ga['id']}, function(e) {
+                    $.ajax({
+                        url: "/do_group_action",
+                        type: 'POST',
+                        dataType: 'json',
+                        data: { token : token, group_action_id : e.data.id },
+                        success: function() {
+                            alert("Executed group action.");
+                        },
+                        error: function() {
+                            alert("Failed to set output " + output_nr + ".");
+                        }
+                    });
+                });
+            }
+        });
+    }
+
+    function refresh_thermostats() {
+        $("#thermostats_global").remove();
+        $(".thermostat").remove();
+        load_data("thermostats");
+    }
+
+    function set_thermostat_mode(on, automatic, setpoint) {
+        $.ajax({
+            url: "/set_thermostat_mode",
+            type: 'POST',
+            dataType: 'json',
+            data: { token : token, thermostat_on : on, automatic : automatic, setpoint : setpoint },
+            success: refresh_thermostats,
+            error: function() {
+                alert("Failed to set thermostat mode.");
+            }
+        });
+    }
+
+    function on_csetp_change(thermostat) {
+        var temperature = $("#csetp_" + thermostat).val();
+
+        $.ajax({
+            url: "/set_current_setpoint",
+            type: 'POST',
+            dataType: 'json',
+            data: { token : token, thermostat : thermostat, temperature : temperature },
+            success: refresh_thermostats,
+            error: function() {
+                alert("Failed to set thermostat setpoint.");
+            }
+        });
+    }
+
+    function show_thermostats(data) {
+        console.log(data);
+        var thermostats_div = $("#thermostats");
+        var global = "<div id='thermostats_global'>";
+        if (data['thermostats_on'] == true) {
+            global += "<span>On</span>";
+        } else {
+            global += "<span>Off</span>";
+        }
+        global += "<span class='mode' id='tg_auto'>Auto</span>"
+        global += "<span class='mode' id='tg_away'>Away</span>";
+        global += "<span class='mode' id='tg_vacation'>Vacation</span>";
+        global += "<span class='mode' id='tg_party'>Party</span>";
+        global += "<span>outside: " + data['thermostats'][0]['outside'] + "&deg;C</span>";
+        global += "</div>";
+        thermostats_div.append(global);
+
+        // Bind click handlers on mode buttons.
+        $.each([ ["#tg_auto", "true", data['setpoint']], ["#tg_away", "false", 3],
+                 ["#tg_vacation", "false", 4], ["#tg_party", "false", 5] ],
+               function (index, value) {
+            $(value[0]).on("click", { auto: value[1], setpoint: value [2] }, function(e) {
+                set_thermostat_mode("true", e.data.auto, e.data.setpoint);
+            });
+        });
+
+        // Set enabled mode
+        if (data['automatic'] == true) {
+            $("#tg_auto").addClass("enabled");
+        } else if (data['setpoint'] == 3) { // AWAY
+            $("#tg_away").addClass("enabled");
+        } else if (data['setpoint'] == 4) { // VACATION
+            $("#tg_vacation").addClass("enabled");
+        } else if (data['setpoint'] == 5) { // PARTY
+            $("#tg_party").addClass("enabled");
+        }
+
+        // Add all thermostats
+        $.each(data['thermostats'], function (id, thermostat) {
+            var id = thermostat['thermostat'];
+
+            var thermostat_div = "<div class='thermostat'>";
+            thermostat_div += "<span class='tname'>" + thermostat['name'] + "</span>";
+
+            thermostat_div += "<span class='csetp'><input id='csetp_" + id + "' type='text' value='" + thermostat['csetp'] + "' /></span>";
+            thermostat_div += "<span class='act'>" + thermostat['act'] + "</span>";
+
+            if (thermostat['output0'] == 1) {
+                thermostat_div += "<span class='on'>On</span>";
+            } else {
+                thermostat_div += "<span class='off'>Off</span>";
+            }
+
+            thermostat_div += "</div>";
+            thermostats_div.append(thermostat_div);
+
+            var csetp_field = $("#csetp_" + id);
+            csetp_field.on('focusout', { id : id }, function(e) {
+                on_csetp_change(e.data.id);
+            });
+            csetp_field.on('keypress', { id : id }, function(e) {
+                if (e.which == 13) {
+                    on_csetp_change(e.data.id);
+                }
+            });
+        });
+    }
+
+    function load_data(name) {
+        var url, callback;
+
+        if (name == "outputs") {
+            url = "/get_outputs?token=" + token;
+            callback = show_outputs;
+        } else if (name == "group_actions") {
+            url = "/get_group_actions?token=" + token;
+            callback = show_group_actions;
+        } else if (name == "thermostats") {
+            url = "/get_thermostats_short?token=" + token;
+            callback = show_thermostats;
+        }
+
+        $.ajax({
+            url: url,
+            type: 'GET',
+            dataType: 'json',
+            success: callback,
+            error: function() {
+                alert("Fetching data for " + name + " failed.");
+            }
+        });
+
+        $("#"+name).addClass("loaded");
+    }
+
+    function logged_in_callback() {
+        $('.tabs').show();
+        $('#login_form').hide();
+        $('#outputs_button').trigger('click');
+    }
+
+    $(document).ready(function() {
+        $.each(["outputs", "group_actions", "thermostats"], function(index, value) {
+            $("#"+value+"_button").on("click", {name: value}, function(e) {
+                var name = e.data.name;
+                
+                $(".section").hide();
+                $("#"+name).show();
+
+                if (!$("#"+name).hasClass('loaded')) {
+                    load_data(name);
+                } else if (name == "outputs") {
+                    refresh_outputs();
+                } else if (name == "thermostats") {
+                    refresh_thermostats();
+                }
+            });
+        });
+
+        $("#password").keypress(function(e) {
+            if (e.which == 13) {
+                $("#login").trigger("click");
+            }
+        });
+
+        $("#login").click(function(e) {
+            $.ajax({
+                url: '/login',
+                type: 'POST',
+                dataType: 'json',
+                data: {
+                    username: $("#username").val(),
+                    password: $("#password").val(),
+                },
+                success: function(result) {
+                    loggedIn = true;
+                    token = result['token'];
+                    logged_in_callback();
+                },
+                error: function() {
+                    alert("Login failed");
+                }
+            });
+        });
+    });
+</script>
+</head>
+<body>
+    <h1>OpenMotics</h1>
+    <ul class="tabs hidden">
+        <li class="tab"><a id="outputs_button" href="#">Lights</a></li>
+        <li class="tab"><a id="group_actions_button" href="#">Group actions</a></li>
+        <li class="tab"><a id="thermostats_button" href="#">Thermostats</a></li>
+    </ul>
+
+    <form id='login_form'>
+        <fieldset>
+            <label>User name:</label>
+            <input type='text' name='username' id='username' />
+        </fieldset>
+
+        <fieldset>
+            <label>Password:</label>
+            <input type='password' name='password' id='password' />
+        </fieldset>
+
+        <input type='button' id='login' value='Login' />
+    </form>
+
+    <div class="section hidden" id="outputs">
+        <h2>Lights</h2>
+    </div>
+
+    <div class="section hidden" id="group_actions">
+        <h2>Group actions</h2>
+    </div>
+
+    <div class="section hidden" id="thermostats">
+        <h2>Thermostats</h2>
+    </div>
+
+</body>
+</html>

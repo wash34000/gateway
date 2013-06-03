@@ -10,6 +10,7 @@ echo Copy OpenMotics software
 
 cp -R python /opt/openmotics/
 cp -R Updater /opt/openmotics/
+cp -R static /opt/openmotics/
 
 ## Copy the bootloader
 cp binaries/AN1310cl /opt/openmotics/bin/

@@ -188,6 +188,14 @@ class Gateway:
         """ Calculate the diff between two counter values. """
         diff = current - previous
         return diff if diff >= 0 else 65536 - previous + current
+    
+    def get_local_ip_address(self):
+        """ Get the local ip address. """
+        try:
+            lines = subprocess.check_output("ifconfig eth0", shell=True)
+            return lines.split("\n")[1].strip().split(" ")[1].split(":")[1]
+        except:
+            return None
 
 
 class DataCollector:
@@ -238,7 +246,8 @@ def main():
                    DataCollector('pulses', gateway.get_pulse_counter_values, 60),
                    DataCollector('outputs', gateway.get_enabled_outputs),
                    DataCollector('power', gateway.get_realtime_power),
-                   DataCollector('update', gateway.get_update_status) ]
+                   DataCollector('update', gateway.get_update_status),
+                   DataCollector('local_ip', gateway.get_local_ip_address, 1800) ]
 
     # Loop: check vpn and open/close if needed
     while True:
