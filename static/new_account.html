@@ -1,0 +1,53 @@
+<html lang="en">
+<head>
+<title>OpenMotics -- Create a new account</title>
+<script type="text/javascript" src="/static/jquery-1.9.1.min.js"></script>
+<script type="text/javascript">
+    $(document).ready(function() {
+        $("#password").keypress(function(e) {
+            if (e.which == 13) {
+                $("#create").trigger("click");
+            }
+        });
+
+        $("#create").click(function(e) {
+            $.ajax({
+                url: '/create_user',
+                type: 'POST',
+                dataType: 'json',
+                data: {
+                    username: $("#username").val(),
+                    password: $("#password").val(),
+                },
+                success: function(result) {
+                	alert("New account created. You can now login.");
+                    location.href = '/';
+                },
+                error: function() {
+                    alert("Creating user failed. Are all gateway leds on ?");
+                }
+            });
+        });
+    });
+</script>
+</head>
+<body>
+    <h1>OpenMotics -- Create a new account</h1>
+	<p>Hold the OpenMotics gateway button for 10 seconds, make sure that all leds on the gateway light up.</p>
+	<p>When all lights are on, you are able to create a new account.</p> 
+    <form id='create_form'>
+        <fieldset>
+            <label>Username:</label>
+            <input type='text' name='username' id='username' />
+        </fieldset>
+
+        <fieldset>
+            <label>Password:</label>
+            <input type='password' name='password' id='password' />
+        </fieldset>
+
+        <input type='button' id='create' value='Create account' />
+    </form>
+
+</body>
+</html>
