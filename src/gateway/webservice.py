@@ -149,9 +149,29 @@ class WebInterface:
 
     @cherrypy.expose
     def create_user(self, username, password):
-        """ Create a new user using a username and a password. """
+        """ Create a new user using a username and a password. Only possible in authorized mode. """
         if self.__authorized_check():
             self.__user_controller.create_user(username, password, 'admin', True)
+            return self.__success()
+        else:
+            raise cherrypy.HTTPError(401, "Unauthorized")
+
+    @cherrypy.expose
+    def get_usernames(self):
+        """ Get the names of the users on the gateway. Only possible in authorized mode.
+        
+        :returns: dict with key 'usernames' (array of strings).
+        """
+        if self.__authorized_check():
+            return self.__success(usernames=self.__user_controller.get_usernames())
+        else:
+            raise cherrypy.HTTPError(401, "Unauthorized")
+
+    @cherrypy.expose
+    def remove_user(self, username):
+        """ Remove a user. Only possible in authorized mode. """
+        if self.__authorized_check():
+            self.__user_controller.remove_user(username)
             return self.__success()
         else:
             raise cherrypy.HTTPError(401, "Unauthorized")

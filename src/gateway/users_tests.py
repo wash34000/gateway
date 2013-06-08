@@ -75,7 +75,35 @@ class UserControllerTest(unittest.TestCase):
         token = user_controller.login("om", "pass")
         self.assertNotEquals(None, token)
         self.assertTrue(user_controller.check_token(token))
+    
+    def test_get_usernames(self):
+        """ Test getting all usernames. """
+        user_controller = self.__get_controller()
+        self.assertEquals([ "om" ], user_controller.get_usernames())
         
+        user_controller.create_user("test", "test", "admin", True)
+        self.assertEquals([ "om", "test" ], user_controller.get_usernames())
+    
+    def test_remove_user(self):
+        """ Test removing a user. """
+        user_controller = self.__get_controller()
+        self.assertEquals([ "om" ], user_controller.get_usernames())
+        
+        user_controller.create_user("test", "test", "admin", True)
+        
+        token = user_controller.login("test", "test")
+        self.assertTrue(user_controller.check_token(token))
+        
+        user_controller.remove_user("test")
+        
+        self.assertFalse(user_controller.check_token(token))
+        self.assertEquals([ "om" ], user_controller.get_usernames())
+        
+        try:
+            user_controller.remove_user("om")
+            self.fail("Should have raised exception !")
+        except Exception as e:
+            self.assertEquals("Cannot delete last admin account", str(e))
         
 if __name__ == "__main__":
     #import sys;sys.argv = ['', 'Test.testName']
