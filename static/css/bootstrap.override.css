@@ -1,0 +1,61 @@
+.dropdown-menu > .no-a-hover > a:hover
+{
+    text-decoration: none;
+    color: #333;
+    background-color: white;
+}
+
+.footer {
+  margin-top: 15px;
+  padding: 15px 0 15px;
+  border-top: 1px solid #e5e5e5;
+}
+.footer p {
+  margin-bottom: 0;
+  color: #555;
+}
+
+.wide-popover * .popover {
+    width: 500px !important;
+}
+
+.icon-selector:hover {
+    background-color: #bbbbbb;
+}
+
+.autoselect > select {
+    width: auto !important;
+}
+
+.table-striped2 > tbody > tr:nth-child(6n) > td,
+.table-striped2 > tbody > tr:nth-child(6n-1) > td,
+.table-striped2 > tbody > tr:nth-child(6n-2) > td,
+.table-striped2 > thead > tr > th {
+    background-color: #f9f9f9;
+}
+
+.table-striped2 > tbody > tr:nth-child(6n) > td,
+.table-striped2 > tbody > tr:nth-child(3n) > td {
+    border-top: 0px !important;
+}
+
+.nowrap {
+    white-space: nowrap
+}
+
+.tagit-new > .ui-autocomplete-input {
+    width: 70px !important;
+}
+.tagit.ui-widget {
+    border: 0px !important;
+    margin: 0px !important;
+}
+.tagit-choice.ui-widget-content {
+    padding: 0px 20px 0px 7px !important;
+    height: 20px !important;
+    margin-top: 0px !important;
+}
+.tagit-new {
+    margin: 0px !important;
+    padding: 1px 5px !important;
+}
