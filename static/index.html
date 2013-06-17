@@ -217,7 +217,7 @@
                 url: "/set_current_setpoint",
                 type: 'POST',
                 dataType: 'json',
-                data: { token : token, thermostat : thermostat, temperature : temperature },
+                data: { token : token, thermostat : thermostat, temperature : temperature }
             })
             .done(refresh_thermostats)
             .fail(function() {
@@ -326,7 +326,7 @@
                     } else {
                         div += '        <span class="add-on" style="line-height: 16px; height: 16px; font-weight: bold; color: #BD362F;">Off</span>';
                     }
-                    div += '        <input type="text" id="csetp_' + id + '" value="' + round_fixed(thermostat['csetp'], 1) + '" size="3" style="width: 25px; height: 16px; margin: 0;" />';
+                    div += '        <input type="text" id="csetp_' + id + '" value="' + round_fixed(thermostat['csetp'], 1) + '" size="3" style="width: 30px; height: 16px; margin: 0;" />';
                     div += '        <span class="add-on" style="line-height: 16px; height: 16px;" id="act_' + id + '">' + round_fixed(thermostat['act'], 1) + ' &deg;C</span>';
                     div += '    </div>';
                     div += '    <img id="loading_th_' + id + '" src="/static/img/loading_round.gif" class="spaced" style="display: none; width: 25px; height: 25px;"/>';
@@ -516,7 +516,7 @@
                 </a>
                 <img src="/static/img/logo.png"
                      style="width: 30px; float: left; padding-top: 5px; padding-right: 5px;"/>
-                <a class="brand" href="https://cloud.openmotics.com">OpenMotics</a>
+                <a class="brand" href="https://cloud.openmotics.com">OpenMotics Gateway</a>
 
                 <div class="nav-collapse">
                     <ul class="nav">
