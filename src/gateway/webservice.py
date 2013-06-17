@@ -47,7 +47,7 @@ def boolean(object):
         return object != 0
     elif type(object) == float:
         return object != 0.0
-    elif type(object) == str:
+    elif type(object) == str or type(object) == unicode:
         return object.lower() == 'true'
 
 import cherrypy

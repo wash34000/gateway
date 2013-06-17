@@ -567,8 +567,16 @@ class GatewayApi:
             { 'thermostat' : thermostat, 'config' : setpoint + 1,
               'temp' : master_api.Svt.temp(temperature) })
         ret['temp'] = ret['temp'].get_temperature()
-        return ret
         
+        # If we are currently in manual mode and in this setpoint, set the mode to update to the new
+        # configuration value.
+        mode = self.__master_communicator.do_command(master_api.thermostat_mode())['mode']
+        (on, automatic, csetp) = (mode & 128 == 128, mode & 8 == 8, mode & 7) 
+        
+        if not automatic and csetp == setpoint:
+            self.set_thermostat_mode(on, automatic, csetp)
+        
+        return ret
     
     def set_current_setpoint(self, thermostat, temperature):
         """ Set the current setpoint of a thermostat.
@@ -628,6 +636,14 @@ class GatewayApi:
             self.__master_communicator.do_command(master_api.write_setpoint(),
                 { 'thermostat' : thermostat, 'config' : config[0], 'temp' : config[1] })
         
+        # If we are currently in automatic mode, set the mode to update to the new
+        # configuration value.
+        mode = self.__master_communicator.do_command(master_api.thermostat_mode())['mode']
+        (on, automatic, csetp) = (mode & 128 == 128, mode & 8 == 8, mode & 7) 
+        
+        if automatic:
+            self.set_thermostat_mode(on, automatic, csetp)
+        
         return dict()
     
     def set_thermostat_automatic_configuration_batch(self, batch):
@@ -668,22 +684,17 @@ class GatewayApi:
         
         if setpoint not in range(0, 6):
             raise ValueError("Setpoint not in [0,5]: " + str(setpoint))
-        mode = 128 if thermostat_on else 0
-        mode += 8 if automatic else 0
-        mode += setpoint
-        checked(self.__master_communicator.do_command(master_api.basic_action(),
-            { 'action_type' : master_api.BA_THERMOSTAT_MODE, 'action_number' : mode }))
         
-        checked(self.__master_communicator.do_command(master_api.basic_action(),
-                { 'action_type' : master_api.BA_THERMOSTAT_AUTOMATIC, 'action_number' : 255 }))
-        
-        if not automatic:
+        if automatic:
+            checked(self.__master_communicator.do_command(master_api.basic_action(),
+                    { 'action_type' : master_api.BA_THERMOSTAT_AUTOMATIC, 'action_number' : 255 }))
+        else:
+            checked(self.__master_communicator.do_command(master_api.basic_action(),
+                { 'action_type' : master_api.BA_THERMOSTAT_AUTOMATIC, 'action_number' : 0 }))
+            
             checked(self.__master_communicator.do_command(master_api.basic_action(),
                 { 'action_type' : master_api.__dict__['BA_ALL_SETPOINT_' + str(setpoint)],
                   'action_number' : 0 }))
-            
-            checked(self.__master_communicator.do_command(master_api.basic_action(),
-                { 'action_type' : master_api.BA_THERMOSTAT_AUTOMATIC, 'action_number' : 0 }))
         
         return { 'resp': 'OK' }
 
