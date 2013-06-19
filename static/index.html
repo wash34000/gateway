@@ -263,7 +263,7 @@
             var onoff = $("#thermostat_onoff");
             onoff.text(data['thermostats_on'] ? 'on' : 'off');
             onoff.css('color', data['thermostats_on'] ? '#51A351' : '#BD362F');
-            $("#thermostat_outside_temp").text(round_fixed(data['thermostats'][0]['outside']), 1);
+            $("#thermostat_outside_temp").text(round_fixed(data['thermostats'][0]['outside'], 1));
 
             // Bind click handlers on mode buttons.
             $.each([ ["#button_auto", "true", data['setpoint']], ["#button_away", "false", 3],
