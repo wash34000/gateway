@@ -65,11 +65,11 @@
             var on = output_states[output_nr];
 
             if (on == 1) {
-                $("#output_" + output_nr + "_on").text("On").addClass('active btn-danger');
-                $("#output_" + output_nr + "_off").html("&nbsp;|||&nbsp;").removeClass('active btn-success');
+                $("#output_" + output_nr + "_on").text("On").addClass('active btn-success');
+                $("#output_" + output_nr + "_off").html("&nbsp;|||&nbsp;").removeClass('active btn-gray');
             } else {
-                $("#output_" + output_nr + "_on").html("&nbsp;|||&nbsp;").removeClass('active btn-danger');
-                $("#output_" + output_nr + "_off").text("Off").addClass('active btn-success');
+                $("#output_" + output_nr + "_on").html("&nbsp;|||&nbsp;").removeClass('active btn-success');
+                $("#output_" + output_nr + "_off").text("Off").addClass('active btn-gray');
             }
         }
         function show_outputs(data) {
@@ -112,10 +112,10 @@
                         if (output['status'] == 0) {
                             output_states[output['output_nr']] = false;
                             div += '        <button id="output_' + output_nr + '_on" onclick="toggle_output(' + output_nr + ');" class="gray btn btn-small">&nbsp;|||&nbsp;</button>';
-                            div += '        <button id="output_' + output_nr + '_off" onclick="toggle_output(' + output_nr + ');" class="gray btn btn-small btn-success active">Off</button>'
+                            div += '        <button id="output_' + output_nr + '_off" onclick="toggle_output(' + output_nr + ');" class="gray btn btn-small btn-gray active">Off</button>'
                         } else {
                             output_states[output['output_nr']] = true;
-                            div += '        <button id="output_' + output_nr + '_on" onclick="toggle_output(' + output_nr + ');" class="gray btn btn-small btn-danger active">On</button>';
+                            div += '        <button id="output_' + output_nr + '_on" onclick="toggle_output(' + output_nr + ');" class="gray btn btn-small btn-successs active">On</button>';
                             div += '        <button id="output_' + output_nr + '_off" onclick="toggle_output(' + output_nr + ');" class="gray btn btn-small">&nbsp;|||&nbsp;</button>'
                         }
                         div += '    </div>';
