@@ -36,8 +36,10 @@
 
             if ($('#dimmer_' + output_nr).length != 0) {
                 var dimmer = parseInt($("#dimmer_" + output_nr).val(), 10);
-                if (on == 1 && dimmer >= 0 && dimmer <= 100) {
-                    data['dimmer'] = dimmer;
+                if (dimmer >= 0 && dimmer <= 100) {
+                    if (on == 1) {
+                        data['dimmer'] = dimmer;
+                    }
                 } else {
                     show_message("Error", "The dimmer value should be between 0 and 100.");
                     return;
