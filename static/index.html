@@ -423,7 +423,7 @@
                     type: 'POST',
                     dataType: 'json',
                     data: {
-                        username: $("#username").val(),
+                        username: $("#username").val().toLowerCase(),
                         password: $("#password").val()
                     },
                     success: function(result) {
