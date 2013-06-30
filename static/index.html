@@ -302,7 +302,10 @@
                     var onoff = $("#th_onoff_" + id);
                     onoff.text(thermostat['output0'] ? 'On' : 'Off');
                     onoff.css('color', thermostat['output0'] ? '#51A351' : '#BD362F');
-                    $("#csetp_" + id).val(round_fixed(thermostat['csetp'], 1));
+                    var input = $("#csetp_" + id);
+                    if (!input.is(":focus")) {
+                        input.val(round_fixed(thermostat['csetp'], 1));
+                    }
                     $("#act_" + id).val(round_fixed(thermostat['act'], 1) + ' &deg;C');
                 } else {
                     // Configure the table
