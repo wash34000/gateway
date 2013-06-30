@@ -113,12 +113,12 @@
                         div += '    <div class="btn-group">';
                         if (output['status'] == 0) {
                             output_states[output['output_nr']] = false;
-                            div += '        <button id="output_' + output_nr + '_on" onclick="toggle_output(' + output_nr + ');" class="gray btn btn-small">&nbsp;|||&nbsp;</button>';
-                            div += '        <button id="output_' + output_nr + '_off" onclick="toggle_output(' + output_nr + ');" class="gray btn btn-small btn-gray active">Off</button>'
+                            div += '        <button id="output_' + output_nr + '_on" touchmove="toggle_output(' + output_nr + ');" onclick="toggle_output(' + output_nr + ');" class="gray btn btn-small">&nbsp;|||&nbsp;</button>';
+                            div += '        <button id="output_' + output_nr + '_off" touchmove="toggle_output(' + output_nr + ');" onclick="toggle_output(' + output_nr + ');" class="gray btn btn-small btn-gray active">Off</button>'
                         } else {
                             output_states[output['output_nr']] = true;
-                            div += '        <button id="output_' + output_nr + '_on" onclick="toggle_output(' + output_nr + ');" class="gray btn btn-small btn-successs active">On</button>';
-                            div += '        <button id="output_' + output_nr + '_off" onclick="toggle_output(' + output_nr + ');" class="gray btn btn-small">&nbsp;|||&nbsp;</button>'
+                            div += '        <button id="output_' + output_nr + '_on" touchmove="toggle_output(' + output_nr + ');" onclick="toggle_output(' + output_nr + ');" class="gray btn btn-small btn-successs active">On</button>';
+                            div += '        <button id="output_' + output_nr + '_off" touchmove="toggle_output(' + output_nr + ');" onclick="toggle_output(' + output_nr + ');" class="gray btn btn-small">&nbsp;|||&nbsp;</button>'
                         }
                         div += '    </div>';
                         if (output['type'] == 'D') {
