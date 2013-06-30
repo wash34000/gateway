@@ -323,10 +323,10 @@
                     div += '<div class="output" id="thermostat_block_' + id + '">';
                     div += '    <span class="output_name">' + thermostat['name'] + '</span>';
                     div += '    <div class="input-prepend input-append spaced" style="margin-bottom: 0;">';
-                    if (thermostat['output0'] == 1) {
-                        div += '        <span class="add-on" style="line-height: 16px; height: 16px; font-weight: bold; color: #51A351;">On</span>';
+                    if (thermostat['output0'] > 0) {
+                        div += '        <span id="th_onoff_' + id + '" class="add-on" style="line-height: 16px; height: 16px; font-weight: bold; color: #51A351;">On</span>';
                     } else {
-                        div += '        <span class="add-on" style="line-height: 16px; height: 16px; font-weight: bold; color: #BD362F;">Off</span>';
+                        div += '        <span id="th_onoff_' + id + '" class="add-on" style="line-height: 16px; height: 16px; font-weight: bold; color: #BD362F;">Off</span>';
                     }
                     div += '        <input type="text" id="csetp_' + id + '" value="' + round_fixed(thermostat['csetp'], 1) + '" size="3" style="width: 30px; height: 16px; margin: 0;" />';
                     div += '        <span class="add-on" style="line-height: 16px; height: 16px;" id="act_' + id + '">' + round_fixed(thermostat['act'], 1) + ' &deg;C</span>';
