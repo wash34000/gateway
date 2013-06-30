@@ -259,6 +259,17 @@
                 div += '</div>';
                 div += '<table class="table table-striped table-condensed" id="th_table"></table>';
                 $("#thermostats").append(div);
+
+                // Bind click handlers on mode buttons.
+                $.each([["#button_auto", "true", data['setpoint']], ["#button_away", "false", 3],
+                        ["#button_vacation", "false", 4], ["#button_party", "false", 5]],
+                    function (index, value) {
+                        $(value[0]).on("click", { auto: value[1], setpoint: value [2] }, function (e) {
+                            set_thermostat_mode("true", e.data.auto, e.data.setpoint);
+                        });
+                    }
+                );
+
                 thermostats_loaded = true;
             }
 
@@ -267,14 +278,6 @@
             onoff.css('color', data['thermostats_on'] ? '#51A351' : '#BD362F');
             $("#thermostat_outside_temp").text(round_fixed(data['thermostats'][0]['outside'], 1));
 
-            // Bind click handlers on mode buttons.
-            $.each([ ["#button_auto", "true", data['setpoint']], ["#button_away", "false", 3],
-                     ["#button_vacation", "false", 4], ["#button_party", "false", 5] ],
-                   function (index, value) {
-                $(value[0]).on("click", { auto: value[1], setpoint: value [2] }, function(e) {
-                    set_thermostat_mode("true", e.data.auto, e.data.setpoint);
-                });
-            });
 
             // Set enabled mode
             $("#button_auto").removeClass("active");
