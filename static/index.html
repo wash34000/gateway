@@ -83,7 +83,10 @@
                             output_states[output_nr] = (output['status'] !== 0);
                             display_output(output_nr);
                             if (output['type'] == 'D') {
-                                $("#dimmer_" + output_nr).val(output['dimmer']);
+                                var input = $("#dimmer_" + output_nr);
+                                if (!input.is(":focus")) {
+                                    input.val(output['dimmer']);
+                                }
                             }
                         }
                         output_ignore[output_nr] = false;
