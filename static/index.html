@@ -26,6 +26,10 @@
         function refresh_outputs() {
             load_data("outputs");
         }
+        function toggle_output_touch(event, output_nr) {
+            event.preventDefault();
+            toggle_output(output_nr);
+        }
         function toggle_output(output_nr) {
             output_states[output_nr] = !output_states[output_nr];
             output_ignore[output_nr] = true;
@@ -57,7 +61,10 @@
                 data: data
             })
             .done(refresh_outputs)
-            .fail(function() {
+            .fail(function(xhr) {
+                if (xhr.status === 401) {
+                    location.reload(true);
+                }
                 show_message("Error", "Failed to set output " + output_nr + ".");
             })
             .always(function() {
@@ -117,12 +124,12 @@
                         div += '    <div class="btn-group">';
                         if (output['status'] == 0) {
                             output_states[output['output_nr']] = false;
-                            div += '        <button id="output_' + output_nr + '_on" touchmove="toggle_output(' + output_nr + ');" onclick="toggle_output(' + output_nr + ');" class="gray btn btn-small">&nbsp;|||&nbsp;</button>';
-                            div += '        <button id="output_' + output_nr + '_off" touchmove="toggle_output(' + output_nr + ');" onclick="toggle_output(' + output_nr + ');" class="gray btn btn-small btn-gray active">Off</button>'
+                            div += '        <button id="output_' + output_nr + '_on" ontouchend="toggle_output_touch(event, ' + output_nr + ');" onclick="toggle_output(' + output_nr + ');" class="gray btn btn-small">&nbsp;|||&nbsp;</button>';
+                            div += '        <button id="output_' + output_nr + '_off" ontouchend="toggle_output_touch(event, ' + output_nr + ');" onclick="toggle_output(' + output_nr + ');" class="gray btn btn-small btn-gray active">Off</button>'
                         } else {
                             output_states[output['output_nr']] = true;
-                            div += '        <button id="output_' + output_nr + '_on" touchmove="toggle_output(' + output_nr + ');" onclick="toggle_output(' + output_nr + ');" class="gray btn btn-small btn-successs active">On</button>';
-                            div += '        <button id="output_' + output_nr + '_off" touchmove="toggle_output(' + output_nr + ');" onclick="toggle_output(' + output_nr + ');" class="gray btn btn-small">&nbsp;|||&nbsp;</button>'
+                            div += '        <button id="output_' + output_nr + '_on" ontouchend="toggle_output_touch(event, ' + output_nr + ');" onclick="toggle_output(' + output_nr + ');" class="gray btn btn-small btn-successs active">On</button>';
+                            div += '        <button id="output_' + output_nr + '_off" ontouchend="toggle_output_touch(event, ' + output_nr + ');" onclick="toggle_output(' + output_nr + ');" class="gray btn btn-small">&nbsp;|||&nbsp;</button>'
                         }
                         div += '    </div>';
                         if (output['type'] == 'D') {
@@ -180,7 +187,10 @@
                             dataType: 'json',
                             data: { token : token, group_action_id : e.data.id }
                         })
-                        .fail(function () {
+                        .fail(function (xhr) {
+                            if (xhr.status === 401) {
+                                location.reload(true);
+                            }
                             show_message("Error", "Failed to execute group action " + e.data.id + ".");
                         })
                         .always(function () {
@@ -208,7 +218,10 @@
                 data: { token : token, thermostat_on : on, automatic : automatic, setpoint : setpoint }
             })
             .done(refresh_thermostats)
-            .fail(function() {
+            .fail(function(xhr) {
+                if (xhr.status === 401) {
+                    location.reload(true);
+                }
                 show_message("Error", "Failed to set thermostat mode.");
             })
             .always(function() {
@@ -226,7 +239,10 @@
                 data: { token : token, thermostat : thermostat, temperature : temperature }
             })
             .done(refresh_thermostats)
-            .fail(function() {
+            .fail(function(xhr) {
+                if (xhr.status === 401) {
+                    location.reload(true);
+                }
                 show_message("Error", "Failed to set thermostat setpoint.");
             })
             .always(function() {
@@ -381,12 +397,15 @@
                 dataType: 'json'
             })
             .done(callback)
-            .fail(function() {
+            .fail(function(xhr) {
+                if (xhr.status === 401) {
+                    location.reload(true);
+                }
                 show_message("Error", "Fetching data for " + name + " failed.");
             })
             .always(function() {
                 $(".loading").hide();
-            })
+            });
 
             $("#"+name).addClass("loaded");
         }
@@ -435,15 +454,18 @@
                     data: {
                         username: $("#username").val().toLowerCase(),
                         password: $("#password").val()
-                    },
-                    success: function(result) {
-                        loggedIn = true;
-                        token = result['token'];
-                        logged_in_callback();
-                    },
-                    error: function() {
-                        show_message("Login failed", "The entered credentials were incorrect.");
                     }
+                })
+                .done(function(result) {
+                    loggedIn = true;
+                    token = result['token'];
+                    logged_in_callback();
+                })
+                .fail(function(xhr) {
+                    if (xhr.status === 401) {
+                        location.reload(true);
+                    }
+                    show_message("Login failed", "The entered credentials were incorrect.");
                 });
             });
 
