@@ -15,6 +15,7 @@
     <script type="text/javascript">
         var loggedIn = false;
         var token = null;
+        var messageActive = false;
 
 
         // Outputs
@@ -445,15 +446,21 @@
                     }
                 });
             });
+
+            $('#modal-message').on('hidden', function () {
+                messageActive = false;
+            });
         });
 
         function show_message(title, body) {
-            $("#message-title").text(title);
-            $("#message-body").text(body);
-            $("#modal-message").modal({
-                keyboard: false,
-                backdrop: 'static'
-            });
+            if (!messageActive) {
+                $("#message-title").text(title);
+                $("#message-body").text(body);
+                $("#modal-message").modal({
+                    keyboard: false,
+                    backdrop: 'static'
+                });
+            }
         }
         function build_string(value, times) {
             "use strict";
