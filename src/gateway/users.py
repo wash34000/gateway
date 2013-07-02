@@ -41,7 +41,7 @@ class UserController:
         self.__cursor.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT UNIQUE, "
                               "password TEXT, role TEXT, enabled INTEGER);")
         # Create the user for the cloud
-        self.create_user(self.__config['username'], self.__config['password'], "admin", True)
+        self.create_user(self.__config['username'].lower(), self.__config['password'], "admin", True)
 
     def __hash(self, password):
         """ Hash the password using sha1. """
@@ -51,13 +51,16 @@ class UserController:
         return sha.hexdigest()
     
     def create_user(self, username, password, role, enabled):
-        """ Create a new user using a username, password, role and enabled.
+        """ Create a new user using a username, password, role and enabled. The username is case
+        insensitive.
         
         :param username: username for the newly created user.
         :param password: password for the newly created user.
         :param role: role for the newly created user.
         :param enabled: boolean, only enabled users can log into the system.
         """
+        username = username.lower()
+        
         self.__cursor.execute("INSERT INTO users (username, password, role, enabled) "
                               "VALUES (?, ?, ?, ?);",
                               (username, self.__hash(password), role, int(enabled)))
@@ -77,6 +80,8 @@ class UserController:
         
         :param username: the name of the user to remove.
         """
+        username = username.lower()
+        
         if self.get_role(username) == "admin" and self.__get_num_admins() == 1:
             raise Exception("Cannot delete last admin account")
         else:
@@ -102,6 +107,8 @@ class UserController:
         
         :returns: a token that identifies this user, None for invalid credentials.
         """
+        username = username.lower()
+        
         for _ in self.__cursor.execute("SELECT id FROM users WHERE username = ? AND "
                                          "password = ? AND enabled = ?;",
                                          (username, self.__hash(password), 1)):
@@ -111,6 +118,8 @@ class UserController:
     
     def get_role(self, username):
         """ Get the role for a certain user. Returns None is user was not found. """
+        username = username.lower()
+        
         for row in self.__cursor.execute("SELECT role FROM users WHERE username = ?;",
                                          (username,)):
             return row[0]

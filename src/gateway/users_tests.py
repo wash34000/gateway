@@ -105,6 +105,22 @@ class UserControllerTest(unittest.TestCase):
         except Exception as e:
             self.assertEquals("Cannot delete last admin account", str(e))
         
+    def test_case_insensitive(self):
+        """ Test the case insensitivity of the username. """
+        user_controller = self.__get_controller()
+        
+        user_controller.create_user("TEST", "test", "admin", True)
+        
+        token = user_controller.login("test", "test")
+        self.assertTrue(user_controller.check_token(token))
+        
+        token = user_controller.login("TesT", "test")
+        self.assertTrue(user_controller.check_token(token)) 
+        
+        self.assertEquals(None, user_controller.login("test", "Test"))
+        
+        self.assertEquals([ "om", "test" ], user_controller.get_usernames())
+        
 if __name__ == "__main__":
     #import sys;sys.argv = ['', 'Test.testName']
     unittest.main()
