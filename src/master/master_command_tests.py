@@ -233,7 +233,7 @@ class MasterCommandSpecTest(unittest.TestCase):
         """ Test for MasterCommandSpec.consume_output with a variable length output field. """
         def dim(byte_value):
             """ Convert a dimmer byte value to the api value. """
-            return int(byte_value * 10.0 / 6.3)
+            return int(byte_value * 10.0 / 6.0)
         
         basic_action = MasterCommandSpec("OL", [],
                                 [Field("outputs", OutputFieldType()), Field.lit("\r\n\r\n")])

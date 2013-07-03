@@ -407,19 +407,26 @@ class VarStringFieldType:
 
 class DimmerFieldType:
     """ The dimmer value is a byte in [0, 63], this is converted to an integer in [0, 100] to
-    provide a consistent interface with the set dimmer method.
+    provide a consistent interface with the set dimmer method. The transfer function is not
+    completely linear: [0, 54] maps to [0, 90] and [54, 63] maps to [92, 100]. 
     """
     def __init__(self):
         pass
     
     def encode(self, field_value):
         """ Encode a dimmer value. """
-        return chr(int(math.ceil(field_value * 6.3 / 10.0)))
+        if field_value <= 90:
+            return chr(int(math.ceil(field_value * 6.0 / 10.0)))
+        else:
+            return chr(int(53 + field_value - 90))
     
     def decode(self, byte_str):
         """ Decode a byte [0, 63] to an integer [0, 100]. """
         dimmer_value = ord(byte_str[0])
-        return int(dimmer_value * 10.0 / 6.3)
+        if dimmer_value <= 54:
+            return int(dimmer_value * 10.0 / 6.0)
+        else:
+            return int(90 + dimmer_value - 53)
     
     def get_min_decode_bytes(self):
         """ The dimmer type is always 1 byte. """

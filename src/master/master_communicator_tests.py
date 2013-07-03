@@ -220,10 +220,10 @@ class MasterCommunicatorTest(unittest.TestCase):
         def callback(output):
             """ Callback that check if the correct result was returned for OL. """
             if got_output["phase"] == 1:
-                self.assertEquals([ (3, int(12 * 10.0 / 6.3)) ], output["outputs"])
+                self.assertEquals([ (3, int(12 * 10.0 / 6.0)) ], output["outputs"])
                 got_output["phase"] = 2
             elif got_output["phase"] == 2:
-                self.assertEquals([ (3, int(12 * 10.0 / 6.3)), (5, int(6 * 10.0 / 6.3)) ], output["outputs"])
+                self.assertEquals([ (3, int(12 * 10.0 / 6.0)), (5, int(6 * 10.0 / 6.0)) ], output["outputs"])
                 got_output["phase"] = 3
         
         comm.register_consumer(BackgroundConsumer(master_api.output_list(), 0, callback))
