@@ -53,7 +53,7 @@
 
             display_output(output_nr);
 
-            $("#loading_output_" + output_nr).show();
+            set_loading("#loading_output_" + output_nr, true);
             $.ajax({
                 url: "/set_output",
                 type: 'POST',
@@ -68,7 +68,7 @@
                 show_message("Error", "Failed to set output " + output_nr + ".");
             })
             .always(function() {
-                $("#loading_output_" + output_nr).hide();
+                set_loading("#loading_output_" + output_nr, false);
             });
         }
         function display_output(output_nr) {
@@ -135,17 +135,17 @@
                         if (output['type'] == 'D') {
                             div += '    <div class="input-prepend input-append spaced" style="margin-bottom: 0;">';
                             div += '        <span class="add-on" style="line-height: 16px; height: 16px;" >Dimmer</span>';
-                            div += '        <input type="text" id="dimmer_' + output_nr + '" value="' + output['dimmer'] + '" size="3" style="width: 25px; height: 16px;" />';
+                            div += '        <input type="text" pattern="\\d*" id="dimmer_' + output_nr + '" value="' + output['dimmer'] + '" size="3" style="width: 25px; height: 16px;" />';
                             div += '        <button onclick="set_output(' + output_nr + ');" class="btn btn-small">Save</button>';
                             div += '    </div>';
                         }
-                        div += '    <img id="loading_output_' + output_nr + '" src="/static/img/loading_round.gif" class="spaced" style="display: none; width: 25px; height: 25px;"/>';
+                        div += '    <img id="loading_output_' + output_nr + '" src="/static/img/transparent.png" class="spaced" style="width: 25px; height: 25px;"/>';
                         div += '</div>';
                         td.append(div);
                     }
                 }
             });
-            $("#outputs_loading").hide();
+            set_loading("#outputs_loading", false);
         }
 
         // Group actions
@@ -175,12 +175,12 @@
                     div += "<div class='group_action'>";
                     div += "    <span class='output_name'>" + ga['name'] + "</span>";
                     div += "    <a href='#' class='btn btn-small' id='ga_" + ga['id'] + "'>Execute</a>";
-                    div += '    <img id="loading_ga_' + ga['id'] + '" src="/static/img/loading_round.gif" class="spaced" style="display: none; width: 25px; height: 25px;"/>';
+                    div += '    <img id="loading_ga_' + ga['id'] + '" src="/static/img/transparent.png" class="spaced" style="width: 25px; height: 25px;"/>';
                     div += "</div>";
                     td.append(div);
 
                     $("#ga_" + ga['id']).on("click", {id: ga['id']}, function(e) {
-                        $("#loading_ga_" + e.data.id).show();
+                        set_loading("#loading_ga_" + e.data.id, true);
                         $.ajax({
                             url: "/do_group_action",
                             type: 'POST',
@@ -194,12 +194,12 @@
                             show_message("Error", "Failed to execute group action " + e.data.id + ".");
                         })
                         .always(function () {
-                            $("#loading_ga_" + e.data.id).hide();
+                            set_loading("#loading_ga_" + e.data.id, false);
                         });
                     });
                 }
             });
-            $("#ga_loading").hide();
+            set_loading("#ga_loading", false);
         }
 
         // Thermostats
@@ -211,7 +211,7 @@
             load_data("thermostats");
         }
         function set_thermostat_mode(on, automatic, setpoint) {
-            $("#thermostats_loading").show();
+            set_loading("#thermostats_loading", true);
             $.ajax({
                 url: "/set_thermostat_mode",
                 type: 'POST',
@@ -226,11 +226,11 @@
                 show_message("Error", "Failed to set thermostat mode.");
             })
             .always(function() {
-                $("#thermostats_loading").hide();
+                set_loading("#thermostats_loading", false);
             });
         }
         function on_csetp_change(thermostat) {
-            $("#loading_th_" + thermostat).show();
+            set_loading("#loading_th_" + thermostat, true);
             var temperature = $("#csetp_" + thermostat).val();
 
             $.ajax({
@@ -247,7 +247,7 @@
                 show_message("Error", "Failed to set thermostat setpoint.");
             })
             .always(function() {
-                $("#loading_th_" + thermostat).hide();
+                set_loading("#loading_th_" + thermostat, false);
             });
         }
         function toggle_therm_touch(event, therm_id) {
@@ -295,7 +295,7 @@
                 div += '    <div class="pull-left" style="padding-left: 20px; padding-top: 3px; margin-top: 11px;">';
                 div += '            <span style="font-weight: bold; font-size: 15px;">outside: <span id="thermostat_outside_temp">20.0</span> °C</span>';
                 div += '    </div>';
-                div += '    <img id="thermostats_loading" src="/static/img/loading_round.gif" class="spaced" style="display: none; width: 25px; height: 25px; margin-top: 10px;"/>';
+                div += '    <img id="thermostats_loading" src="/static/img/transparent.png" class="spaced" style="width: 25px; height: 25px; margin-top: 10px;"/>';
                 div += '    <div>&nbsp;</div>';
                 div += '</div>';
                 div += '<table class="table table-striped table-condensed" id="th_table"></table>';
@@ -392,11 +392,11 @@
                         } else {
                             div += '        <span id="th_onoff_' + id + '" class="add-on" style="line-height: 16px; height: 16px; font-weight: bold; color: #BD362F;">Off</span>';
                         }
-                        div += '        <input type="text" id="csetp_' + id + '" value="' + round_fixed(thermostat['csetp'], 1) + '" size="3" style="width: 30px; height: 16px; margin: 0;" />';
+                        div += '        <input type="text" pattern="[\\d|\\.]+" id="csetp_' + id + '" value="' + round_fixed(thermostat['csetp'], 1) + '" size="3" style="width: 30px; height: 16px; margin: 0;" />';
                         div += '        <span class="add-on" style="line-height: 16px; height: 16px;" id="act_' + id + '">' + round_fixed(thermostat['act'], 1) + ' &deg;C</span>';
                         div += '    </div>';
                     }
-                    div += '    <img id="loading_th_' + id + '" src="/static/img/loading_round.gif" class="spaced" style="display: none; width: 25px; height: 25px;"/>';
+                    div += '    <img id="loading_th_' + id + '" src="/static/img/transparent.png" class="spaced" style="width: 25px; height: 25px;"/>';
                     div += '</div>';
                     td.append(div);
 
@@ -571,6 +571,14 @@
 
         function gettimestamp() {
             return new Date().getTime();
+        }
+
+        function set_loading(selector, loading) {
+            if (loading) {
+                $(selector).attr('src', '/static/img/loading_round.gif');
+            } else {
+                $(selector).attr('src', '/static/img/transparent.png');
+            }
         }
     </script>
     <style>
