@@ -349,6 +349,7 @@
                     }
                     $("#act_" + id).val(round_fixed(thermostat['act'], 1) + ' &deg;C');
                     if (thermostat['sensor_nr'] >= 240) {
+                        tbs_states[id] = thermostat['csetp'] >= 20;
                         display_tbs(id);
                     }
                 } else {
