@@ -90,7 +90,7 @@ def timestampFilter():
     if "fe_time" in cherrypy.request.params:
         del cherrypy.request.params["fe_time"]
 
-cherrypy.tools.timestampFilter = cherrypy.Tool('before_request_body', timestampFilter)
+cherrypy.tools.timestampFilter = cherrypy.Tool('before_handler', timestampFilter)
 
 
 class WebInterface:
