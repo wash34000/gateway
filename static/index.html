@@ -128,7 +128,7 @@
                             div += '        <button id="output_' + output_nr + '_off" ontouchend="toggle_output_touch(event, ' + output_nr + ');" onclick="toggle_output(' + output_nr + ');" class="gray btn btn-small btn-gray active">Off</button>'
                         } else {
                             output_states[output['output_nr']] = true;
-                            div += '        <button id="output_' + output_nr + '_on" ontouchend="toggle_output_touch(event, ' + output_nr + ');" onclick="toggle_output(' + output_nr + ');" class="gray btn btn-small btn-successs active">On</button>';
+                            div += '        <button id="output_' + output_nr + '_on" ontouchend="toggle_output_touch(event, ' + output_nr + ');" onclick="toggle_output(' + output_nr + ');" class="gray btn btn-small btn-success active">On</button>';
                             div += '        <button id="output_' + output_nr + '_off" ontouchend="toggle_output_touch(event, ' + output_nr + ');" onclick="toggle_output(' + output_nr + ');" class="gray btn btn-small">&nbsp;|||&nbsp;</button>'
                         }
                         div += '    </div>';
@@ -206,6 +206,7 @@
         var th_last_tr_id = 0;
         var th_last_td = 2;
         var thermostats_loaded = false;
+        var tbs_states = {}
         function refresh_thermostats() {
             load_data("thermostats");
         }
@@ -248,6 +249,26 @@
             .always(function() {
                 $("#loading_th_" + thermostat).hide();
             });
+        }
+        function toggle_therm_touch(event, therm_id) {
+            event.preventDefault();
+            toggle_therm(therm_id);
+        }
+        function toggle_therm(therm_id) {
+            tbs_states[therm_id] = !tbs_states[therm_id];
+            $("#csetp_" + therm_id).val(tbs_states[therm_id] ? 21 : 19);
+            on_csetp_change(therm_id);
+        }
+        function display_tbs(therm_id) {
+            var on = tbs_states[therm_id];
+
+            if (on == 1) {
+                $("#therm_" + therm_id + "_on").text("On").addClass('active btn-success');
+                $("#therm_" + therm_id + "_off").html("&nbsp;|||&nbsp;").removeClass('active btn-gray');
+            } else {
+                $("#therm_" + therm_id + "_on").html("&nbsp;|||&nbsp;").removeClass('active btn-success');
+                $("#therm_" + therm_id + "_off").text("Off").addClass('active btn-gray');
+            }
         }
         function show_thermostats(data) {
             if (!thermostats_loaded) {
@@ -327,6 +348,9 @@
                         input.val(round_fixed(thermostat['csetp'], 1));
                     }
                     $("#act_" + id).val(round_fixed(thermostat['act'], 1) + ' &deg;C');
+                    if (thermostat['sensor_nr'] >= 240) {
+                        display_tbs(id);
+                    }
                 } else {
                     // Configure the table
                     var table = $("#th_table");
@@ -348,15 +372,29 @@
                     var div = "";
                     div += '<div class="output" id="thermostat_block_' + id + '">';
                     div += '    <span class="output_name">' + thermostat['name'] + '</span>';
-                    div += '    <div class="input-prepend input-append spaced" style="margin-bottom: 0;">';
-                    if (thermostat['output0'] > 0) {
-                        div += '        <span id="th_onoff_' + id + '" class="add-on" style="line-height: 16px; height: 16px; font-weight: bold; color: #51A351;">On</span>';
+                    if (thermostat['sensor_nr'] >= 240) {
+                        div += '    <div class="btn-group" style="margin-left: 9px;">';
+                        if (thermostat['output0'] === 0) {
+                            div += '        <button id="therm_' + id + '_on" ontouchend="toggle_therm_touch(event, ' + id + ');" onclick="toggle_therm(' + id + ');" class="gray btn btn-small">&nbsp;|||&nbsp;</button>';
+                            div += '        <button id="therm_' + id + '_off" ontouchend="toggle_therm_touch(event, ' + id + ');" onclick="toggle_therm(' + id + ');" class="gray btn btn-small btn-gray active">Off</button>'
+                        } else {
+                            div += '        <button id="therm_' + id + '_on" ontouchend="toggle_therm_touch(event, ' + id + ');" onclick="toggle_therm(' + id + ');" class="gray btn btn-small btn-success active">On</button>';
+                            div += '        <button id="therm_' + id + '_off" ontouchend="toggle_therm_touch(event, ' + id + ');" onclick="toggle_therm(' + id + ');" class="gray btn btn-small">&nbsp;|||&nbsp;</button>'
+                        }
+                        div += '    </div>';
+                        div += '    <input type="hidden" id="csetp_' + id + '" value="' + round_fixed(thermostat['csetp'], 1) + '" />';
+                        tbs_states[id] = thermostat['output0'] > 0;
                     } else {
-                        div += '        <span id="th_onoff_' + id + '" class="add-on" style="line-height: 16px; height: 16px; font-weight: bold; color: #BD362F;">Off</span>';
+                        div += '    <div class="input-prepend input-append spaced" style="margin-bottom: 0;">';
+                        if (thermostat['output0'] > 0) {
+                            div += '        <span id="th_onoff_' + id + '" class="add-on" style="line-height: 16px; height: 16px; font-weight: bold; color: #51A351;">On</span>';
+                        } else {
+                            div += '        <span id="th_onoff_' + id + '" class="add-on" style="line-height: 16px; height: 16px; font-weight: bold; color: #BD362F;">Off</span>';
+                        }
+                        div += '        <input type="text" id="csetp_' + id + '" value="' + round_fixed(thermostat['csetp'], 1) + '" size="3" style="width: 30px; height: 16px; margin: 0;" />';
+                        div += '        <span class="add-on" style="line-height: 16px; height: 16px;" id="act_' + id + '">' + round_fixed(thermostat['act'], 1) + ' &deg;C</span>';
+                        div += '    </div>';
                     }
-                    div += '        <input type="text" id="csetp_' + id + '" value="' + round_fixed(thermostat['csetp'], 1) + '" size="3" style="width: 30px; height: 16px; margin: 0;" />';
-                    div += '        <span class="add-on" style="line-height: 16px; height: 16px;" id="act_' + id + '">' + round_fixed(thermostat['act'], 1) + ' &deg;C</span>';
-                    div += '    </div>';
                     div += '    <img id="loading_th_' + id + '" src="/static/img/loading_round.gif" class="spaced" style="display: none; width: 25px; height: 25px;"/>';
                     div += '</div>';
                     td.append(div);
