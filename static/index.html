@@ -37,7 +37,7 @@
         }
         function set_output(output_nr) {
             var on = output_states[output_nr];
-            var data = {  token: token, output_nr: output_nr, is_on: on == 1 };
+            var data = {  token: token, output_nr: output_nr, is_on: on == 1, timestamp: gettimestamp() };
 
             if ($('#dimmer_' + output_nr).length != 0) {
                 var dimmer = parseInt($("#dimmer_" + output_nr).val(), 10);
@@ -185,7 +185,7 @@
                             url: "/do_group_action",
                             type: 'POST',
                             dataType: 'json',
-                            data: { token : token, group_action_id : e.data.id }
+                            data: { token : token, group_action_id : e.data.id, timestamp: gettimestamp() }
                         })
                         .fail(function (xhr) {
                             if (xhr.status === 401) {
@@ -215,7 +215,7 @@
                 url: "/set_thermostat_mode",
                 type: 'POST',
                 dataType: 'json',
-                data: { token : token, thermostat_on : on, automatic : automatic, setpoint : setpoint }
+                data: { token : token, thermostat_on : on, automatic : automatic, setpoint : setpoint, timestamp: gettimestamp() }
             })
             .done(refresh_thermostats)
             .fail(function(xhr) {
@@ -236,7 +236,7 @@
                 url: "/set_current_setpoint",
                 type: 'POST',
                 dataType: 'json',
-                data: { token : token, thermostat : thermostat, temperature : temperature }
+                data: { token : token, thermostat : thermostat, temperature : temperature, timestamp: gettimestamp() }
             })
             .done(refresh_thermostats)
             .fail(function(xhr) {
@@ -389,6 +389,7 @@
                 url = "/get_thermostats_short?token=" + token;
                 callback = show_thermostats;
             }
+            url += "&timestamp=" + gettimestamp();
 
             $(".loading").show();
             $.ajax({
@@ -453,7 +454,8 @@
                     dataType: 'json',
                     data: {
                         username: $("#username").val(),
-                        password: $("#password").val()
+                        password: $("#password").val(),
+                        timestamp: gettimestamp()
                     }
                 })
                 .done(function(result) {
@@ -528,6 +530,9 @@
             window.setTimeout(auto_refresh, 5000);
         }
 
+        function gettimestamp() {
+            return new Date().getTime();
+        }
     </script>
     <style>
         body {
