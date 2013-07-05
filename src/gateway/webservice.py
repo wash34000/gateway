@@ -83,6 +83,16 @@ class GatewayApiWrapper:
             raise cherrypy.HTTPError(503, "In maintenance mode")
 
 
+def timestampFilter():
+    """ If the request parameters contain a "fe_time" variable, remove it from the parameters.
+    This parameter is used by the gateway frontend to bypass caching by certain browsers.
+    """
+    if "fe_time" in cherrypy.request.params:
+        del cherrypy.request.params["fe_time"]
+
+cherrypy.tools.timestampFilter = cherrypy.Tool('before_request_body', timestampFilter)
+
+
 class WebInterface:
     """ This class defines the web interface served by cherrypy. """
 
@@ -839,7 +849,7 @@ class WebInterface:
             raise
         else:
             return self.__success(**ret)
-
+    
 
 class WebService:
     """ The web service serves the gateway api over http. """
@@ -860,7 +870,10 @@ class WebService:
                                          self.__scheduling_filename, self.__maintenance_service,
                                          self.__authorized_check),
                             config={'/static' : {'tools.staticdir.on' : True,
-                                                 'tools.staticdir.dir' : '/opt/openmotics/static'}})
+                                                 'tools.staticdir.dir' : '/opt/openmotics/static'},
+                                    '/' : { 'tools.timestampFilter.on' : True }
+                                    }
+                            )
         
         cherrypy.server.unsubscribe()
 
