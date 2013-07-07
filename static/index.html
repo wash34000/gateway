@@ -513,9 +513,6 @@
             $('#modal-message').on('hidden', function () {
                 messageActive = false;
             });
-            $("input").bind("blur", function () {
-                $(".navbar-fixed-top").css("top", "0 !important");
-            });
         });
 
         function show_message(title, body) {
