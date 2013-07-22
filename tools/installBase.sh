@@ -45,7 +45,7 @@ chmod +x /etc/init.d/supervisor
 for i in `seq 0 6`; do ln -s /etc/init.d/supervisor /etc/rc${i}.d/S99supervisor; done
 
 ## Install Qt packages
-PACKAGES="libz1_1.2.6-r1_armv7a.ipk libc6_2.12-r28_armv7a.ipk libgcc1_4.5-r49+svnr184907_armv7a.ipk libglib-2.0-0_2.30.3-r2_armv7a.ipk libffi5_3.0.10-r0_armv7a.ipk libstdc++6_4.5-r49+svnr184907_armv7a.ipk libqtcore4_4.8.0-r48.1_armv7a.ipk libqtsql4_4.8.0-r48.1_armv7a.ipk qt4-plugin-sqldriver-sqlite_4.8.0-r48.1_armv7a.ipk"
+PACKAGES="libffi5_3.0.10-r0_armv7a.ipk libqtcore4_4.8.0-r48.1_armv7a.ipk libqtsql4_4.8.0-r48.1_armv7a.ipk qt4-plugin-sqldriver-sqlite_4.8.0-r48.1_armv7a.ipk"
 for i in $PACKAGES; do wget http://openmotics.com:8100/distro/packages/${i}; done
 opkg install $PACKAGES
 
