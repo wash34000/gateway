@@ -193,7 +193,9 @@ class GatewayApi:
                  'mode' : out_dict['mode'],
                  'version' : "%d.%d.%d" % (out_dict['f1'], out_dict['f2'], out_dict['f3']),
                  'hw_version' : out_dict['h']
-               }
+               }    
+    
+    ###### Output functions
     
     def __read_outputs(self):
         """ Read all output information from the MasterApi.
@@ -800,6 +802,25 @@ class GatewayApi:
         :returns: emtpy dict.
         """
         self.__master_communicator.do_command(master_api.reset())
+        return dict()
+
+    ###### Error functions
+
+    def master_error_list(self):
+        """ Get the error list per module (input and output modules). The modules are identified by
+        O1, O2, I1, I2, ... 
+        
+        :returns: dict with 'errors' key, it contains list of tuples (module, nr_errors).
+        """
+        list = self.__master_communicator.do_command(master_api.error_list())
+        return { "errors" : list["errors"] }
+    
+    def master_clear_error_list(self):
+        """ Clear the number of errors.
+        
+        :returns: empty dict.
+        """
+        self.__master_communicator.do_command(master_api.clear_error_list())
         return dict()
 
     ###### Status led functions

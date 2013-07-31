@@ -487,6 +487,25 @@ class WebInterface:
         return self.__wrap(lambda: self.__gateway_api.master_restore(data))
     
     @cherrypy.expose
+    def master_error_list(self, token):
+        """ Get the error list per module (input and output modules). The modules are identified by
+        O1, O2, I1, I2, ... 
+        
+        :returns: dict with 'errors' key, it contains list of tuples (module, nr_errors).
+        """
+        self.__check_token(token)
+        return self.__wrap(lambda: self.__gateway_api.master_error_list())
+    
+    @cherrypy.expose
+    def master_clear_error_list(self, token):
+        """ Clear the number of errors.
+        
+        :returns: empty dict.
+        """
+        self.__check_token(token)
+        return self.__wrap(lambda: self.__gateway_api.master_clear_error_list())
+    
+    @cherrypy.expose
     def get_power_modules(self, token):
         """ Get information on the power modules. The times format is a comma seperated list of 
         HH:MM formatted times times (index 0 = start Monday, index 1 = stop Monday,

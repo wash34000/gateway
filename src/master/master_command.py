@@ -442,7 +442,7 @@ class OutputFieldType:
         return 1
     
     def decode(self, byte_str):
-        """ Checks if byte_str is the literal """
+        """ Decode a byte string. """
         bytes_required = 1 + (ord(byte_str[0]) * 2)
         
         if len(byte_str) < bytes_required:
@@ -457,4 +457,41 @@ class OutputFieldType:
                 output_nr = ord(byte_str[1 + i*2])
                 dimmer = dimmerFieldType.decode(byte_str[1 + i*2 + 1:1 + i*2 + 2])
                 out.append((output_nr, dimmer))
+            return out
+
+class ErrorListFieldType:
+    """ Field type for el. """
+    def __init__(self):
+        pass
+    
+    def get_min_decode_bytes(self):
+        """ Get the minimal amount of bytes required to start decoding. """
+        return 1
+    
+    def encode(self, field_value):
+        """ Encode to byte string. """
+        bytes = ""
+        bytes += chr(len(field_value))
+        for field in field_value:
+            bytes += "%s%s%s%s" % (field[0][0], chr(int(field[0][1:])), chr(field[1] / 256), chr(field[1] % 256))
+        return bytes
+    
+    def decode(self, byte_str):
+        """ Decode a byte string. """
+        nr_modules = ord(byte_str[0])
+        bytes_required = 1 + (nr_modules * 4)
+        
+        if len(byte_str) < bytes_required:
+            raise NeedMoreBytesException(bytes_required)
+        elif len(byte_str) > bytes_required:
+            raise ValueError("Got more bytes than required: expected %d, got %d",
+                             bytes_required, len(byte_str))
+        else:
+            out = []
+            for i in range(nr_modules):
+                id = "%s%d" % (byte_str[i*4 + 1], ord(byte_str[i*4 + 2]))
+                nr_errors =  ord(byte_str[i*4 + 3]) * 256 + ord(byte_str[i*4 + 4])
+                
+                out.append((id, nr_errors))
+            
             return out

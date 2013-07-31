@@ -6,7 +6,7 @@ Created on Sep 9, 2012
 
 @author: fryckbos
 '''
-from master_command import MasterCommandSpec, Field, OutputFieldType, DimmerFieldType
+from master_command import MasterCommandSpec, Field, OutputFieldType, DimmerFieldType, ErrorListFieldType
 
 BA_GROUP_ACTION = 2
 
@@ -267,6 +267,18 @@ def pulse_list():
         [ Field.padding(13) ],
         [ Field.int('pv0'), Field.int('pv1'), Field.int('pv2'), Field.int('pv3'), Field.int('pv4'), 
           Field.int('pv5'), Field.int('pv6'), Field.int('pv7'), Field.lit('\r\n') ])
+
+def error_list():
+    """ Get the number of errors for each input and output module. """
+    return MasterCommandSpec("el",
+        [ Field.padding(13) ],
+        [ Field("errors", ErrorListFieldType()), Field.crc(), Field.lit("\r\n\r\n") ])
+
+def clear_error_list():
+    """ Clear the number of errors. """
+    return MasterCommandSpec("ec", 
+        [ Field.padding(13) ],
+        [ Field.str("resp", 2), Field.padding(11), Field.lit("\r\n") ])
 
 def to_cli_mode():
     """ Go to CLI mode """

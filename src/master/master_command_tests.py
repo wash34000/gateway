@@ -8,7 +8,7 @@ Created on Sep 9, 2012
 import unittest
 
 import master_api
-from master_command import MasterCommandSpec, Field, OutputFieldType, DimmerFieldType
+from master_command import MasterCommandSpec, Field, OutputFieldType, DimmerFieldType, ErrorListFieldType
 
 class MasterCommandSpecTest(unittest.TestCase):
     """ Tests for :class`MasterCommandSpec` """
@@ -274,6 +274,25 @@ class MasterCommandSpecTest(unittest.TestCase):
         self.assertEquals((2, True), (bytes_consumed, done))
         
         self.assertEquals([(5, dim(16)), (1, dim(2)), (3, dim(4))], result["outputs"])
+
+    def test_error_list_field_type(self):
+        """ Tests for the ErrorListFieldType. """
+        type = ErrorListFieldType()
+        # Test with one output module
+        input = '\x01O\x14\x00\x01'
+        
+        decoded = type.decode(input)
+        self.assertEquals([('O20', 1)], decoded)
+        
+        self.assertEquals(input, type.encode(decoded))
+        
+        # Test with multiple modules
+        input = '\x03O\x14\x00\x01I\x20\x01\x01O\x08\x00\x00'
+        
+        decoded = type.decode(input)
+        self.assertEquals([('O20', 1), ('I32', 257), ('O8', 0)], decoded)
+        
+        self.assertEquals(input, type.encode(decoded))    
 
     def test_output_has_crc(self):
         """ Test for MasterCommandSpec.output_has_crc. """
