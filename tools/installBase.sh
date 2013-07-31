@@ -90,3 +90,55 @@ EOF
 ## Instal Google public DNS name servers
 echo "nameserver 8.8.8.8" > /etc/resolv.conf
 echo "nameserver 8.8.4.4" >> /etc/resolv.conf
+
+
+## Install ntpsync
+cat << EOF > /usr/bin/ntpsync
+#!/bin/bash
+# Keep trying to ntpdate (1 minute interval), until the ntpdate is succesful.
+# If the ntpdate fails, set the date to a default value.
+
+SERVER=ntp.ubuntu.com
+DEFAULT_DATE="2013-07-01 00:00"
+INTERVAL=60
+
+systemctl stop ntpd.service
+
+echo "Started ntpsync."
+
+while [ 1 ]; do
+	echo "Starting ntpdate."
+	ntpdate \$SERVER
+	if [ x"\$?" == x"0" ]; then
+		echo "ntpdate was succesfull."
+		echo "Stopping ntpsync."
+		break
+	else
+		echo "ntpdate failed."
+		date | grep 2000 # Check if we are on the default date (1th of Jan 2000)
+		if [ x"\$?" == x"0" ]; then
+			echo "Setting date to \$DEFAULT_DATE"
+			date -s "\$DEFAULT_DATE"
+		fi
+		echo "Trying again in \$INTERVAL seconds"
+		sleep \$INTERVAL
+	fi
+done
+EOF
+
+chmod +x /usr/bin/ntpsync
+
+cat << EOF > /etc/supervisor/conf.d/ntpsync.conf 
+[program:ntpsync]
+command=/usr/bin/ntpsync
+autostart=true
+autorestart=false
+startsecs=0
+exitcodes=0
+priority=1
+EOF
+
+
+## Install BeagleBone Black device tree file
+cp BBB/dts/am335x-boneblack.dtb /boot/
+
