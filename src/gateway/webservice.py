@@ -487,14 +487,19 @@ class WebInterface:
         return self.__wrap(lambda: self.__gateway_api.master_restore(data))
     
     @cherrypy.expose
-    def master_error_list(self, token):
-        """ Get the error list per module (input and output modules). The modules are identified by
-        O1, O2, I1, I2, ... 
+    def get_errors(self, token):
+        """ Get the number of seconds since the last successul communication with the master and
+        power modules (master_last_success, power_last_success) and the error list per module
+        (input and output modules). The modules are identified by O1, O2, I1, I2, ... 
         
-        :returns: dict with 'errors' key, it contains list of tuples (module, nr_errors).
+        :returns: dict with 'errors' key (contains list of tuples (module, nr_errors)), \
+        'master_last_success' and 'power_last_success'.
         """
         self.__check_token(token)
-        return self.__wrap(lambda: self.__gateway_api.master_error_list())
+        errors = self.__gateway_api.master_error_list()
+        master_last = self.__gateway_api.master_last_success()
+        power_last = self.__gateway_api.power_last_success()
+        return self.__success(errors=errors, master_last_success=master_last, power_last_success=power_last)
     
     @cherrypy.expose
     def master_clear_error_list(self, token):

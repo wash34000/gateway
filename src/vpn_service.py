@@ -189,6 +189,21 @@ class Gateway:
         diff = current - previous
         return diff if diff >= 0 else 65536 - previous + current
     
+    def get_errors(self):
+        """ Get the errors on the gateway. """
+        data = self.__do_call("get_errors?token=None")
+        if data == None:
+            return None
+        else:
+            if data['errors'] != None:
+                master_errors = sum(map(lambda x: x[1], data['errors']))
+            else:
+                master_errors = 0
+            
+            return { 'master_errors': master_errors,
+                     'master_last_success': data['master_last_success'],
+                     'power_last_success': data['power_last_success'] }
+    
     def get_local_ip_address(self):
         """ Get the local ip address. """
         try:
@@ -200,15 +215,21 @@ class Gateway:
 
 class DataCollector:
     
-    def __init__(self, name, function, period=0):
+    def __init__(self, function, period=0, real_time=False):
         """
-        Create a collector with a name, function to call and period.
+        Create a collector with a function to call, a period and a boolean that indicates whether
+        this collector is real time.
+        
         If the period is 0, the collector will be executed on each call.
         """
-        self.name = name
         self.__function = function
         self.__period = period
+        self.__real_time = real_time
         self.__last_collect = 0
+    
+    def is_real_time(self):
+        """ Check if this is a realtime collector. """
+        return self.__real_time
     
     def __should_collect(self):
         """ Should we execute the collect ? """
@@ -241,21 +262,23 @@ def main():
     cloud = Cloud(check_url, physical_frontend)
     gateway = Gateway()
 
-    collectors = [ DataCollector('energy', gateway.get_total_energy, 300),
-                   DataCollector('thermostats', gateway.get_thermostats, 60),
-                   DataCollector('pulses', gateway.get_pulse_counter_values, 60),
-                   DataCollector('outputs', gateway.get_enabled_outputs),
-                   DataCollector('power', gateway.get_realtime_power),
-                   DataCollector('update', gateway.get_update_status),
-                   DataCollector('local_ip', gateway.get_local_ip_address, 1800) ]
+    collectors = { 'energy' : DataCollector(gateway.get_total_energy, 300),
+                   'thermostats' : DataCollector(gateway.get_thermostats, 60),
+                   'pulses' : DataCollector(gateway.get_pulse_counter_values, 60),
+                   'outputs' : DataCollector(gateway.get_enabled_outputs, real_time=True),
+                   'power' : DataCollector(gateway.get_realtime_power, real_time=True),
+                   'update' : DataCollector(gateway.get_update_status),
+                   'errors': DataCollector(gateway.get_errors, 600),
+                   'local_ip' : DataCollector(gateway.get_local_ip_address, 1800) }
 
     # Loop: check vpn and open/close if needed
     while True:
         monitoring_data = {}
-        for collector in collectors:
+        for collector_name in collectors:
+            collector = collectors[collector_name]
             data = collector.collect()
             if data != None:
-                monitoring_data[collector.name] = data
+                monitoring_data[collector_name] = data
         
         extra_data = json.dumps(monitoring_data)
     

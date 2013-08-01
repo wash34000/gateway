@@ -66,6 +66,8 @@ class MasterCommunicator:
         self.__passthrough_queue = Queue()
         self.__passthrough_done = Event()
     
+        self.__last_success = 0
+    
         self.__stop = False
         
         self.__read_thread = Thread(target=self.__read, name="MasterCommunicator read thread")
@@ -107,6 +109,10 @@ class MasterCommunicator:
     def get_bytes_read(self):
         """ Get the number of bytes read from the Master. """
         return self.__serial_bytes_read
+    
+    def get_seconds_since_last_success(self):
+        """ Get the number of seconds since the last successful communication. """
+        return time.time() - self.__last_success
     
     def __get_cid(self):
         """ Get a communication id """
@@ -161,6 +167,7 @@ class MasterCommunicator:
                 if cmd.output_has_crc() and not self.__check_crc(cmd, result):
                     raise CrcCheckFailedException()
                 else:
+                    self.__last_success = time.time()
                     return result
             except CommunicationTimedOutException:
                 self.__timeouts += 1

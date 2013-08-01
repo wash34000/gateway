@@ -41,6 +41,8 @@ class PowerCommunicator:
         self.__address_mode_timeout = address_mode_timeout
         self.__power_controller = power_controller
         
+        self.__last_success = 0
+        
         if time_keeper_period != 0:
             self.__time_keeper = TimeKeeper(self, power_controller, time_keeper_period)
         else:
@@ -60,6 +62,10 @@ class PowerCommunicator:
     def get_bytes_read(self):
         """ Get the number of bytes read from the power modules. """
         return self.__serial_bytes_read
+    
+    def get_seconds_since_last_success(self):
+        """ Get the number of seconds since the last successful communication. """
+        return time.time() - self.__last_success
     
     def __get_cid(self):
         """ Get a communication id """
@@ -108,6 +114,7 @@ class PowerCommunicator:
                 if not cmd.check_header(header, address, cid):
                     raise Exception("Header did not match command")
                 
+                self.__last_success = time.time()
                 return cmd.read_output(data)
         
         with self.__serial_lock:

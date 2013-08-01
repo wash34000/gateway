@@ -813,7 +813,15 @@ class GatewayApi:
         :returns: dict with 'errors' key, it contains list of tuples (module, nr_errors).
         """
         list = self.__master_communicator.do_command(master_api.error_list())
-        return { "errors" : list["errors"] }
+        return list["errors"]
+    
+    def master_last_success(self):
+        """ Get the number of seconds since the last successful communication with the master. """
+        return self.__master_communicator.get_seconds_since_last_success()
+    
+    def power_last_success(self):
+        """ Get the number of seconds since the last successful communication with the power modules. """
+        return self.__power_communicator.get_seconds_since_last_success()
     
     def master_clear_error_list(self):
         """ Clear the number of errors.
