@@ -496,9 +496,15 @@ class WebInterface:
         'master_last_success' and 'power_last_success'.
         """
         self.__check_token(token)
-        errors = self.__gateway_api.master_error_list()
+        try:
+            errors = self.__gateway_api.master_error_list()
+        except Exception:
+            # In case of communications problems with the master.
+            errors = []
+        
         master_last = self.__gateway_api.master_last_success()
         power_last = self.__gateway_api.power_last_success()
+        
         return self.__success(errors=errors, master_last_success=master_last, power_last_success=power_last)
     
     @cherrypy.expose
