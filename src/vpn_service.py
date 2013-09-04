@@ -347,6 +347,8 @@ def main():
                    'errors': DataCollector(gateway.get_errors, 600),
                    'local_ip' : DataCollector(gateway.get_local_ip_address, 1800) }
 
+    iterations = 0
+
     # Loop: check vpn and open/close if needed
     while True:
         vpn_data = {}
@@ -359,7 +361,7 @@ def main():
         
         should_open = cloud.should_open_vpn(vpn_data)
         
-        if cloud.get_last_connect() < time.time() - REBOOT_TIMEOUT:
+        if iterations > 20 and cloud.get_last_connect() < time.time() - REBOOT_TIMEOUT:
             ''' The cloud is not responding for a while, perhaps the BeagleBone network stack is 
             hanging, reboot the gateway to reset the BeagleBone. '''
             reboot_gateway()
@@ -377,6 +379,8 @@ def main():
             
         print "Sleeping for %d" % cloud.get_sleep_time()
         time.sleep(cloud.get_sleep_time())
+
+        iterations += 1
 
 
 if __name__ == '__main__':

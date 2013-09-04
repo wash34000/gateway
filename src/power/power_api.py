@@ -100,6 +100,22 @@ def set_voltage():
     """ Calibrate the voltage of the power module. """
     return PowerCommand('S', 'SVO', 'f', '')
 
+
+## Below are the function to reset the kwh counters
+
+def reset_normal_energy():
+    """ Reset the total energy measured by the power module. """
+    return PowerCommand('S', 'ENE', '9B', '')
+
+def reset_day_energy():
+    """ Reset the energy measured during the day by the power module. """
+    return PowerCommand('S', 'EDA', '9B', '')
+
+def reset_night_energy():
+    """ Reset the energy measured during the night by the power module. """
+    return PowerCommand('S', 'ENI', '9B', '')
+
+
 ## Below are the bootloader functions
 
 def bootloader_goto():
