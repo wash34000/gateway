@@ -25,8 +25,8 @@ class EepromController:
         """ Create an instance of an EepromModel by reading it from the EepromFile. The id has to
         be specified if the model has an EepromId field.
         
-        :param eeprom_model: instance of EepromModel.
-        :param id: optional parameter (integer).
+        :param eeprom_model: EepromModel class 
+        :param id: optional parameter (integer)
         """
         eeprom_model.check_id(id)
         
@@ -35,13 +35,76 @@ class EepromController:
         
         return eeprom_model.from_eeprom_data(eeprom_data, id)
     
+    def read_batch(self, eeprom_model, ids):
+        """ Create a list of instances of an EepromModel by reading it from the EepromFile.
+        
+        :param eeprom_model: EepromModel class
+        :param id: list of integers
+        """
+        for id in ids:
+            eeprom_model.check_id(id)
+        
+        addresses = []
+        for id in ids:
+            addresses.extend(eeprom_model.get_addresses(id))
+        
+        eeprom_data = self.__eeprom_file.read(addresses)
+        
+        i = 0
+        out = []
+        
+        for id in ids:
+            length = len(eeprom_model.get_addresses(id))
+            out.append(eeprom_model.from_eeprom_data(eeprom_data[i:i+length], id))
+            i += length
+        
+        return out
+    
+    def read_all(self, eeprom_model):
+        """ Create a list of instance of an EepromModel by reading all ids of that model from the
+        EepromFile. Only applicable for EepromModels with an EepromId.
+        
+        :type eeprom_model: EepromModel class
+        """
+        return self.read_batch(eeprom_model, range(self.get_max_id(eeprom_model)))
+    
     def write(self, eeprom_model):
-        """ Write a given EepromModel to an the EepromFile.
+        """ Write a given EepromModel to the EepromFile.
         
         :param eeprom_model: instance of EepromModel.
         """
         eeprom_data = eeprom_model.to_eeprom_data()
-        eeprom_model.write(eeprom_data)
+        self.__eeprom_file.write(eeprom_data)
+    
+    def write_batch(self, eeprom_models):
+        """ Write a list of EepromModel instances to the EepromFile.
+        
+        :param eeprom_models: list of EepromModel instances.
+        """
+        eeprom_data = [ eeprom_model.to_eeprom_data() for eeprom_model in eeprom_models ]
+        self.__eeprom_file.write(eeprom_data)
+    
+    def get_max_id(self, eeprom_model):
+        """ Get the maximum id for an eeprom_model.
+        
+        :param eeprom_mode: instance of EepromModel.
+        """
+        if not eeprom_model.has_id():
+            raise TypeError("EepromModel %s does not contain an id" % eeprom_model.get_name())
+        else:
+            eeprom_id = eeprom_model.__dict__[eeprom_model.get_id_field()]
+            
+            if not eeprom_id.has_address():
+                return eeprom_id.get_max_id()
+            else:
+                address = eeprom_id.get_address()
+                if address.length != 1:
+                    raise TypeError("Length of max id address in EepromModel %s is not 1" % eeprom_model.get_name())
+                
+                eeprom_data = self.__eeprom_file.read([ address ])
+                max_id = ord(eeprom_data[0].bytes[0])
+                
+                return max_id * eeprom_id.get_multiplier()    
 
 
 class EepromFile:
@@ -62,7 +125,7 @@ class EepromFile:
         
         :param addresses: the addresses to read.
         :type addresses: list of EepromAddress instances.
-        :returns: a list of EepromData instances.
+        :returns: a list of EepromData instances (in the same order as the provided addresses).
         """
         bank_data = self.__read_banks(set([ a.bank for a in addresses ]))
         
@@ -117,7 +180,7 @@ class EepromFile:
                 else:
                     i += 1
     
-    def __path(self, bank_data, eeprom_data):
+    def __patch(self, bank_data, eeprom_data):
         """ Patch a byte array with a eeprom_data.
         
         :param bank_data: dict with bank data, key = bank, data = bytes in the bank.
@@ -143,6 +206,9 @@ class EepromAddress:
 
     def __eq__(self, other):
         return self.bank == other.bank and self.offset == other.offset and self.length == other.length
+
+    def __hash__(self):
+        return self.bank + self.offset * 256 + self.length * 256 * 256
 
     def __str__(self):
         return "(B%d A%d L%d)" % (self.bank, self.offset, self.length)
@@ -197,7 +263,7 @@ class EepromModel:
         return inspect.getmembers(cls, lambda x: isinstance(x, EepromDataType) or (include_id and isinstance(x, EepromId)))
 
     @classmethod
-    def __get_id_field(cls):
+    def get_id_field(cls):
         """ Get the name of the EepromId field. None if not included. """
         if cls.has_id():
             ids = inspect.getmembers(cls, lambda x: isinstance(x, EepromId))
@@ -260,7 +326,7 @@ class EepromModel:
         """ Create EepromData from the EepromModel. """
         data = []
 
-        id_field = self.__class__.__get_id_field()
+        id_field = self.__class__.get_id_field()
         id = None if id_field is None else self.__dict__[id_field]
 
         for (field_name, field_type) in self.__class__.get_fields():
@@ -279,7 +345,7 @@ class EepromModel:
         # Put the data in a dict by address
         data_dict = dict()
         for d in data:
-            data_dict[data.address] = d
+            data_dict[d.address] = d
 
         fields = dict()
 
@@ -289,7 +355,7 @@ class EepromModel:
             fields[field_name] = field_type.from_bytes(bytes)
 
         if id is not None:
-            fields[cls.__get_id_field()] = id
+            fields[cls.get_id_field()] = id
 
         return cls(**fields)
 
@@ -308,11 +374,39 @@ class EepromModel:
 class EepromId:
     """ Represents an id in an EepromModel. """
 
-    def __init__(self, max_id):
+    def __init__(self, max_id, address=None, multiplier=None):
+        """ Constructor.
+        
+        @param max_id: the static maximum for the id.
+        @type max_id: Integer.
+        @param address: the EepromAddress where the dynamic maximum for the id is located.
+        @type address: EepromAddress.
+        @param multiplier: if an address is provided, the multiplier can be used to multiply the
+        value located at that address.
+        @type multiplier: Integer.
+        """
         self.__max_id = max_id
-
+        self.__address = address
+        if multiplier is not None and self.__address is None:
+            raise TypeError("A multiplier was specified without an address")
+        else:
+            self.__multiplier = multiplier if multiplier != None else 1
+    
     def get_max_id(self):
+        """ Get the static maximum id. """
         return self.__max_id
+    
+    def has_address(self):
+        """ Check if the EepromId has a dynamic maximum. """
+        return self.__address is not None
+    
+    def get_address(self):
+        """ Get the EepromAddress. """
+        return self.__address
+    
+    def get_multiplier(self):
+        """ Return the multiplier for the Eeprom value (at the defined EepromAddress). """
+        return self.__multiplier
 
 
 class EepromDataType:

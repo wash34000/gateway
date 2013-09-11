@@ -118,6 +118,10 @@ class MasterCommandSpec:
                 return True
         
         return False
+    
+    def __eq__(self, other):
+        """ Only used for testing, equals by name. """
+        return self.action == other.action
 
 class Result:
     """ Result of a communication with the master. Can be accessed as a dict,
