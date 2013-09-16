@@ -517,6 +517,15 @@ class WebInterface:
         return self.__wrap(lambda: self.__gateway_api.master_clear_error_list())
     
     @cherrypy.expose
+    def get_output_configurations(self, token):
+        """ Get all output configurations.
+        
+        :returns: 'config': list of output dict containing 'id' (Id), 'floor' (Byte), 'name' (String(16)), 'timer' (Word), 'type' (Byte)
+        """
+        self.__check_token(token)
+        return self.__success(config=self.__gateway_api.get_output_configurations())
+    
+    @cherrypy.expose
     def get_power_modules(self, token):
         """ Get information on the power modules. The times format is a comma seperated list of 
         HH:MM formatted times times (index 0 = start Monday, index 1 = stop Monday,

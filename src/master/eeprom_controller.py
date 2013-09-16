@@ -81,7 +81,10 @@ class EepromController:
         
         :param eeprom_models: list of EepromModel instances.
         """
-        eeprom_data = [ eeprom_model.to_eeprom_data() for eeprom_model in eeprom_models ]
+        eeprom_data = []
+        for eeprom_model in eeprom_models:
+            eeprom_data.extend(eeprom_model.to_eeprom_data())
+
         self.__eeprom_file.write(eeprom_data)
     
     def get_max_id(self, eeprom_model):

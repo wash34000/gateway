@@ -23,6 +23,9 @@ from master.inputs import InputStatus
 from master.thermostats import ThermostatStatus
 from master.master_communicator import BackgroundConsumer
 
+from master.eeprom_controller import EepromController, EepromFile
+from master.eeprom_models import Output
+
 import power.power_api as power_api
 
 def checkNaN(number):
@@ -47,6 +50,8 @@ class GatewayApi:
                     BackgroundConsumer(master_api.input_list(), 0, self.__update_inputs))
         
         self.__thermostat_status = None
+        
+        self.__eeprom_controller = EepromController(EepromFile(self.__master_communicator))
         
         self.__power_communicator = power_communicator
         self.__power_controller = power_controller
@@ -880,6 +885,15 @@ class GatewayApi:
         out_dict = self.__master_communicator.do_command(master_api.pulse_list())
         return [ out_dict['pv0'], out_dict['pv1'], out_dict['pv2'], out_dict['pv3'],
                  out_dict['pv4'], out_dict['pv5'], out_dict['pv6'], out_dict['pv7'] ]
+
+    ###### Master configuration functions
+    
+    def get_output_configurations(self):
+        """ Get all output configurations.
+        
+        :returns: list of output dict: contains 'id' (Id), 'floor' (Byte), 'name' (String(16)), 'timer' (Word), 'type' (Byte)
+        """
+        return [ o.to_dict() for o in self.__eeprom_controller.read_all(Output) ]
 
     ###### Power functions
     

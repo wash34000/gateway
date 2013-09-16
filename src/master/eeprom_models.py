@@ -27,7 +27,7 @@ def per_module(module_size, func):
     return lambda id: func(id / module_size, id % module_size)
 
 
-class Output(EepromModel):
+class OutputConfiguration(EepromModel):
     """ Models an output. The maximum number of inputs is 240 (30 modules), the actual number of 
     outputs is 8 times the number of output modules (eeprom address 0, 1).
     """
@@ -36,9 +36,10 @@ class Output(EepromModel):
     timer = EepromWord(page_per_module(8, 33, 4, 2))
     floor = EepromByte(page_per_module(8, 33, 157, 1))
     type = EepromByte(page_per_module(8, 33, 149, 1))
+    ## TODO Type of the output -> dimmer or light ?
 
 
-class Input(EepromModel):
+class InputConfiguration(EepromModel):
     """ Models an input. The maximum number of inputs is 240 (30 modules), the actual number of 
     inputs is 8 times the number of input modules (eeprom address 0, 2).
     """
@@ -48,7 +49,7 @@ class Input(EepromModel):
     basic_actions = EepromActions(15, page_per_module(8, 2, 12, 30))
 
 
-class Thermostat(EepromModel):
+class ThermostatConfiguration(EepromModel):
     """ Models a thermostat. The maximum number of inputs is 24. """ 
     id = EepromId(24)
     setp0 = EepromTemp(lambda id: (142, 32+id))
@@ -58,22 +59,26 @@ class Thermostat(EepromModel):
     setp4 = EepromTemp(lambda id: (142, 160+id))
     setp5 = EepromTemp(lambda id: (142, 192+id))
     sensor = EepromTemp(lambda id: (144, 8+id))
-    output1 = EepromByte(lambda id: (142, id))
-    output2 = EepromByte(lambda id: (142, 224+id))
+    output0 = EepromByte(lambda id: (142, id))
+    output1 = EepromByte(lambda id: (142, 224+id))
     pid_p = EepromByte(lambda id: (141, 4*id))
     pid_i = EepromByte(lambda id: (141, (4*id)+1))
     pid_d = EepromByte(lambda id: (141, (4*id)+2))
     pid_int = EepromByte(lambda id: (141, (4*id)+3))
+    ## TODO Add thermostat name
 
+## TODO Add sensors
 
-class GroupAction(EepromModel):
+## TODO Add pump groups
+
+class GroupActionConfiguration(EepromModel):
     """ Models a group action. The maximum number of inputs is 160. """
     id = EepromId(160)
     name = EepromString(16, lambda id: (158 + (id / 16), 16 * (id % 16)))
     actions = EepromActions(16, lambda id: (67 + (id / 8), 32 * (id % 8)))
 
 
-class StartupActions(EepromModel):
+class StartupActionConfiguration(EepromModel):
     """ Models the startup actions, this contains 100 basic actions. """
     actions = EepromActions(100, (1, 0))
 
@@ -102,7 +107,7 @@ class CliConfiguration(EepromModel):
     auto_init = EepromByte((0, 14))
 
 
-class ThermostatConfiguration(EepromModel):
+class GlobalThermostatConfiguration(EepromModel):
     """ The global thermostat configuration. """
     outside_sensor = EepromByte((0, 16))
     threshold_temp = EepromTemp((0, 17))

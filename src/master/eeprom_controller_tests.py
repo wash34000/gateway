@@ -47,8 +47,7 @@ def get_eeprom_file_dummy(banks):
         address = data["address"]
         bytes = data["data"]
         
-        for i in range(len(bytes)):
-            bank[i + address] = bytes[i]
+        banks[data["bank"]] = bank[0:address] + bytes + bank[address+len(bytes):]
     
     return EepromFile(MasterCommunicatorDummy(list, write))
     
@@ -126,19 +125,35 @@ class EepromControllerTest(unittest.TestCase):
         except TypeError as e:
             self.assertTrue('id' in str(e))
 
-    def test_write_one(self):
-        """ Test write with one model. """
+    def test_write(self):
+        """ Test write. """
         controller = EepromController(get_eeprom_file_dummy([ "\x00" * 256, "\x00" * 256, "\x00" * 256, "\x00" * 256 ]))
-        controller.write([ Model1(id=1, name="\xff" * 100) ])
-        ## TODO Check the result with read
+        controller.write(Model1(id=1, name="Hello world !" + "\xff" * 10))
         
+        model = controller.read(Model1, 1)
+        self.assertEquals(1, model.id)
+        self.assertEquals("Hello world !", model.name)
+        
+    def test_write_batch_one(self):
+        """ Test write_batch with one model. """
+        controller = EepromController(get_eeprom_file_dummy([ "\x00" * 256, "\x00" * 256, "\x00" * 256, "\x00" * 256 ]))
+        controller.write_batch([ Model1(id=3, name="Hello world !") ])
+        
+        model = controller.read(Model1, 3)
+        self.assertEquals(3, model.id)
+        self.assertEquals("Hello world !", model.name)
     
-    def test_write_multiple(self):
+    def test_write_batch_multiple(self):
         """ Test write with multiple models. """
         controller = EepromController(get_eeprom_file_dummy([ "\x00" * 256, "\x00" * 256, "\x00" * 256, "\x00" * 256 ]))
-        controller.write([ Model1(id=1, name="\xff" * 100), Model2(name="\x01"*256) ])
-        ## TODO Check the result with read
+        controller.write_batch([ Model1(id=3, name="First model"), Model2(name="Second model" + "\x01" * 88) ])
         
+        model = controller.read(Model1, 3)
+        self.assertEquals(3, model.id)
+        self.assertEquals("First model", model.name)
+        
+        model = controller.read(Model2)
+        self.assertEquals("Second model" + "\x01" * 88, model.name)
 
 
 class MasterCommunicatorDummy:
