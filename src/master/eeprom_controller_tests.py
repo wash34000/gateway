@@ -404,7 +404,7 @@ class EepromModelTest(unittest.TestCase):
     
     def test_from_dict(self):
         """ Test from_dict. """
-        model1 = Model1.from_dict({'id':1, 'name':'test'})
+        model1 = Model1.from_dict({'id':1, 'name':u'test'})
         self.assertEquals(1, model1.id)
         self.assertEquals('test', model1.name)
         
@@ -421,7 +421,7 @@ class EepromModelTest(unittest.TestCase):
     
     def test_to_eeprom_data(self):
         """ Test to_eeprom_data. """
-        model1 = Model1(id=1, name="test")
+        model1 = Model1(id=1, name=u"test")
         data = model1.to_eeprom_data()
         
         self.assertEquals(1, len(data))

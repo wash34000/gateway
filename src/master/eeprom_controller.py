@@ -485,9 +485,9 @@ def removeTail(byte_str, delimiter='\xff'):
 
 def appendTail(byte_str, length, delimiter='\xff'):
     if len(byte_str) < length:
-        return byte_str + delimiter * ((length - len(byte_str)) / len(delimiter))
+        return str(byte_str) + delimiter * ((length - len(byte_str)) / len(delimiter))
     else:
-        return byte_str
+        return str(byte_str)
 
 
 class EepromString(EepromDataType):
@@ -580,7 +580,7 @@ class EepromActions(EepromDataType):
         return "Actions(%d)" % self.__length
 
     def from_bytes(self, bytes):
-        return ",".join(map(lambda b: str(ord(b)), removeTail(bytes, '\xff\xff'))),
+        return ",".join(map(lambda b: str(ord(b)), removeTail(bytes, '\xff\xff')))
 
     def to_bytes(self, field):
         actions = "" if len(field) == 0 else "".join(map(lambda x: chr(int(x)), field.split(",")))
