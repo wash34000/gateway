@@ -458,7 +458,22 @@ class EepromModelTest(unittest.TestCase):
         self.assertEquals(15, data[2].address.offset)
         self.assertEquals(2, data[2].address.length)
         self.assertEquals(str(chr(1) + chr(200)), data[2].bytes)
+    
+    def test_to_eeprom_data_readonly(self):
+        """ Test to_eeprom_data with a read only field. """
+        class RoModel(EepromModel):
+            id = EepromId(10)
+            name = EepromString(100, lambda id: (1, 2 + id))
+            other = EepromByte((0,0), read_only=True)
         
+        model = RoModel(id=1, name=u"test", other=4)
+        data = model.to_eeprom_data()
+        
+        self.assertEquals(1, len(data))
+        self.assertEquals(1, data[0].address.bank)
+        self.assertEquals(3, data[0].address.offset)
+        self.assertEquals(100, data[0].address.length)
+        self.assertEquals("test" + "\xff" * 96, data[0].bytes)
     
     def test_from_eeprom_data(self):
         """ Test from_eeprom_data. """

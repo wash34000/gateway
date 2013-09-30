@@ -333,10 +333,10 @@ class EepromModel:
         id = None if id_field is None else self.__dict__[id_field]
 
         for (field_name, field_type) in self.__class__.get_fields():
-            address = field_type.get_address(id)
-            bytes = field_type.to_bytes(self.__dict__[field_name])
-
-            data.append(EepromData(address, bytes))
+            if field_type.is_writable():
+                address = field_type.get_address(id)
+                bytes = field_type.to_bytes(self.__dict__[field_name])
+                data.append(EepromData(address, bytes))
 
         return data
 
@@ -418,11 +418,12 @@ class EepromDataType:
     also contains the address, or the address generator (in case the model has an id).
     """
 
-    def __init__(self, addr_gen):
+    def __init__(self, addr_gen, read_only=False):
         """ Create an instance of an EepromDataType with an address or an address generator. 
         The address is a tuple of (bank, offset).
         The address generator is a function that takes an id (integer).
         """
+        self.__read_only = read_only
         self.__addr_tuple = None
         self.__addr_func = None
 
@@ -436,6 +437,15 @@ class EepromDataType:
                 raise TypeError("addr_gen should be a function that takes an id and returns the same tuple.")
         else:
             raise TypeError("addr_gen should be a tuple (bank, address) or a function that takes an id and returns the same tuple.")
+
+    def is_writable(self):
+        """ Returns whether the EepromDataType is writable. """
+        return not self.__read_only
+
+    def check_writable(self):
+        """ Raises a TypeError if the EepromDataType is not writable. """
+        if self.__read_only:
+            raise TypeError("EepromDataType is not writable")
 
     def get_address(self, id=None):
         """ Calculate the address for this data type. """
@@ -493,17 +503,18 @@ def appendTail(byte_str, length, delimiter='\xff'):
 class EepromString(EepromDataType):
     """ A string with a given length. """
 
-    def __init__(self, length, addr_gen):
-        EepromDataType.__init__(self, addr_gen)
+    def __init__(self, length, addr_gen, read_only=False):
+        EepromDataType.__init__(self, addr_gen, read_only)
         self.__length = length
 
     def get_name(self):
-        return "String(%d)" % self.__length
+        return "String[%d]" % self.__length
 
     def from_bytes(self, bytes):
         return str(removeTail(bytes))
 
     def to_bytes(self, field):
+        self.check_writable()
         return appendTail(field, self.__length)
 
     def get_length(self):
@@ -513,8 +524,8 @@ class EepromString(EepromDataType):
 class EepromByte(EepromDataType):
     """ A byte. """
 
-    def __init__(self, addr_gen):
-        EepromDataType.__init__(self, addr_gen)
+    def __init__(self, addr_gen, read_only=False):
+        EepromDataType.__init__(self, addr_gen, read_only)
 
     def get_name(self):
         return "Byte"
@@ -523,6 +534,7 @@ class EepromByte(EepromDataType):
         return ord(bytes[0])
 
     def to_bytes(self, field):
+        self.check_writable()
         return str(chr(field))
 
     def get_length(self):
@@ -532,8 +544,8 @@ class EepromByte(EepromDataType):
 class EepromWord(EepromDataType):
     """ A word (2 bytes, converted to an integer). """
 
-    def __init__(self, addr_gen):
-        EepromDataType.__init__(self, addr_gen)
+    def __init__(self, addr_gen, read_only=False):
+        EepromDataType.__init__(self, addr_gen, read_only)
 
     def get_name(self):
         return "Word"
@@ -542,6 +554,7 @@ class EepromWord(EepromDataType):
         return ord(bytes[0]) * 256 + ord(bytes[1])
 
     def to_bytes(self, field):
+        self.check_writable()
         return "".join([chr(int(field) / 256), chr(int(field) % 256)])
 
     def get_length(self):
@@ -551,8 +564,8 @@ class EepromWord(EepromDataType):
 class EepromTemp(EepromDataType):
     """ A temperature (1 byte, converted to a float). """
 
-    def __init__(self, addr_gen):
-        EepromDataType.__init__(self, addr_gen)
+    def __init__(self, addr_gen, read_only=False):
+        EepromDataType.__init__(self, addr_gen, read_only)
 
     def get_name(self):
         return "Temp"
@@ -561,10 +574,34 @@ class EepromTemp(EepromDataType):
         return float(ord(bytes[0])) / 2 - 32
 
     def to_bytes(self, field):
+        self.check_writable()
         return str(chr(int((float(field) + 32) * 2)))
 
     def get_length(self):
         return 1
+
+
+class EepromCSV(EepromDataType):
+    """ A list of bytes with a given length (converted to a string of comma separated integers).
+    """
+    
+    def __init__(self, length, addr_gen, read_only=False):
+        EepromDataType.__init__(self, addr_gen, read_only)
+        self.__length = length
+
+    def get_name(self):
+        return "CSV[%d]" % self.__length
+
+    def from_bytes(self, bytes):
+        return ",".join(map(lambda b: str(ord(b)), removeTail(bytes, '\xff')))
+
+    def to_bytes(self, field):
+        self.check_writable()
+        actions = "" if len(field) == 0 else "".join(map(lambda x: chr(int(x)), field.split(",")))
+        return appendTail(actions, self.__length, '\xff')
+
+    def get_length(self):
+        return self.__length
 
 
 class EepromActions(EepromDataType):
@@ -572,17 +609,18 @@ class EepromActions(EepromDataType):
     separated integers).
     """
 
-    def __init__(self, length, addr_gen):
-        EepromDataType.__init__(self, addr_gen)
+    def __init__(self, length, addr_gen, read_only=False):
+        EepromDataType.__init__(self, addr_gen, read_only)
         self.__length = length
 
     def get_name(self):
-        return "Actions(%d)" % self.__length
+        return "Actions[%d]" % self.__length
 
     def from_bytes(self, bytes):
         return ",".join(map(lambda b: str(ord(b)), removeTail(bytes, '\xff\xff')))
 
     def to_bytes(self, field):
+        self.check_writable()
         actions = "" if len(field) == 0 else "".join(map(lambda x: chr(int(x)), field.split(",")))
         return appendTail(actions, 2 * self.__length, '\xff\xff')
 
