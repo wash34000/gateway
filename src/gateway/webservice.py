@@ -199,6 +199,33 @@ class WebInterface:
         return self.__success(port=port)
 
     @cherrypy.expose
+    def module_discover_start(self, token):
+        """ Start the module discover mode on the master.
+
+        :returns: dict with 'status' ('OK').
+        """
+        self.__check_token(token)
+        return self.__wrap(lambda: self.__gateway_api.module_discover_start())
+
+    @cherrypy.expose
+    def module_discover_stop(self, token):
+        """ Stop the module discover mode on the master.
+
+        :returns: dict with 'status' ('OK').
+        """
+        self.__check_token(token)
+        return self.__wrap(lambda: self.__gateway_api.module_discover_stop())
+
+    @cherrypy.expose
+    def get_modules(self, token):
+        """ Get a list of all modules attached and registered with the master.
+
+        :returns: dict with 'output' (list of module types: O,R,D) and 'input' (list of input module types: I,T,L).
+        """
+        self.__check_token(token)
+        return self.__wrap(lambda: self.__gateway_api.get_modules())
+
+    @cherrypy.expose
     def get_status(self, token):
         """ Get the status of the master.
         

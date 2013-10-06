@@ -200,6 +200,50 @@ class GatewayApi:
                  'hw_version' : out_dict['h']
                }    
     
+    ###### Master module functions
+
+    def module_discover_start(self):
+        """ Start the module discover mode on the master.
+
+        :returns: dict with 'status' ('OK').
+        """
+        ret = self.__master_communicator.do_command(master_api.module_discover_start())
+        return { 'status' : ret['resp'] }
+
+    def module_discover_stop(self):
+        """ Stop the module discover mode on the master.
+
+        :returns: dict with 'status' ('OK').
+        """
+        ret = self.__master_communicator.do_command(master_api.module_discover_stop())
+        return { 'status' : ret['resp'] }
+
+    def get_modules(self):
+        """ Get a list of all modules attached and registered with the master.
+
+        :returns: dict with 'output' (list of module types: O,R,D) and 'input' (list of input module types: I,T,L).
+        """
+        mods = self.__master_communicator.do_command(master_api.number_of_io_modules())
+
+        inputs = []
+        outputs = []
+
+        for i in range(mods['in']):
+            ret = self.__master_communicator.do_command(
+                            master_api.read_eeprom(),
+                            { 'bank' : 2 + i, 'addr' : 0, 'num' : 1 })
+
+            inputs.append(ret['data'][0])
+
+        for i in range(mods['out']):
+            ret = self.__master_communicator.do_command(
+                            master_api.read_eeprom(),
+                            { 'bank' : 33 + i, 'addr' : 0, 'num' : 1 })
+
+            outputs.append(ret['data'][0])
+
+        return { 'outputs' : outputs, 'inputs' : inputs }
+
     ###### Output functions
     
     def __read_outputs(self):

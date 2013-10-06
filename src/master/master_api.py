@@ -102,6 +102,12 @@ def eeprom_list():
         [ Field.byte("bank"), Field.padding(12) ],
         [ Field.byte("bank"), Field.str("data", 256) ])
 
+def read_eeprom():
+    """ Read a number (1-10) of bytes from a certain eeprom bank and address. """
+    return MasterCommandSpec("RE",
+        [ Field.byte('bank'), Field.byte('addr'), Field.byte('num'), Field.padding(10) ],
+        [ Field.byte('bank'), Field.byte('addr'), Field.byte('num'), Field.str("data", 10) ])
+
 def write_eeprom():
     """ Write data bytes to the addr in the specified eeprom bank """
     return MasterCommandSpec("WE", 
@@ -286,6 +292,18 @@ def to_cli_mode():
         [ Field.padding(13) ],
         None)
 
+def module_discover_start():
+    """ Put the master in module discovery mode. """
+    return MasterCommandSpec("DA",
+        [ Field.padding(13) ],
+        [ Field.str("resp", 2), Field.padding(11), Field.lit("\r\n") ])
+
+def module_discover_stop():
+    """ Put the master into the normal working state. """
+    return MasterCommandSpec("DO",
+        [ Field.padding(13) ],
+        [ Field.str("resp", 2), Field.padding(11), Field.lit("\r\n") ])
+
 def output_list():
     """ The message sent by the master whenever the outputs change. """
     return MasterCommandSpec("OL",
@@ -297,6 +315,13 @@ def input_list():
     return MasterCommandSpec("IL", 
         [],
         [ Field.byte('input'), Field.byte('output'), Field.lit("\r\n\r\n") ])
+
+def module_initialize():
+    """ The message sent by the master whenever a module is initialized in module discovery mode. """
+    return MasterCommandSpec("MI",
+        [],
+        [ Field.str('id', 4), Field.str('instr', 1), Field.byte('module_nr'), Field.byte('data'),
+          Field.padding(6), Field.lit('\r\n') ])
 
 class Svt:
     """ Class for the system value type, this can be either a time or a temperature. """
