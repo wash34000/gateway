@@ -6,11 +6,11 @@ Created on Sep 4, 2013
 @author: fryckbos
 '''
 from eeprom_controller import EepromModel, EepromAddress, EepromId, EepromString, EepromWord, \
-                              EepromByte, EepromActions, EepromTemp, EepromCSV
+                              EepromByte, EepromActions, EepromTemp, EepromTime, EepromCSV
 
 
 def page_per_module(module_size, start_bank, start_offset, field_size):
-    """ Returns a function that takes an id and returns an address (bank, offset). The bank is 
+    """ Returns a function that takes an id and returns an address (bank, offset). The bank is
     calculated by adding the module id to the start_bank and the offset is calculated by adding the
     start_offset to the field_size times the id in the module (the offset id).
     """
@@ -20,7 +20,7 @@ def page_per_module(module_size, start_bank, start_offset, field_size):
 def per_module(module_size, func):
     """ Returns a function that takes an id and returns an address. The id is split into the a
     module id and offset id, these two iids are provided to func to calculate the address.
-    
+
     @param func: function that takes two ids (module id, offset id) and returns an address.
     @returns: function that takes an id and returns an address (bank, offset).
     """
@@ -28,7 +28,7 @@ def per_module(module_size, func):
 
 
 class OutputConfiguration(EepromModel):
-    """ Models an output. The maximum number of inputs is 240 (30 modules), the actual number of 
+    """ Models an output. The maximum number of inputs is 240 (30 modules), the actual number of
     outputs is 8 times the number of output modules (eeprom address 0, 1).
     """
     id = EepromId(160, address=EepromAddress(0, 1, 1), multiplier=8)
@@ -40,7 +40,7 @@ class OutputConfiguration(EepromModel):
 
 
 class InputConfiguration(EepromModel):
-    """ Models an input. The maximum number of inputs is 240 (30 modules), the actual number of 
+    """ Models an input. The maximum number of inputs is 240 (30 modules), the actual number of
     inputs is 8 times the number of input modules (eeprom address 0, 2).
     """
     id = EepromId(160, address=EepromAddress(0, 2, 1), multiplier=8)
@@ -51,7 +51,7 @@ class InputConfiguration(EepromModel):
 
 
 class ThermostatConfiguration(EepromModel):
-    """ Models a thermostat. The maximum number of inputs is 24. """ 
+    """ Models a thermostat. The maximum number of inputs is 24. """
     id = EepromId(24)
     name = EepromString(16, lambda id: (187 + (id / 16), 16 * (id % 16)))
     setp0 = EepromTemp(lambda id: (142, 32+id))
@@ -66,7 +66,56 @@ class ThermostatConfiguration(EepromModel):
     pid_p = EepromByte(lambda id: (141, 4*id))
     pid_i = EepromByte(lambda id: (141, (4*id)+1))
     pid_d = EepromByte(lambda id: (141, (4*id)+2))
-    pid_int = EepromByte(lambda id: (141, (4*id)+3))    
+    pid_int = EepromByte(lambda id: (141, (4*id)+3))
+    mon_start_d1 = EepromTime(lambda id: (189, (4*id)+0))
+    mon_stop_d1 = EepromTime(lambda id: (189, (4*id)+1))
+    mon_start_d2 = EepromTime(lambda id: (189, (4*id)+2))
+    mon_stop_d2 = EepromTime(lambda id: (189, (4*id)+3))
+    tue_start_d1 = EepromTime(lambda id: (189, (4*id)+128))
+    tue_stop_d1 = EepromTime(lambda id: (189, (4*id)+129))
+    tue_start_d2 = EepromTime(lambda id: (189, (4*id)+130))
+    tue_stop_d2 = EepromTime(lambda id: (189, (4*id)+131))
+    wed_start_d1 = EepromTime(lambda id: (190, (4*id)+0))
+    wed_stop_d1 = EepromTime(lambda id: (190, (4*id)+1))
+    wed_start_d2 = EepromTime(lambda id: (190, (4*id)+2))
+    wed_stop_d2 = EepromTime(lambda id: (190, (4*id)+3))
+    thu_start_d1 = EepromTime(lambda id: (190, (4*id)+128))
+    thu_stop_d1 = EepromTime(lambda id: (190, (4*id)+129))
+    thu_start_d2 = EepromTime(lambda id: (190, (4*id)+130))
+    thu_stop_d2 = EepromTime(lambda id: (190, (4*id)+131))
+    fri_start_d1 = EepromTime(lambda id: (191, (4*id)+0))
+    fri_stop_d1 = EepromTime(lambda id: (191, (4*id)+1))
+    fri_start_d2 = EepromTime(lambda id: (191, (4*id)+2))
+    fri_stop_d2 = EepromTime(lambda id: (191, (4*id)+3))
+    sat_start_d1 = EepromTime(lambda id: (191, (4*id)+128))
+    sat_stop_d1 = EepromTime(lambda id: (191, (4*id)+129))
+    sat_start_d2 = EepromTime(lambda id: (191, (4*id)+130))
+    sat_stop_d2 = EepromTime(lambda id: (191, (4*id)+131))
+    sun_start_d1 = EepromTime(lambda id: (192, (4*id)+0))
+    sun_stop_d1 = EepromTime(lambda id: (192, (4*id)+1))
+    sun_start_d2 = EepromTime(lambda id: (192, (4*id)+2))
+    sun_stop_d2 = EepromTime(lambda id: (192, (4*id)+3))
+    mon_temp_d1 = EepromTemp(lambda id: (196, id + 0))
+    tue_temp_d1 = EepromTemp(lambda id: (196, id + 32))
+    wed_temp_d1 = EepromTemp(lambda id: (196, id + 64))
+    thu_temp_d1 = EepromTemp(lambda id: (196, id + 96))
+    fri_temp_d1 = EepromTemp(lambda id: (196, id + 128))
+    sat_temp_d1 = EepromTemp(lambda id: (196, id + 160))
+    sun_temp_d1 = EepromTemp(lambda id: (196, id + 192))
+    mon_temp_d2 = EepromTemp(lambda id: (197, id + 0))
+    tue_temp_d2 = EepromTemp(lambda id: (197, id + 32))
+    wed_temp_d2 = EepromTemp(lambda id: (197, id + 64))
+    thu_temp_d2 = EepromTemp(lambda id: (197, id + 96))
+    fri_temp_d2 = EepromTemp(lambda id: (197, id + 128))
+    sat_temp_d2 = EepromTemp(lambda id: (197, id + 160))
+    sun_temp_d2 = EepromTemp(lambda id: (197, id + 192))
+    mon_temp_n = EepromTemp(lambda id: (198, id + 0))
+    tue_temp_n = EepromTemp(lambda id: (198, id + 32))
+    wed_temp_n = EepromTemp(lambda id: (198, id + 64))
+    thu_temp_n = EepromTemp(lambda id: (198, id + 96))
+    fri_temp_n = EepromTemp(lambda id: (198, id + 128))
+    sat_temp_n = EepromTemp(lambda id: (198, id + 160))
+    sun_temp_n = EepromTemp(lambda id: (198, id + 192))
 
 
 class SensorConfiguration(EepromModel):
