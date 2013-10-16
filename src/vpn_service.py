@@ -127,14 +127,14 @@ class Gateway:
 
         :returns: a list of tuples containing the output number and dimmer value. None on error.
         """
-        data = self.do_call("get_outputs?token=None")
+        data = self.do_call("get_output_status?token=None")
         if data == None or data['success'] == False:
             return None
         else:
             ret = []
             for output in data['outputs']:
                 if output["status"] == 1:
-                    ret.append((output["output_nr"], output["dimmer"]))
+                    ret.append((output["id"], output["dimmer"]))
             return ret
 
     def get_thermostats(self):
@@ -292,8 +292,8 @@ class ActionExecutor:
         args = action.get('args', None)
 
         if name == 'set_output':
-            self.__gateway.do_call("set_output?output_nr=%s&on=%s&dimmer=%s&timer=%s&token=None" % \
-                                   (args['output_nr'], args['on'], args['dimmer'], args['timer']))
+            self.__gateway.do_call("set_output?id=%s&on=%s&dimmer=%s&timer=%s&token=None" % \
+                                   (args['id'], args['on'], args['dimmer'], args['timer']))
 
         elif name == 'set_all_lights_off':
             self.__gateway.do_call("set_all_lights_off?token=None")

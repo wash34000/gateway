@@ -257,7 +257,7 @@ class GatewayApi:
         outputs = []
         for i in range(0, num_outputs):
             outputs.append(self.__master_communicator.do_command(master_api.read_output(),
-                                                                 { 'output_nr' : i }))
+                                                                 { 'id' : i }))
         return outputs
 
     def __update_outputs(self, ol_output):
@@ -266,11 +266,11 @@ class GatewayApi:
         if self.__output_status != None:
             self.__output_status.partial_update(on_outputs)
 
-    def get_outputs(self):
+    def get_output_status(self):
         """ Get a list containing the status of the Outputs.
 
-        :returns: A list is a dicts containing the following keys: output_nr, name, floor_level,
-        light, type, controller_out, timer, ctimer, max_power, status and dimmer.
+        :returns: A list is a dicts containing the following keys: id, status, ctimer
+        and dimmer.
         """
         if self.__output_status == None:
             self.__output_status = OutputStatus(self.__read_outputs())
@@ -279,17 +279,15 @@ class GatewayApi:
             self.__output_status.full_update(self.__read_outputs())
 
         outputs = self.__output_status.get_outputs()
-        return [ { 'status':output['status'], 'floor_level':output['floor_level'],
-                   'output_nr':output['output_nr'], 'name':output['name'], 'light':output['light'],
-                   'timer':output['timer'], 'ctimer':output['ctimer'],
-                   'max_power':output['max_power'], 'dimmer':output['dimmer'],
-                   'type':output['type'] } for output in outputs ]
+        return [ { 'id':output['id'], 'status':output['status'],
+                   'ctimer':output['ctimer'], 'dimmer':output['dimmer'] }
+                  for output in outputs ]
 
-    def set_output(self, output_nr, is_on, dimmer=None, timer=None):
+    def set_output(self, id, is_on, dimmer=None, timer=None):
         """ Set the status, dimmer and timer of an output.
 
-        :param output_nr: The id of the output to set
-        :type output_nr: Integer [0, 240]
+        :param id: The id of the output to set
+        :type id: Integer [0, 240]
         :param is_on: Whether the output should be on
         :type is_on: Boolean
         :param dimmer: The dimmer value to set, None if unchanged
@@ -302,50 +300,50 @@ class GatewayApi:
             if dimmer != None or timer != None:
                 raise ValueError("Cannot set timer and dimmer when setting output to off")
             else:
-                self.set_output_status(output_nr, False)
+                self.set_output_status(id, False)
         else:
             if dimmer != None:
-                self.set_output_dimmer(output_nr, dimmer)
+                self.set_output_dimmer(id, dimmer)
 
-            self.set_output_status(output_nr, True)
+            self.set_output_status(id, True)
 
             if timer != None:
-                self.set_output_timer(output_nr, timer)
+                self.set_output_timer(id, timer)
 
         return dict()
 
-    def set_output_status(self, output_nr, is_on):
+    def set_output_status(self, id, is_on):
         """ Set the status of an output.
 
-        :param output_nr: The id of the output to set
-        :type output_nr: Integer [0, 240]
+        :param id: The id of the output to set
+        :type id: Integer [0, 240]
         :param is_on: Whether the output should be on
         :type is_on: Boolean
         :returns: empty dict.
         """
-        if output_nr < 0 or output_nr > 240:
-            raise ValueError("Output_nr not in [0, 240]: %d" % output_nr)
+        if id < 0 or id > 240:
+            raise ValueError("id not in [0, 240]: %d" % id)
 
         if is_on:
             self.__master_communicator.do_command(master_api.basic_action(),
-                    { "action_type" : master_api.BA_LIGHT_ON, "action_number" : output_nr })
+                    { "action_type" : master_api.BA_LIGHT_ON, "action_number" : id })
         else:
             self.__master_communicator.do_command(master_api.basic_action(),
-                    { "action_type" : master_api.BA_LIGHT_OFF, "action_number" : output_nr })
+                    { "action_type" : master_api.BA_LIGHT_OFF, "action_number" : id })
 
         return dict()
 
-    def set_output_dimmer(self, output_nr, dimmer):
+    def set_output_dimmer(self, id, dimmer):
         """ Set the dimmer of an output.
 
-        :param output_nr: The id of the output to set
-        :type output_nr: Integer [0, 240]
+        :param id: The id of the output to set
+        :type id: Integer [0, 240]
         :param dimmer: The dimmer value to set, None if unchanged
         :type dimmer: Integer [0, 100] or None
         :returns: empty dict.
         """
-        if output_nr < 0 or output_nr > 240:
-            raise ValueError("Output_nr not in [0, 240]: %d" % output_nr)
+        if id < 0 or id > 240:
+            raise ValueError("id not in [0, 240]: %d" % id)
 
         if dimmer < 0 or dimmer > 100:
             raise ValueError("Dimmer value not in [0, 100]: %d" % dimmer)
@@ -360,21 +358,21 @@ class GatewayApi:
             dimmer_action = master_api.__dict__['BA_LIGHT_ON_DIMMER_' + str(dimmer)]
 
         self.__master_communicator.do_command(master_api.basic_action(),
-                    { "action_type" : dimmer_action, "action_number" : output_nr })
+                    { "action_type" : dimmer_action, "action_number" : id })
 
         return dict()
 
-    def set_output_timer(self, output_nr, timer):
+    def set_output_timer(self, id, timer):
         """ Set the timer of an output.
 
-        :param output_nr: The id of the output to set
-        :type output_nr: Integer [0, 240]
+        :param id: The id of the output to set
+        :type id: Integer [0, 240]
         :param timer: The timer value to set, None if unchanged
         :type timer: Integer in [150, 450, 900, 1500, 2220, 3120]
         :returns: empty dict.
         """
-        if output_nr < 0 or output_nr > 240:
-            raise ValueError("Output_nr not in [0, 240]: %d" % output_nr)
+        if id < 0 or id > 240:
+            raise ValueError("id not in [0, 240]: %d" % id)
 
         if timer not in [150, 450, 900, 1500, 2220, 3120]:
             raise ValueError("Timer value not in [150, 450, 900, 1500, 2220, 3120]: %d" % timer)
@@ -382,34 +380,9 @@ class GatewayApi:
         timer_action = master_api.__dict__['BA_LIGHT_ON_TIMER_'+str(timer)+'_OVERRULE']
 
         self.__master_communicator.do_command(master_api.basic_action(),
-                    { "action_type" : timer_action, "action_number" : output_nr })
+                    { "action_type" : timer_action, "action_number" : id })
 
         return dict()
-
-    def set_output_floor_level(self, output_nr, floor_level):
-        """ Set the floor level of an output.
-
-        :param output_nr: The id of the output to set
-        :type output_nr: Integer [0, 240]
-        :param floor_level: The new floor level
-        :type floor_level: Integer
-        :returns: empty dict.
-        """
-        if output_nr < 0 or output_nr > 240:
-            raise ValueError("Output_nr not in [0, 240]: %d" % output_nr)
-
-        module = output_nr / 8
-        output = output_nr % 8
-
-        self.__master_communicator.do_command(master_api.write_eeprom(),
-            { "bank" : 33 + module, "address": 157 + output, "data": chr(floor_level) })
-
-        # Make sure the floor level is updated on the next get_outputs
-        if self.__output_status != None:
-            self.__output_status.force_refresh()
-
-        return dict()
-
 
     def set_all_lights_off(self):
         """ Turn all lights off.
@@ -561,7 +534,7 @@ class GatewayApi:
         setpoint = (mode & 7)
 
         thermostats = []
-        outputs = self.get_outputs()
+        outputs = self.get_output_status()
 
         for thermostat_id in range(0, 24):
             if cached_thermostats[thermostat_id]['active'] == True:

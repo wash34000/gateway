@@ -236,21 +236,21 @@ class WebInterface:
         return self.__success(**self.__gateway_api.get_status())
 
     @cherrypy.expose
-    def get_outputs(self, token):
-        """ Get the status of the master.
+    def get_output_status(self, token):
+        """ Get the status of the outputs.
 
-        :returns: dict with key 'outputs' (List of dictionaries with the following keys: output_nr,\
-        name, floor_level, light, type, controller_out, timer, ctimer, max_power, status and dimmer.
+        :returns: dict with key 'status' (List of dictionaries with the following keys: id,\
+        status, dimmer and ctimer.
         """
         self.__check_token(token)
-        return self.__success(outputs=self.__gateway_api.get_outputs())
+        return self.__success(status=self.__gateway_api.get_output_status())
 
     @cherrypy.expose
-    def set_output(self, token, output_nr, is_on, dimmer=None, timer=None):
+    def set_output(self, token, id, is_on, dimmer=None, timer=None):
         """ Set the status, dimmer and timer of an output.
 
-        :param output_nr: The id of the output to set
-        :type output_nr: Integer [0, 240]
+        :param id: The id of the output to set
+        :type id: Integer [0, 240]
         :param is_on: Whether the output should be on
         :type is_on: Boolean
         :param dimmer: The dimmer value to set, None if unchanged
@@ -261,23 +261,9 @@ class WebInterface:
         """
         self.__check_token(token)
         return self.__wrap(lambda: self.__gateway_api.set_output(
-                                        int(output_nr), is_on.lower() == "true",
+                                        int(id), is_on.lower() == "true",
                                         int(dimmer) if dimmer is not None else None,
                                         int(timer) if timer is not None else None))
-
-    @cherrypy.expose
-    def set_output_floor_level(self, token, output_nr, floor_level):
-        """ Set the floor level of an output.
-
-        :param output_nr: The id of the output to set
-        :type output_nr: Integer [0, 240]
-        :param floor_level: The new floor level
-        :type floor_level: Integer
-        :returns: empty dict.
-        """
-        self.__check_token(token)
-        return self.__wrap(lambda: self.__gateway_api.set_output_floor_level(
-                                        int(output_nr), int(floor_level)))
 
     @cherrypy.expose
     def set_all_lights_off(self, token):

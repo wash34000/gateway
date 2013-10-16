@@ -129,8 +129,8 @@ def number_of_io_modules():
 def read_output():
     """ Read the information about an output """
     return MasterCommandSpec("ro", 
-        [ Field.byte("output_nr"), Field.padding(12) ],
-        [ Field.byte('output_nr'), Field.str('type', 1), Field.byte('light'), Field.int('timer'),
+        [ Field.byte("id"), Field.padding(12) ],
+        [ Field.byte('id'), Field.str('type', 1), Field.byte('light'), Field.int('timer'),
           Field.int('ctimer'), Field.byte('status'), Field.dimmer('dimmer'),
           Field.byte('controller_out'), Field.byte('max_power'), Field.byte('floor_level'),
           Field.bytes('menu_position', 3), Field.str('name', 16), Field.crc(),

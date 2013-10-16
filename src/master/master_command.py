@@ -458,9 +458,9 @@ class OutputFieldType:
             dimmerFieldType = DimmerFieldType()
             out = []
             for i in range(ord(byte_str[0])):
-                output_nr = ord(byte_str[1 + i*2])
+                id = ord(byte_str[1 + i*2])
                 dimmer = dimmerFieldType.decode(byte_str[1 + i*2 + 1:1 + i*2 + 2])
-                out.append((output_nr, dimmer))
+                out.append((id, dimmer))
             return out
 
 class ErrorListFieldType:

@@ -34,9 +34,9 @@ class OutputStatus:
             on_dict[on_output[0]] = on_output[1]
         
         for output in self.__outputs:
-            if output['output_nr'] in on_dict:
+            if output['id'] in on_dict:
                 output['status'] = 1
-                output['dimmer'] = on_dict[output['output_nr']]
+                output['dimmer'] = on_dict[output['id']]
             else:
                 output['status'] = 0
 
