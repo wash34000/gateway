@@ -65,7 +65,7 @@ EOF
 mkdir /mnt/boot/
 mount /dev/mmcblk0p1 /mnt/boot/
 cat << EOF > /mnt/boot/uEnv.txt
-optargs="run_hardware_tests i2c_bus=2,100 panic=10"
+optargs="run_hardware_tests i2c_bus=2,100 panic=10 softlockup_panic=1"
 EOF
 umount /mnt/boot/
 rm -R /mnt/boot
@@ -135,6 +135,40 @@ autostart=true
 autorestart=false
 startsecs=0
 exitcodes=0
+priority=1
+EOF
+
+
+## Install watchdog
+cat << EOF > /usr/bin/watchdog.py
+'''
+Gives the watchdog a push every 10 seconds.
+
+Created on Oct 24, 2012
+
+@author: fryckbos
+'''
+import time
+
+def main():
+	watchdog = open('/dev/watchdog', 'w')
+
+    while True:
+        watchdog.write("O")
+        watchdog.flush()
+        
+        time.sleep(10)
+    
+    
+if __name__ == '__main__':
+    main()
+EOF
+
+cat << EOF > /etc/supervisor/conf.d/watchdog.conf 
+[program:watchdog]
+command=python /usr/bin/watchdog.py
+autostart=true
+autorestart=false
 priority=1
 EOF
 
