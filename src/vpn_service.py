@@ -140,22 +140,23 @@ class Gateway:
     def get_thermostats(self):
         """ Fetch the setpoints for the enabled thermostats from the webservice.
 
-        :returns: a dict with 'thermostats_on', 'automatic' and an array of dicts in 'thermostats'
-        with the following fields: 'thermostat', 'act', 'csetp' and 'mode'. None on error.
+        :returns: a dict with 'thermostats_on', 'automatic' and an array of dicts in 'status'
+        with the following fields: 'id', 'act', 'csetp', 'output0', 'output1' and 'mode'.
+        None on error.
         """
-        data = self.do_call("get_thermostats_short?token=None")
+        data = self.do_call("get_thermostat_status?token=None")
         if data == None or data['success'] == False:
             return None
         else:
             ret = { 'thermostats_on' : data['thermostats_on'], 'automatic' : data['automatic'] }
             thermostats = []
-            for thermostat in data['thermostats']:
+            for thermostat in data['status']:
                 to_add = {}
                 for field in [ 'thermostat', 'act', 'csetp', 'mode', 'output0', 'output1',
                                'outside' ]:
                     to_add[field] = thermostat[field]
                 thermostats.append(to_add)
-            ret['thermostats'] = thermostats
+            ret['status'] = thermostats
             return ret
 
     def get_update_status(self):

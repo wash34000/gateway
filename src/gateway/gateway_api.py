@@ -429,67 +429,6 @@ class GatewayApi:
 
     ###### Thermostat functions
 
-    def get_thermostats(self):
-        """ Get the configuration of the thermostats.
-
-        :returns: dict with global status information about the thermostats: 'thermostats_on',
-        'automatic' and 'setpoint' and a list ('thermostats') with status information for each
-        active thermostats, each element in the list is a dict with the following keys:
-        'thermostat', 'act', 'csetp', 'psetp0', 'psetp1', 'psetp2', 'psetp3', 'psetp4', 'psetp5',
-        'sensor_nr', 'output0_nr', 'output1_nr', 'output0', 'output1', 'outside', 'mode', 'name',
-        'pid_p', 'pid_i', 'pid_d', 'pid_ithresh', 'threshold_temp', 'days', 'hours', 'minutes',
-        'mon_start_d1', 'mon_stop_d1', 'mon_start_d2', 'mon_stop_d2', 'tue_start_d1', 'tue_stop_d1',
-        'tue_start_d2', 'tue_stop_d2', 'wed_start_d1', 'wed_stop_d1', 'wed_start_d2', 'wed_stop_d2',
-        'thu_start_d1', 'thu_stop_d1', 'thu_start_d2', 'thu_stop_d2', 'fri_start_d1', 'fri_stop_d1',
-        'fri_start_d2', 'fri_stop_d2', 'sat_start_d1', 'sat_stop_d1', 'sat_start_d2', 'sat_stop_d2',
-        'sun_start_d1', 'sun_stop_d1', 'sun_start_d2', 'sun_stop_d2', 'mon_temp_d1', 'tue_temp_d1',
-        'wed_temp_d1', 'thu_temp_d1', 'fri_temp_d1', 'sat_temp_d1', 'sun_temp_d1', 'mon_temp_d2',
-        'tue_temp_d2', 'wed_temp_d2', 'thu_temp_d2', 'fri_temp_d2', 'sat_temp_d2', 'sun_temp_d2',
-        'mon_temp_n', 'tue_temp_n', 'wed_temp_n', 'thu_temp_n', 'fri_temp_n', 'sat_temp_n',
-        'sun_temp_n'.
-        """
-        mode = self.__master_communicator.do_command(master_api.thermostat_mode())['mode']
-
-        thermostats_on = (mode & 128 == 128)
-        automatic = (mode & 8 == 8)
-        setpoint = (mode & 7)
-
-        thermostats = []
-        for thermostat_id in range(0, 24):
-            thermostat = self.__master_communicator.do_command(master_api.read_setpoint(),
-                            { 'thermostat' :  thermostat_id })
-
-            # Check if the thermostat is activated
-            if (thermostat['sensor_nr'] < 30 or thermostat['sensor_nr'] == 240) and thermostat['output0_nr'] < 240:
-                # Convert the Svt temperature instances into temperatures
-                for temperature_key in [ 'act', 'csetp', 'psetp0', 'psetp1', 'psetp2', 'psetp3',
-                                         'psetp4', 'psetp5', 'outside', 'threshold_temp',
-                                         'mon_temp_d1', 'tue_temp_d1', 'wed_temp_d1', 'thu_temp_d1',
-                                         'fri_temp_d1', 'sat_temp_d1', 'sun_temp_d1', 'mon_temp_d2',
-                                         'tue_temp_d2', 'wed_temp_d2', 'thu_temp_d2', 'fri_temp_d2',
-                                         'sat_temp_d2', 'sun_temp_d2', 'mon_temp_n', 'tue_temp_n',
-                                         'wed_temp_n', 'thu_temp_n', 'fri_temp_n', 'sat_temp_n',
-                                         'sun_temp_n' ]:
-                    thermostat[temperature_key] = thermostat[temperature_key].get_temperature()
-
-                # Convert the Svt time instances into times (HH:MM)
-                for time_key in [ 'mon_start_d1', 'mon_stop_d1', 'mon_start_d2', 'mon_stop_d2',
-                                  'tue_start_d1', 'tue_stop_d1', 'tue_start_d2', 'tue_stop_d2',
-                                  'wed_start_d1', 'wed_stop_d1', 'wed_start_d2', 'wed_stop_d2',
-                                  'thu_start_d1', 'thu_stop_d1', 'thu_start_d2', 'thu_stop_d2',
-                                  'fri_start_d1', 'fri_stop_d1', 'fri_start_d2', 'fri_stop_d2',
-                                  'sat_start_d1', 'sat_stop_d1', 'sat_start_d2', 'sat_stop_d2',
-                                  'sun_start_d1', 'sun_stop_d1', 'sun_start_d2', 'sun_stop_d2' ]:
-                    thermostat[time_key] = thermostat[time_key].get_time()
-
-                for output_key in [ 'output0', 'output1' ]:
-                    thermostat[output_key] = master_api.dimmer_to_percentage(thermostat[output_key])
-
-                thermostats.append(thermostat)
-
-        return { 'thermostats_on' : thermostats_on, 'automatic' : automatic,
-                 'setpoint' : setpoint, 'thermostats' : thermosztats }
-
     def __get_all_thermostats(self):
         """ Get basic information about all thermostats.
 
@@ -511,13 +450,13 @@ class GatewayApi:
 
         return thermostats
 
-    def get_thermostats_short(self):
-        """ Get the short configuration of the thermostats.
+    def get_thermostat_status(self):
+        """ Get the status of the thermostats.
 
         :returns: dict with global status information about the thermostats: 'thermostats_on',
-        'automatic' and 'setpoint' and a list ('thermostats') with status information for all
+        'automatic' and 'setpoint' and a list ('status') with status information for all
         thermostats, each element in the list is a dict with the following keys:
-        'thermostat', 'act', 'csetp', 'output0', 'output1', 'outside', 'mode', 'name', 'sensor_nr'.
+        'id', 'act', 'csetp', 'output0', 'output1', 'outside', 'mode', 'name', 'sensor_nr'.
         """
         if self.__thermostat_status == None:
             self.__thermostat_status = ThermostatStatus(self.__get_all_thermostats(), 1800)
@@ -538,7 +477,7 @@ class GatewayApi:
 
         for thermostat_id in range(0, 24):
             if cached_thermostats[thermostat_id]['active'] == True:
-                thermostat = { 'thermostat' : thermostat_id }
+                thermostat = { 'id' : thermostat_id }
                 thermostat['act'] = thermostat_info['tmp' + str(thermostat_id)].get_temperature()
                 thermostat['csetp'] = thermostat_info['setp' + str(thermostat_id)].get_temperature()
                 thermostat['outside'] = thermostat_info['outside'].get_temperature()
@@ -562,47 +501,12 @@ class GatewayApi:
                 thermostats.append(thermostat)
 
         return { 'thermostats_on' : thermostats_on, 'automatic' : automatic,
-                 'setpoint' : setpoint, 'thermostats' : thermostats }
+                 'setpoint' : setpoint, 'status' : thermostats }
 
     def __check_thermostat(self, thermostat):
         """ :raises ValueError if thermostat not in range [0, 24]. """
         if thermostat not in range(0, 25):
             raise ValueError("Thermostat not in [0,24]: %d" % thermostat)
-
-    def __check_day_of_week(self, day_of_week):
-        """ :raises ValueError if day_of_week not in range [1, 7]. """
-        if day_of_week not in range(1, 8):
-            raise ValueError("Day of week not in [1, 7]: %d" % day_of_week)
-
-    def set_programmed_setpoint(self, thermostat, setpoint, temperature):
-        """ Set a programmed setpoint of a thermostat.
-
-        :param thermostat: The id of the thermostat to set
-        :type thermostat: Integer [0, 24]
-        :param setpoint: The number of programmed setpoint
-        :type setpoint: Integer [0, 5]
-        :param temperature: The temperature to set in degrees Celcius
-        :type temperature: float
-        :returns: dict with 'thermostat', 'config' and 'temp'
-        """
-        self.__check_thermostat(thermostat)
-        if setpoint not in range(0, 6):
-            raise ValueError("Setpoint not in [0,5]: %d" % setpoint)
-
-        ret = self.__master_communicator.do_command(master_api.write_setpoint(),
-            { 'thermostat' : thermostat, 'config' : setpoint + 1,
-              'temp' : master_api.Svt.temp(temperature) })
-        ret['temp'] = ret['temp'].get_temperature()
-
-        # If we are currently in manual mode and in this setpoint, set the mode to update to the new
-        # configuration value.
-        mode = self.__master_communicator.do_command(master_api.thermostat_mode())['mode']
-        (on, automatic, csetp) = (mode & 128 == 128, mode & 8 == 8, mode & 7)
-
-        if not automatic and csetp == setpoint:
-            self.set_thermostat_mode(on, automatic, csetp)
-
-        return ret
 
     def set_current_setpoint(self, thermostat, temperature):
         """ Set the current setpoint of a thermostat.
@@ -620,77 +524,6 @@ class GatewayApi:
         ret['temp'] = ret['temp'].get_temperature()
 
         return ret
-
-    def set_thermostat_automatic_configuration(self, thermostat, day_of_week, temperature_night,
-                                          start_time_day1, stop_time_day1, temperature_day1,
-                                          start_time_day2, stop_time_day2, temperature_day2):
-        """ Set the configuration for automatic mode for a certain thermostat for a given day of
-        the week. This contains the night and 2 day temperatures and the start and stop times for
-        the 2 day periods.
-
-        :param thermostat: The id of the thermostat to set
-        :type thermostat: Integer [0, 24]
-        :param day_of_week: The day of the week
-        :type day_of_week: Integer [1, 7]
-        :param temperature_night: The low temperature (in degrees Celcius)
-        :type temperature_night: float
-        :param start_time_day1: The start time of the first high period.
-        :type start_time_day1: String HH:MM format
-        :param stop_time_day1: The stop time of the first high period.
-        :type stop_time_day1: String HH:MM format
-        :param temperature_day1: The temperature for the first high interval (in degrees Celcius)
-        :type temperature_day1: float
-        :param start_time_day2: The start time of the second high period.
-        :type start_time_day2: String HH:MM format
-        :param stop_time_day2: The stop time of the second high period.
-        :type stop_time_day2: String HH:MM format
-        :param temperature_day2: The temperature for the second high interval (in degrees Celcius)
-        :type temperature_day2: float
-        :return: empty dict
-        """
-        self.__check_thermostat(thermostat)
-        self.__check_day_of_week(day_of_week)
-
-        day_of_week = day_of_week - 1
-
-        for config in [ (18 + day_of_week * 4 + 0, master_api.Svt.time(start_time_day1)),
-                        (18 + day_of_week * 4 + 1, master_api.Svt.time(stop_time_day1)),
-                        (18 + day_of_week * 4 + 2, master_api.Svt.time(start_time_day2)),
-                        (18 + day_of_week * 4 + 3, master_api.Svt.time(stop_time_day2)),
-                        (46 + day_of_week,         master_api.Svt.temp(temperature_day1)),
-                        (53 + day_of_week,         master_api.Svt.temp(temperature_day2)),
-                        (60 + day_of_week,         master_api.Svt.temp(temperature_night)) ]:
-            self.__master_communicator.do_command(master_api.write_setpoint(),
-                { 'thermostat' : thermostat, 'config' : config[0], 'temp' : config[1] })
-
-        # If we are currently in automatic mode, set the mode to update to the new
-        # configuration value.
-        mode = self.__master_communicator.do_command(master_api.thermostat_mode())['mode']
-        (on, automatic, csetp) = (mode & 128 == 128, mode & 8 == 8, mode & 7)
-
-        if automatic:
-            self.set_thermostat_mode(on, automatic, csetp)
-
-        return dict()
-
-    def set_thermostat_automatic_configuration_batch(self, batch):
-        """ Set a batch of automatic configurations. For more info see
-        set_thermostat_automatic_configuration.
-
-        :param batch: array of dictionaries with keys 'thermostat', 'day_of_week', \
-        'temperature_night', 'start_time_day1', 'stop_time_day1', 'temperature_day1', \
-        'start_time_day2', 'stop_time_day2', 'temperature_day2'.
-        """
-        for settings in batch:
-            self.__check_thermostat(settings['thermostat'])
-            self.__check_day_of_week(settings['day_of_week'])
-
-        for settings in batch:
-            self.set_thermostat_automatic_configuration(
-                settings['thermostat'], settings['day_of_week'], settings['temperature_night'],
-                settings['start_time_day1'], settings['stop_time_day1'],
-                settings['temperature_day1'], settings['start_time_day2'],
-                settings['stop_time_day2'], settings['temperature_day2'])
 
     def set_thermostat_mode(self, thermostat_on, automatic, setpoint):
         """ Set the mode of the thermostats. Thermostats can be on or off, automatic or manual
@@ -724,22 +557,6 @@ class GatewayApi:
                   'action_number' : 0 }))
 
         return { 'resp': 'OK' }
-
-    def set_thermostat_threshold(self, threshold):
-        """ Set the outside temperature threshold of the thermostats.
-
-        :param threshold: Temperature in degrees celcius
-        :type threshold: integer
-
-        :returns: dict with 'resp'
-        """
-        self.__master_communicator.do_command(master_api.write_eeprom(),
-            { "bank" : 0, "address": 17, "data": master_api.Svt.temp(threshold).get_byte() })
-
-        self.__master_communicator.do_command(master_api.activate_eeprom(), { 'eep' : 0 })
-
-        return { 'resp': 'OK' }
-
 
     ###### Group actions
 

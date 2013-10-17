@@ -302,56 +302,16 @@ class WebInterface:
         return self.__success(inputs=self.__gateway_api.get_last_inputs())
 
     @cherrypy.expose
-    def get_thermostats(self, token):
-        """ Get the configuration of the thermostats.
-
-        :returns: dict with global status information about the thermostats: 'thermostats_on', \
-        'automatic' and 'setpoints' and a list ('thermostats') with status information for each \
-        active thermostats, each element in the list is a dict with the following keys: \
-        'thermostat', 'act', 'csetp', 'psetp0', 'psetp1', 'psetp2', 'psetp3', 'psetp4', 'psetp5', \
-        'sensor_nr', 'output0_nr', 'output1_nr', 'output0', 'output1', 'outside', 'mode', 'name', \
-        'pid_p', 'pid_i', 'pid_d', 'pid_ithresh', 'threshold_temp', 'days', 'hours', 'minutes', \
-        'mon_start_d1', 'mon_stop_d1', 'mon_start_d2', 'mon_stop_d2', 'tue_start_d1', \
-        'tue_stop_d1', 'tue_start_d2', 'tue_stop_d2', 'wed_start_d1', 'wed_stop_d1', \
-        'wed_start_d2', 'wed_stop_d2', 'thu_start_d1', 'thu_stop_d1', 'thu_start_d2', \
-        'thu_stop_d2', 'fri_start_d1', 'fri_stop_d1', 'fri_start_d2', 'fri_stop_d2', \
-        'sat_start_d1', 'sat_stop_d1', 'sat_start_d2', 'sat_stop_d2', 'sun_start_d1', \
-        'sun_stop_d1', 'sun_start_d2', 'sun_stop_d2', 'mon_temp_d1', 'tue_temp_d1', \
-        'wed_temp_d1', 'thu_temp_d1', 'fri_temp_d1', 'sat_temp_d1', 'sun_temp_d1', 'mon_temp_d2', \
-        'tue_temp_d2', 'wed_temp_d2', 'thu_temp_d2', 'fri_temp_d2', 'sat_temp_d2', 'sun_temp_d2', \
-        'mon_temp_n', 'tue_temp_n', 'wed_temp_n', 'thu_temp_n', 'fri_temp_n', 'sat_temp_n', \
-        'sun_temp_n'.
-        """
-        self.__check_token(token)
-        return self.__wrap(self.__gateway_api.get_thermostats)
-
-    @cherrypy.expose
-    def get_thermostats_short(self, token):
-        """ Get the short configuration of the thermostats.
+    def get_thermostat_status(self, token):
+        """ Get the status of the thermostats.
 
         :returns: dict with global status information about the thermostats: 'thermostats_on',
-        'automatic' and 'setpoint' and a list ('thermostats') with status information for all
+        'automatic' and 'setpoint' and a list ('status') with status information for all
         thermostats, each element in the list is a dict with the following keys:
-        'thermostat', 'act', 'csetp', 'output0', 'output1', 'outside', 'mode'.
+        'id', 'act', 'csetp', 'output0', 'output1', 'outside', 'mode'.
         """
         self.__check_token(token)
-        return self.__wrap(self.__gateway_api.get_thermostats_short)
-
-    @cherrypy.expose
-    def set_programmed_setpoint(self, token, thermostat, setpoint, temperature):
-        """ Set a programmed setpoint of a thermostat.
-
-        :param thermostat: The id of the thermostat to set
-        :type thermostat: Integer [0, 24]
-        :param setpoint: The number of programmed setpoint
-        :type setpoint: Integer [0, 5]
-        :param temperature: The temperature to set in degrees Celcius
-        :type temperature: float
-        :returns: dict with 'thermostat', 'config' and 'temp'
-        """
-        self.__check_token(token)
-        return self.__wrap(lambda: self.__gateway_api.set_programmed_setpoint(
-                                            int(thermostat), int(setpoint), float(temperature)))
+        return self.__wrap(self.__gateway_api.get_thermostat_status)
 
     @cherrypy.expose
     def set_current_setpoint(self, token, thermostat, temperature):
@@ -366,55 +326,6 @@ class WebInterface:
         self.__check_token(token)
         return self.__wrap(lambda: self.__gateway_api.set_current_setpoint(
                                             int(thermostat), float(temperature)))
-
-    @cherrypy.expose
-    def set_thermostat_automatic_configuration(self, token, thermostat, day_of_week,
-                temperature_night, start_time_day1, stop_time_day1, temperature_day1,
-                start_time_day2, stop_time_day2, temperature_day2):
-        """ Set the configuration for automatic mode for a certain thermostat for a given day of
-        the week. This contains the night and 2 day temperatures and the start and stop times for
-        the 2 day periods.
-
-        :param thermostat: The id of the thermostat to set
-        :type thermostat: Integer [0, 24]
-        :param day_of_week: The day of the week
-        :type day_of_week: Integer [1, 7]
-        :param temperature_night: The low temperature (in degrees Celcius)
-        :type temperature_night: float
-        :param start_time_day1: The start time of the first high period.
-        :type start_time_day1: String HH:MM format
-        :param stop_time_day1: The stop time of the first high period.
-        :type stop_time_day1: String HH:MM format
-        :param temperature_day1: The temperature for the first high interval (in degrees Celcius)
-        :type temperature_day1: float
-        :param start_time_day2: The start time of the second high period.
-        :type start_time_day2: String HH:MM format
-        :param stop_time_day2: The stop time of the second high period.
-        :type stop_time_day2: String HH:MM format
-        :param temperature_day2: The temperature for the second high interval (in degrees Celcius)
-        :type temperature_day2: float
-        :return: empty dict
-        """
-        self.__check_token(token)
-        return self.__wrap(
-            lambda: self.__gateway_api.set_thermostat_automatic_configuration(
-                int(thermostat), int(day_of_week), float(temperature_night),
-                start_time_day1, stop_time_day1, float(temperature_day1),
-                start_time_day2, stop_time_day2, float(temperature_day2)))
-
-    @cherrypy.expose
-    def set_thermostat_automatic_configuration_batch(self, token, batch):
-        """ Set a batch of automatic configurations. For more info see
-        set_thermostat_automatic_configuration.
-
-        :param batch: Json encoded array of dictionaries with keys 'thermostat', 'day_of_week', \
-        'temperature_night', 'start_time_day1', 'stop_time_day1', 'temperature_day1', \
-        'start_time_day2', 'stop_time_day2', 'temperature_day2'.
-        :return: empty dict
-        """
-        self.__check_token(token)
-        return self.__wrap(
-            lambda: self.__gateway_api.set_thermostat_automatic_configuration_batch(json.loads(batch)))
 
     @cherrypy.expose
     def set_thermostat_mode(self, token, thermostat_on, automatic, setpoint):
@@ -433,18 +344,6 @@ class WebInterface:
         self.__check_token(token)
         return self.__wrap(lambda: self.__gateway_api.set_thermostat_mode(
                        boolean(thermostat_on), boolean(automatic), int(setpoint)))
-
-    @cherrypy.expose
-    def set_thermostat_threshold(self, token, threshold):
-        """ Set the outside temperature threshold of the thermostats.
-
-        :param threshold: Temperature in degrees celcius
-        :type threshold: integer
-
-        :returns: dict with 'resp'
-        """
-        self.__check_token(token)
-        return self.__wrap(lambda: self.__gateway_api.set_thermostat_threshold(float(threshold)))
 
     @cherrypy.expose
     def do_group_action(self, token, group_action_id):
