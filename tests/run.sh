@@ -22,6 +22,9 @@ python -m master.passthrough_tests
 echo "Running thermostats tests"
 python -m master.thermostats_tests
 
+echo "Running eeprom controller tests"
+python -m master.eeprom_controller_tests
+
 echo "Running users tests"
 python -m gateway.users_tests
 
@@ -36,3 +39,4 @@ python -m power.power_communicator_tests
 
 echo "Running time keeper tests"
 python -m power.time_keeper_tests
+

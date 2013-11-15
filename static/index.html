@@ -17,6 +17,9 @@
         var token = null;
         var messageActive = false;
 
+        // Configuration
+        var configs_loaded = 0;
+        var configs = { "outputs" : {}, "thermostats" : {}, "group_actions" : {} };
 
         // Outputs
         var output_states = {};
@@ -85,7 +88,9 @@
         function show_outputs(data) {
             $.each(data['outputs'], function(index, output) {
                 if (output['light'] == 1) {
-                    var output_nr = output['output_nr'];
+                    var output_nr = output['id'];
+                    var output_name = configs['outputs'][output_nr];
+
                     if ($("#output_block_" + output_nr).length === 1) {
                         if (!output_ignore[output_nr]) {
                             output_states[output_nr] = (output['status'] !== 0);
@@ -120,7 +125,7 @@
 
                         var div = "";
                         div += '<div class="output" id="output_block_' + output_nr + '">';
-                        div += '    <span class="output_name">' + output['name'] + '</span>';
+                        div += '    <span class="output_name">' + output_name + '</span>';
                         div += '    <div class="btn-group">';
                         if (output['status'] == 0) {
                             output_states[output['output_nr']] = false;
@@ -151,9 +156,9 @@
         // Group actions
         var ga_last_tr_id = 0;
         var ga_last_td = 2;
-        function show_group_actions(data) {
-            $.each(data['group_actions'], function(index, ga) {
-                if (ga['name'] != "") {
+        function show_group_actions() {
+            $.each(configs['group_actions'], function(id, name) {
+                if (name != "") {
                     // Configure the table
                     var table = $("#ga_table");
                     if (ga_last_td === 2) {
@@ -173,13 +178,13 @@
 
                     var div = "";
                     div += "<div class='group_action'>";
-                    div += "    <span class='output_name'>" + ga['name'] + "</span>";
-                    div += "    <a href='#' class='btn btn-small' id='ga_" + ga['id'] + "'>Execute</a>";
-                    div += '    <img id="loading_ga_' + ga['id'] + '" src="/static/img/transparent.png" class="spaced" style="width: 25px; height: 25px;"/>';
+                    div += "    <span class='output_name'>" + name + "</span>";
+                    div += "    <a href='#' class='btn btn-small' id='ga_" + id + "'>Execute</a>";
+                    div += '    <img id="loading_ga_' + id + '" src="/static/img/transparent.png" class="spaced" style="width: 25px; height: 25px;"/>';
                     div += "</div>";
                     td.append(div);
 
-                    $("#ga_" + ga['id']).on("click", {id: ga['id']}, function(e) {
+                    $("#ga_" + id).on("click", {id: id}, function(e) {
                         set_loading("#loading_ga_" + e.data.id, true);
                         $.ajax({
                             url: "/do_group_action",
@@ -337,7 +342,8 @@
 
             // Add all thermostas
             $.each(data['thermostats'], function (index, thermostat) {
-                var id = thermostat['thermostat'];
+                var id = thermostat['id'];
+                var thermostat_name = configs['thermostats'][id];
 
                 if ($("#thermostat_block_" + id).length === 1) {
                     var onoff = $("#th_onoff_" + id);
@@ -372,7 +378,7 @@
 
                     var div = "";
                     div += '<div class="output" id="thermostat_block_' + id + '">';
-                    div += '    <span class="output_name">' + thermostat['name'] + '</span>';
+                    div += '    <span class="output_name">' + thermostat_name + '</span>';
                     if (thermostat['sensor_nr'] >= 240) {
                         div += '    <div class="btn-group" style="margin-left: 9px;">';
                         if (thermostat['output0'] === 0) {
@@ -419,13 +425,10 @@
             var url, callback;
 
             if (name == "outputs") {
-                url = "/get_outputs?token=" + token;
+                url = "/get_output_status?token=" + token;
                 callback = show_outputs;
-            } else if (name == "group_actions") {
-                url = "/get_group_actions?token=" + token;
-                callback = show_group_actions;
             } else if (name == "thermostats") {
-                url = "/get_thermostats_short?token=" + token;
+                url = "/get_thermostat_status?token=" + token;
                 callback = show_thermostats;
             }
             url += "&fe_time=" + gettimestamp();
@@ -450,11 +453,61 @@
             $("#"+name).addClass("loaded");
         }
 
+        function create_error(msg) {
+            return function(xhr) {
+                if (xhr.status === 401) {
+                    location.reload(true);
+                }
+                show_message("Error", msg);
+            };
+        }
+
+        function create_config_loaded(dict, key) {
+            return function(data) {
+                $.each(data, function(i, element) {
+                    var id = element['id'];
+                    var name = element['name'];
+                    dict[key][id] = name;
+                });
+                
+                configs_loaded += 1;
+                if (configs_loaded == 3) {
+                    $('.loading').hide();
+                    $('#outputs_button').trigger('click');
+                    auto_refresh();
+                }
+            };
+        }
+
         function logged_in_callback() {
             $('.tabs').show();
             $('#login_form').hide();
-            $('#outputs_button').trigger('click');
-            auto_refresh();
+            /* Load the configuration */
+            $('.loading').show();
+
+            $.post({
+                url: '/get_output_configurations',
+                data: { 'token' : token, 'fields' : [ 'name' ] },
+                dataType: 'json'
+            })
+            .done(create_config_loaded(configs, "outputs"))
+            .fail(create_error("Fetching output configuration data"));
+
+            $.post({
+                url: '/get_thermostat_configurations',
+                data: { 'token' : token, 'fields' : [ 'name' ] },
+                dataType: 'json'
+            })
+            .done(create_config_loaded(configs, "thermostats"))
+            .fail(create_error("Fetching thermostat configuration data"));
+
+            $.post({
+                url: '/get_group_action_configurations',
+                data: { 'token' : token, 'fields' : [ 'name' ] },
+                dataType: 'json'
+            })
+            .done(create_config_loaded(configs, "group_actions"))
+            .fail(create_error("Fetching thermostat configuration data"));
         }
 
         $(document).ready(function() {
@@ -470,12 +523,10 @@
                     $("#thermostats_button").parent().removeClass('active');
                     $("#" + name + "_button").parent().addClass('active');
 
-                    if (!$("#"+name).hasClass('loaded')) {
+                    if (name != "group_actions") {
                         load_data(name);
-                    } else if (name == "outputs") {
-                        refresh_outputs();
-                    } else if (name == "thermostats") {
-                        refresh_thermostats();
+                    } else {
+                        show_group_actions();
                     }
                 });
             });
