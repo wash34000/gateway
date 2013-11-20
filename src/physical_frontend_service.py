@@ -17,7 +17,9 @@ from ConfigParser import ConfigParser
 
 import constants
 
-I2C_DEVICE = '/dev/i2c-2'
+I2C_DEVICE_BB = '/dev/i2c-2'  # Beaglebone
+I2C_DEVICE_BBB = '/dev/i2c-1' #Beaglebone black
+
 IOCTL_I2C_SLAVE = 0x0703
 I2C_SLAVE_ADDRESS = None # Read from config file
 CODES = { 'uart4':64, 'uart5':128, 'vpn':16, 'stat1':0, 'stat2':0, 'alive':1, 'cloud':4 }
@@ -30,12 +32,24 @@ ETH_RIGHT = 49
 
 AUTH_LOOP = [ '1', '0', '1', '0', '0', '0', '0', '0' ]
 
+
+def is_beagle_bone_black():
+    """ Use the total memory size to determine whether the code runs on a Beaglebone
+    or on a Beaglebone Black. """
+    meminfo = open('/proc/meminfo', 'r')
+    memTotal = meminfo.readline()
+    meminfo.close()
+    return "510716 kB" in memTotal
+
+
 class StatusObject(dbus.service.Object):
     """ The StatusObject contains the methods exposed over dbus, the serial and network activity
     checkers and the 'authorized' button checker. """
 
-    def __init__(self, bus, path):
+    def __init__(self, bus, path, i2c_device):
         dbus.service.Object.__init__(self, bus, path)
+        self.__i2c_device = i2c_device
+
         self.__network_enabled = False
         self.__network_activity = False
         self.__network_bytes = 0
@@ -110,7 +124,7 @@ class StatusObject(dbus.service.Object):
             new_code = self.__get_i2c_code()
             if new_code != self.__last_code:
                 self.__last_code = new_code
-                i2c = open(I2C_DEVICE, 'r+', 1)
+                i2c = open(self.__i2c_device, 'r+', 1)
                 fcntl.ioctl(i2c, IOCTL_I2C_SLAVE, I2C_SLAVE_ADDRESS)
                 i2c.write(chr(self.__get_i2c_code()))
                 i2c.close()
@@ -257,7 +271,9 @@ def main():
     system_bus = dbus.SystemBus()
     name = dbus.service.BusName("com.openmotics.status", system_bus)
     
-    status = StatusObject(system_bus, '/com/openmotics/status')
+    i2c_device = I2C_DEVICE_BBB if is_beagle_bone_black() else I2C_DEVICE_BB
+    
+    status = StatusObject(system_bus, '/com/openmotics/status', i2c_device)
     status.start()
 
     mainloop = gobject.MainLoop()
