@@ -6,7 +6,7 @@ Created on Sep 2, 2013
 '''
 import unittest
 
-from eeprom_controller import EepromController, EepromFile, EepromModel, EepromId, EepromString, EepromByte, EepromWord, EepromData, EepromAddress
+from eeprom_controller import EepromController, EepromFile, EepromModel, EepromId, EepromString, EepromByte, EepromWord, EepromData, EepromAddress, EepromActions, CompositeDataType
 import master_api
 
 
@@ -40,6 +40,14 @@ class Model5(EepromModel):
     name = EepromString(10, lambda id: (3+id, 4))
     link = EepromByte(lambda id: (3+id, 14))
     out = EepromWord(lambda id: (3+id, 15))
+
+
+class Model6(EepromModel):
+    """ Dummy model with a CompositeDataType. """
+    name = EepromString(10, (3, 4))
+    status = CompositeDataType([
+                            ('link', EepromByte((3, 14))),
+                            ('out', EepromWord((3, 15))) ])
 
 
 def get_eeprom_file_dummy(banks):
@@ -466,6 +474,13 @@ class EepromModelTest(unittest.TestCase):
         self.assertEquals(2, len(fields))
         self.assertEquals("id", fields[0][0])
         self.assertEquals("name", fields[1][0])
+        
+        fields = Model6.get_fields()
+        
+        self.assertEquals(2, len(fields))
+        self.assertEquals("name", fields[0][0])
+        self.assertEquals("status", fields[1][0])
+        
 
     def test_has_id(self):
         """ Test has_id. """
@@ -505,6 +520,7 @@ class EepromModelTest(unittest.TestCase):
         """ Test to_dict. """
         self.assertEquals({'id':1, 'name':'test'}, Model1(id=1, name="test").to_dict())
         self.assertEquals({'name':'hello world'}, Model2(name="hello world").to_dict())
+        self.assertEquals({'name':'a', 'status':[1,2]}, Model6(name="a", status=[1,2]).to_dict())
 
     def test_from_dict(self):
         """ Test from_dict. """
@@ -514,6 +530,10 @@ class EepromModelTest(unittest.TestCase):
 
         model2 = Model2.from_dict({'name':'test'})
         self.assertEquals('test', model2.name)
+        
+        model6 = Model6.from_dict({'name':u'test', 'status':[1,2]})
+        self.assertEquals('test', model6.name)
+        self.assertEquals([1,2], model6.status)
 
     def test_from_dict_error(self):
         """ Test from_dict when the dict does not contain the right keys. """
@@ -528,7 +548,6 @@ class EepromModelTest(unittest.TestCase):
             self.fail("Should have received TypeError")
         except TypeError as e:
             self.assertTrue("id" in str(e))
-
 
     def test_to_eeprom_data(self):
         """ Test to_eeprom_data. """
@@ -569,6 +588,26 @@ class EepromModelTest(unittest.TestCase):
         self.assertEquals(15, data[2].address.offset)
         self.assertEquals(2, data[2].address.length)
         self.assertEquals(str(chr(1) + chr(200)), data[2].bytes)
+        
+        model6 = Model6(name=u"test", status=[1,2])
+        data = model6.to_eeprom_data()
+
+        self.assertEquals(3, len(data))
+        self.assertEquals(3, data[0].address.bank)
+        self.assertEquals(4, data[0].address.offset)
+        self.assertEquals(10, data[0].address.length)
+        self.assertEquals("test" + "\xff" * 6, data[0].bytes)
+        
+        self.assertEquals(3, data[1].address.bank)
+        self.assertEquals(14, data[1].address.offset)
+        self.assertEquals(1, data[1].address.length)
+        self.assertEquals(str(chr(1)), data[1].bytes)
+        
+        self.assertEquals(3, data[2].address.bank)
+        self.assertEquals(15, data[2].address.offset)
+        self.assertEquals(2, data[2].address.length)
+        self.assertEquals("\x00\x02", data[2].bytes)
+        
 
     def test_to_eeprom_data_readonly(self):
         """ Test to_eeprom_data with a read only field. """
@@ -605,9 +644,16 @@ class EepromModelTest(unittest.TestCase):
         self.assertEquals(123, model3.link)
         self.assertEquals(456, model3.out)
 
+        model6_data = [ EepromData(EepromAddress(3, 4, 10), "test" + "\xff" * 6),
+                        EepromData(EepromAddress(3, 14, 1), str(chr(1))),
+                        EepromData(EepromAddress(3, 15, 2), str(chr(0) + chr(2))) ]
+        model6 = Model6.from_eeprom_data(model6_data)
+        
+        self.assertEquals("test", model6.name)
+        self.assertEquals([1,2], model6.status)
+
     def test_from_eeprom_wrong_address(self):
         """ Test from_eeprom_data with wrong address. """
-
         try:
             model1_data = [ EepromData(EepromAddress(3, 4, 100), "test" + "\xff" * 96)]
             Model1.from_eeprom_data(model1_data, 1)
@@ -660,6 +706,21 @@ class EepromModelTest(unittest.TestCase):
         self.assertEquals(15, addresses[2].offset)
         self.assertEquals(2, addresses[2].length)
 
+        addresses = Model6.get_addresses()
+        self.assertEquals(3, len(addresses))
+
+        self.assertEquals(3, addresses[0].bank)
+        self.assertEquals(4, addresses[0].offset)
+        self.assertEquals(10, addresses[0].length)
+
+        self.assertEquals(3, addresses[1].bank)
+        self.assertEquals(14, addresses[1].offset)
+        self.assertEquals(1, addresses[1].length)
+
+        self.assertEquals(3, addresses[2].bank)
+        self.assertEquals(15, addresses[2].offset)
+        self.assertEquals(2, addresses[2].length)
+
     def test_get_addresses_wrong_id(self):
         """ Test get_addresses with a wrong id. """
         try:
@@ -667,6 +728,98 @@ class EepromModelTest(unittest.TestCase):
             self.fail("Expected TypeError.")
         except TypeError as e:
             self.assertTrue("id" in str(e))
+
+
+class CompositeDataTypeTest(unittest.TestCase):
+    """ Tests for CompositeDataType. """
+    
+    def test_get_addresses(self):
+        """ Test get_addresses. """
+        cdt = CompositeDataType([('one', EepromByte((1,2))), ('two', EepromByte((1,3)))])
+        addresses = cdt.get_addresses()
+        
+        self.assertEquals(2, len(addresses))
+        
+        self.assertEquals(1, addresses[0].bank)
+        self.assertEquals(2, addresses[0].offset)
+        self.assertEquals(1, addresses[0].length)
+
+        self.assertEquals(1, addresses[1].bank)
+        self.assertEquals(3, addresses[1].offset)
+        self.assertEquals(1, addresses[1].length)
+    
+    def test_get_addresses_id(self):
+        """ Test get_addresses with an id. """
+        cdt = CompositeDataType([('one', EepromByte(lambda id: (1, 10+id))), ('two', EepromByte(lambda id : (1, 20+id)))])
+        addresses = cdt.get_addresses(id=5)
+        
+        self.assertEquals(2, len(addresses))
+        
+        self.assertEquals(1, addresses[0].bank)
+        self.assertEquals(15, addresses[0].offset)
+        self.assertEquals(1, addresses[0].length)
+
+        self.assertEquals(1, addresses[1].bank)
+        self.assertEquals(25, addresses[1].offset)
+        self.assertEquals(1, addresses[1].length)
+
+    def test_get_name(self):
+        """ Test get_name. """
+        cdt = CompositeDataType([('one', EepromByte((1,2))), ('two', EepromByte((1,3)))])
+        self.assertEquals("[one(Byte),two(Byte)]", cdt.get_name())
+    
+    def test_from_data_dict(self):
+        """ Test from_data_dict. """
+        cdt = CompositeDataType([('one', EepromByte((1,2))), ('two', EepromByte((1,3)))])
+        
+        a1 = EepromAddress(1,2,1)
+        a2 = EepromAddress(1,3,1)
+        
+        data_dict = { a1 : EepromData(a1, str(chr(12))), a2 : EepromData(a1, str(chr(34))) }
+        self.assertEquals([12,34], cdt.from_data_dict(data_dict))
+    
+    def test_to_eeprom_data(self):
+        """ Test to_eeprom_data. """
+        cdt = CompositeDataType([('one', EepromByte((1,2))), ('two', EepromByte((1,3)))])
+        
+        data = cdt.to_eeprom_data([34,12])
+        
+        self.assertEquals(2, len(data))
+        
+        self.assertEquals(EepromAddress(1,2,1), data[0].address)
+        self.assertEquals(str(chr(34)), data[0].bytes)
+        
+        self.assertEquals(EepromAddress(1,3,1), data[1].address)
+        self.assertEquals(str(chr(12)), data[1].bytes)
+    
+    def test_is_writable(self):
+        """ Test is_writable """
+        cdt = CompositeDataType([])
+        self.assertTrue(cdt.is_writable())
+        cdt = CompositeDataType([], False)
+        self.assertTrue(cdt.is_writable())
+        cdt = CompositeDataType([], True)
+        self.assertFalse(cdt.is_writable())
+
+
+class EepromActionsTest(unittest.TestCase):
+    """ Tests for EepromActions. """
+
+    def test_from_bytes(self):
+        """ Test from_bytes. """
+        ea = EepromActions(1, (0, 0))
+        self.assertEquals("1,2", ea.from_bytes("\x01\x02"))
+        
+        ea = EepromActions(2, (0, 0))
+        self.assertEquals("1,2", ea.from_bytes("\x01\x02\xff\xff"))
+    
+    def test_to_bytes(self):
+        """ Test to_bytes. """
+        ea = EepromActions(1, (0, 0))
+        self.assertEquals("\x01\x02", ea.to_bytes("1,2"))
+        
+        ea = EepromActions(2, (0, 0))
+        self.assertEquals("\x01\x02\xff\xff", ea.to_bytes("1,2"))
 
 
 if __name__ == "__main__":

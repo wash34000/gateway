@@ -6,7 +6,8 @@ Created on Sep 4, 2013
 @author: fryckbos
 '''
 from eeprom_controller import EepromModel, EepromAddress, EepromId, EepromString, EepromWord, \
-                              EepromByte, EepromActions, EepromTemp, EepromTime, EepromCSV
+                              EepromByte, EepromActions, EepromTemp, EepromTime, EepromCSV, \
+                              CompositeDataType
 
 
 def page_per_module(module_size, start_bank, start_offset, field_size):
@@ -60,62 +61,76 @@ class ThermostatConfiguration(EepromModel):
     setp3 = EepromTemp(lambda id: (142, 128+id))
     setp4 = EepromTemp(lambda id: (142, 160+id))
     setp5 = EepromTemp(lambda id: (142, 192+id))
-    sensor = EepromTemp(lambda id: (144, 8+id))
+    sensor = EepromByte(lambda id: (144, 8+id))
     output0 = EepromByte(lambda id: (142, id))
     output1 = EepromByte(lambda id: (142, 224+id))
     pid_p = EepromByte(lambda id: (141, 4*id))
     pid_i = EepromByte(lambda id: (141, (4*id)+1))
     pid_d = EepromByte(lambda id: (141, (4*id)+2))
     pid_int = EepromByte(lambda id: (141, (4*id)+3))
-    mon_start_d1 = EepromTime(lambda id: (189, (4*id)+0))
-    mon_stop_d1 = EepromTime(lambda id: (189, (4*id)+1))
-    mon_start_d2 = EepromTime(lambda id: (189, (4*id)+2))
-    mon_stop_d2 = EepromTime(lambda id: (189, (4*id)+3))
-    tue_start_d1 = EepromTime(lambda id: (189, (4*id)+128))
-    tue_stop_d1 = EepromTime(lambda id: (189, (4*id)+129))
-    tue_start_d2 = EepromTime(lambda id: (189, (4*id)+130))
-    tue_stop_d2 = EepromTime(lambda id: (189, (4*id)+131))
-    wed_start_d1 = EepromTime(lambda id: (190, (4*id)+0))
-    wed_stop_d1 = EepromTime(lambda id: (190, (4*id)+1))
-    wed_start_d2 = EepromTime(lambda id: (190, (4*id)+2))
-    wed_stop_d2 = EepromTime(lambda id: (190, (4*id)+3))
-    thu_start_d1 = EepromTime(lambda id: (190, (4*id)+128))
-    thu_stop_d1 = EepromTime(lambda id: (190, (4*id)+129))
-    thu_start_d2 = EepromTime(lambda id: (190, (4*id)+130))
-    thu_stop_d2 = EepromTime(lambda id: (190, (4*id)+131))
-    fri_start_d1 = EepromTime(lambda id: (191, (4*id)+0))
-    fri_stop_d1 = EepromTime(lambda id: (191, (4*id)+1))
-    fri_start_d2 = EepromTime(lambda id: (191, (4*id)+2))
-    fri_stop_d2 = EepromTime(lambda id: (191, (4*id)+3))
-    sat_start_d1 = EepromTime(lambda id: (191, (4*id)+128))
-    sat_stop_d1 = EepromTime(lambda id: (191, (4*id)+129))
-    sat_start_d2 = EepromTime(lambda id: (191, (4*id)+130))
-    sat_stop_d2 = EepromTime(lambda id: (191, (4*id)+131))
-    sun_start_d1 = EepromTime(lambda id: (192, (4*id)+0))
-    sun_stop_d1 = EepromTime(lambda id: (192, (4*id)+1))
-    sun_start_d2 = EepromTime(lambda id: (192, (4*id)+2))
-    sun_stop_d2 = EepromTime(lambda id: (192, (4*id)+3))
-    mon_temp_d1 = EepromTemp(lambda id: (196, id + 0))
-    tue_temp_d1 = EepromTemp(lambda id: (196, id + 32))
-    wed_temp_d1 = EepromTemp(lambda id: (196, id + 64))
-    thu_temp_d1 = EepromTemp(lambda id: (196, id + 96))
-    fri_temp_d1 = EepromTemp(lambda id: (196, id + 128))
-    sat_temp_d1 = EepromTemp(lambda id: (196, id + 160))
-    sun_temp_d1 = EepromTemp(lambda id: (196, id + 192))
-    mon_temp_d2 = EepromTemp(lambda id: (197, id + 0))
-    tue_temp_d2 = EepromTemp(lambda id: (197, id + 32))
-    wed_temp_d2 = EepromTemp(lambda id: (197, id + 64))
-    thu_temp_d2 = EepromTemp(lambda id: (197, id + 96))
-    fri_temp_d2 = EepromTemp(lambda id: (197, id + 128))
-    sat_temp_d2 = EepromTemp(lambda id: (197, id + 160))
-    sun_temp_d2 = EepromTemp(lambda id: (197, id + 192))
-    mon_temp_n = EepromTemp(lambda id: (198, id + 0))
-    tue_temp_n = EepromTemp(lambda id: (198, id + 32))
-    wed_temp_n = EepromTemp(lambda id: (198, id + 64))
-    thu_temp_n = EepromTemp(lambda id: (198, id + 96))
-    fri_temp_n = EepromTemp(lambda id: (198, id + 128))
-    sat_temp_n = EepromTemp(lambda id: (198, id + 160))
-    sun_temp_n = EepromTemp(lambda id: (198, id + 192))
+    auto_mon = CompositeDataType(
+        [ ('temp_n', EepromTemp(lambda id: (198, id + 0))),
+          ('start_d1', EepromTime(lambda id: (189, (4*id)+0))),
+          ('stop_d1', EepromTime(lambda id: (189, (4*id)+1))),
+          ('temp_d1', EepromTemp(lambda id: (196, id + 0))),
+          ('start_d2', EepromTime(lambda id: (189, (4*id)+2))),
+          ('stop_d2', EepromTime(lambda id: (189, (4*id)+3))),
+          ('temp_d2', EepromTemp(lambda id: (197, id + 0)))
+        ])
+    auto_tue = CompositeDataType(
+        [ ('temp_n', EepromTemp(lambda id: (198, id + 32))),
+          ('start_d1', EepromTime(lambda id: (189, (4*id)+128))),
+          ('stop_d1', EepromTime(lambda id: (189, (4*id)+129))),
+          ('temp_d1', EepromTemp(lambda id: (196, id + 32))),
+          ('start_d2', EepromTime(lambda id: (189, (4*id)+130))),
+          ('stop_d2', EepromTime(lambda id: (189, (4*id)+131))),
+          ('temp_d2', EepromTemp(lambda id: (197, id + 32)))
+        ])
+    auto_wed = CompositeDataType(
+        [ ('temp_n', EepromTemp(lambda id: (198, id + 64))),
+          ('start_d1', EepromTime(lambda id: (190, (4*id)+0))),
+          ('stop_d1', EepromTime(lambda id: (190, (4*id)+1))),
+          ('temp_d1', EepromTemp(lambda id: (196, id + 64))),
+          ('start_d2', EepromTime(lambda id: (190, (4*id)+2))),
+          ('stop_d2', EepromTime(lambda id: (190, (4*id)+3))),
+          ('temp_d2', EepromTemp(lambda id: (197, id + 64)))
+        ])
+    auto_thu = CompositeDataType(
+        [ ('temp_n', EepromTemp(lambda id: (198, id + 96))),
+          ('start_d1', EepromTime(lambda id: (190, (4*id)+128))),
+          ('stop_d1', EepromTime(lambda id: (190, (4*id)+129))),
+          ('temp_d1', EepromTemp(lambda id: (196, id + 96))),
+          ('start_d2', EepromTime(lambda id: (190, (4*id)+130))),
+          ('stop_d2', EepromTime(lambda id: (190, (4*id)+131))),
+          ('temp_d2', EepromTemp(lambda id: (197, id + 96)))
+        ])
+    auto_fri = CompositeDataType(
+        [ ('temp_n', EepromTemp(lambda id: (198, id + 128))),
+          ('start_d1', EepromTime(lambda id: (191, (4*id)+0))),
+          ('stop_d1', EepromTime(lambda id: (191, (4*id)+1))),
+          ('temp_d1', EepromTemp(lambda id: (196, id + 128))),
+          ('start_d2', EepromTime(lambda id: (191, (4*id)+2))),
+          ('stop_d2', EepromTime(lambda id: (191, (4*id)+3))),
+          ('temp_d2', EepromTemp(lambda id: (197, id + 128)))
+        ])
+    auto_sat = CompositeDataType(
+        [ ('temp_n', EepromTemp(lambda id: (198, id + 160))),
+          ('start_d1', EepromTime(lambda id: (191, (4*id)+128))),
+          ('stop_d1', EepromTime(lambda id: (191, (4*id)+129))),
+          ('temp_d1', EepromTemp(lambda id: (196, id + 160))),
+          ('start_d2', EepromTime(lambda id: (191, (4*id)+130))),
+          ('stop_d2', EepromTime(lambda id: (191, (4*id)+131))),
+          ('temp_d2', EepromTemp(lambda id: (197, id + 160)))
+        ])
+    auto_sun = CompositeDataType(
+        [ ('temp_n', EepromTemp(lambda id: (198, id + 192))),
+          ('start_d1', EepromTime(lambda id: (192, (4*id)+0))),
+          ('stop_d1', EepromTime(lambda id: (192, (4*id)+1))),
+          ('temp_d1', EepromTemp(lambda id: (196, id + 192))),
+          ('start_d2', EepromTime(lambda id: (192, (4*id)+2))),
+          ('stop_d2', EepromTime(lambda id: (192, (4*id)+3))),
+          ('temp_d2', EepromTemp(lambda id: (197, id + 192)))
+        ])
 
 
 class SensorConfiguration(EepromModel):
@@ -140,10 +155,10 @@ class GroupActionConfiguration(EepromModel):
 class ScheduledActionConfiguration(EepromModel):
     """ Models the scheduled actions. The maximum number of scheduled actions is 102. """
     id = EepromId(102)
-    hour = EepromByte(lambda id: (113 + id / 52, 5 * (id % 52) + 0))
-    minute = EepromByte(lambda id: (113 + id / 52, 5 * (id % 52) + 1))
-    day = EepromByte(lambda id: (113 + id / 52, 5 * (id % 52) + 2))
-    action = EepromActions(1, lambda id: (113 + id / 52, 5 * (id % 52) + 3))
+    hour = EepromByte(lambda id: (113 + (id / 51), 5 * (id % 51) + 0))
+    minute = EepromByte(lambda id: (113 + (id / 51), 5 * (id % 51) + 1))
+    day = EepromByte(lambda id: (113 + (id / 51), 5 * (id % 51) + 2))
+    action = EepromActions(1, lambda id: (113 + (id / 51), 5 * (id % 51) + 3))
 
 
 class PulseCounterConfiguration(EepromModel):

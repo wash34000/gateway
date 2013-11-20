@@ -55,7 +55,7 @@ class EepromController:
 
         for id in ids:
             length = len(eeprom_model.get_addresses(id, fields))
-            out.append(eeprom_model.from_eeprom_data(eeprom_data[i:i+length], id, fields))
+            out.append(eeprom_model.from_eeprom_data(eeprom_data[i:i + length], id, fields))
             i += length
 
         return out
@@ -174,11 +174,11 @@ class EepromFile:
                     length = 1
                     j = 1
                     while j < EepromFile.BATCH_SIZE:
-                        if old[i+j] != new[i+j]:
+                        if old[i + j] != new[i + j]:
                             length = j + 1
                         j += 1
 
-                    self.__write(bank, i, new[i:i+length])
+                    self.__write(bank, i, new[i:i + length])
                     i += EepromFile.BATCH_SIZE
                 else:
                     i += 1
@@ -191,7 +191,7 @@ class EepromFile:
         """
         a = eeprom_data.address
         d = bank_data[a.bank]
-        bank_data[a.bank] = d[0:a.offset] + eeprom_data.bytes + d[a.offset+a.length:]
+        bank_data[a.bank] = d[0:a.offset] + eeprom_data.bytes + d[a.offset + a.length:]
 
     def __write(self, bank, offset, to_write):
         """ Write a byte array to a specific location defined by the bank and the offset. """
@@ -225,7 +225,7 @@ class EepromData:
 
     def __init__(self, address, bytes):
         if address.length != len(bytes):
-            raise TypeError("Length in the address (%d) does not match the number of bytes (%d)" %
+            raise TypeError("Length in the address (%d) does not match the number of bytes (%d)" % 
                             (address.length, len(bytes)))
 
         self.address = address
@@ -262,7 +262,10 @@ class EepromModel:
     @classmethod
     def get_fields(cls, include_id=False):
         """ Get the fields defined by an EepromModel child. """
-        return inspect.getmembers(cls, lambda x: isinstance(x, EepromDataType) or (include_id and isinstance(x, EepromId)))
+        return inspect.getmembers(cls,
+                                  lambda x: isinstance(x, EepromDataType) or
+                                            isinstance(x, CompositeDataType) or
+                                            (include_id and isinstance(x, EepromId)))
 
     @classmethod
     def get_field_dict(cls, include_id=False):
@@ -338,9 +341,12 @@ class EepromModel:
 
         for (field_name, field_type) in self.__class__.get_fields():
             if field_name in self.__dict__ and field_type.is_writable():
-                address = field_type.get_address(id)
-                bytes = field_type.to_bytes(self.__dict__[field_name])
-                data.append(EepromData(address, bytes))
+                if isinstance(field_type, CompositeDataType):
+                    data.extend(field_type.to_eeprom_data(self.__dict__[field_name], id))
+                else:
+                    address = field_type.get_address(id)
+                    bytes = field_type.to_bytes(self.__dict__[field_name])
+                    data.append(EepromData(address, bytes))
 
         return data
 
@@ -359,9 +365,12 @@ class EepromModel:
         if fields == None:
             # Add data for all fields.
             for (field_name, field_type) in cls.get_fields():
-                address = field_type.get_address(id)
-                bytes = data_dict[address].bytes
-                field_dict[field_name] = field_type.from_bytes(bytes)
+                if isinstance(field_type, CompositeDataType):
+                    field_dict[field_name] = field_type.from_data_dict(data_dict, id)
+                else:
+                    address = field_type.get_address(id)
+                    bytes = data_dict[address].bytes
+                    field_dict[field_name] = field_type.from_bytes(bytes)
         else:
             # Add data for given fields only.
             class_field_dict = cls.get_field_dict()
@@ -370,9 +379,12 @@ class EepromModel:
                     raise TypeError("Field %s is unknown for %s" % (field, self.__class__.__name__))
                 else:
                     field_type = class_field_dict[field_name]
-                    address = field_type.get_address(id)
-                    bytes = data_dict[address].bytes
-                    field_dict[field_name] = field_type.from_bytes(bytes)
+                    if isinstance(field_type, CompositeDataType):
+                        field_dict[field_name] = field_type.from_data_dict(data_dict, id)
+                    else:
+                        address = field_type.get_address(id)
+                        bytes = data_dict[address].bytes
+                        field_dict[field_name] = field_type.from_bytes(bytes)
 
         if id is not None:
             field_dict[cls.get_id_field()] = id
@@ -388,7 +400,10 @@ class EepromModel:
         if fields == None:
             # Add addresses for all fields.
             for (_, field_type) in cls.get_fields():
-                addresses.append(field_type.get_address(id))
+                if isinstance(field_type, CompositeDataType):
+                    addresses.extend(field_type.get_addresses(id))
+                else:
+                    addresses.append(field_type.get_address(id))
 
         else:
             # Add addresses for given fields only.
@@ -398,7 +413,11 @@ class EepromModel:
                 if field not in class_field_dict:
                     raise TypeError("Field %s is unknown for %s" % (field, self.__class__.__name__))
                 else:
-                    addresses.append(class_field_dict[field].get_address(id))
+                    field_type = class_field_dict[field]
+                    if isinstance(field_type, CompositeDataType):
+                        addresses.extend(field_type.get_addresses(id))
+                    else:
+                        addresses.append(field_type.get_address(id))
 
         return addresses
 
@@ -439,6 +458,56 @@ class EepromId:
     def get_multiplier(self):
         """ Return the multiplier for the Eeprom value (at the defined EepromAddress). """
         return self.__multiplier
+
+
+class CompositeDataType:
+    """ Defines a composite data type in an EepromModel, the composite structure contains multiple
+    EepromDataTypes and defines a name for each child data type.
+    """
+
+    def __init__(self, eeprom_data_types, read_only=False):
+        """Create a new composite data type using a list of tuples (name, EepromDataType). """
+        self.__eeprom_data_types = eeprom_data_types
+        self.__read_only = read_only
+    
+    def get_addresses(self, id=None):
+        """ Get all EepromDataType addresses in the composite data type. """
+        return [ t[1].get_address(id) for t in self.__eeprom_data_types ]
+    
+    def get_name(self):
+        """ Get the name of the EepromDataType. To be implemented in the subclass. """
+        return "[%s]" % (",".join([ "%s(%s)" % (t[0], t[1].get_name()) for t in self.__eeprom_data_types ]))
+
+    def from_data_dict(self, data_dict, id=None):
+        """ Convert a data_dict (mapping from EepromAddress to EepromData) to a list of fields. """
+        out = []
+        
+        for (_, field_type) in self.__eeprom_data_types:
+            address = field_type.get_address(id)
+            bytes = data_dict[address].bytes
+            out.append(field_type.from_bytes(bytes))
+        
+        return out
+
+    def to_eeprom_data(self, fields, id=None):
+        """ Convert a list of field data to a list of EepromData objects. """
+        if len(fields) != len(self.__eeprom_data_types):
+            raise TypeError("The length of the composite data does not match the type:"
+                            "got %s for %s." % (fields, self.get_name()))
+        
+        out = []
+        
+        for i in range(len(fields)):
+            field_type = self.__eeprom_data_types[i][1]
+            address = field_type.get_address(id)
+            bytes = field_type.to_bytes(fields[i])
+            out.append(EepromData(address, bytes))
+        
+        return out
+    
+    def is_writable(self):
+        """ Returns whether the CompositeDataType is writable. """
+        return not self.__read_only
 
 
 class EepromDataType:
