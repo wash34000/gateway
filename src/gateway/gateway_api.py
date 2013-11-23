@@ -558,6 +558,50 @@ class GatewayApi:
 
         return { 'resp': 'OK' }
 
+    ###### Sensor status
+    
+    def get_sensor_temperature_status(self):
+        """ Get the current temperature of all sensors.
+        
+        :returns: list with 32 temperatures, 1 for each sensor.
+        """
+        output = []
+
+        list = self.__master_communicator.do_command(master_api.sensor_temperature_list())
+
+        for i in range(32):
+            output.append(list['tmp%d' % i].get_temperature())
+
+        return output
+
+    def get_sensor_humidity_status(self):
+        """ Get the current humidity of all sensors.
+        
+        :returns: dict with 's0' to 's31'.
+        """
+        output = []
+
+        list = self.__master_communicator.do_command(master_api.sensor_humidity_list())
+
+        for i in range(32):
+            output.append(list['hum%d' % i])
+
+        return output
+
+    def get_sensor_brightness_status(self):
+        """ Get the current brightness of all sensors.
+        
+        :returns: dict with 's0' to 's31'.
+        """
+        output = []
+
+        list = self.__master_communicator.do_command(master_api.sensor_brightness_list())
+
+        for i in range(32):
+            output.append(list['bri%d' % i])
+
+        return output
+
     ###### Group actions
 
     def do_group_action(self, group_action_id):

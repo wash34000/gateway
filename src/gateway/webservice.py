@@ -346,6 +346,33 @@ class WebInterface:
                        boolean(thermostat_on), boolean(automatic), int(setpoint)))
 
     @cherrypy.expose
+    def get_sensor_temperature_status(self, token):
+        """ Get the current temperature of all sensors.
+        
+        :returns: dict with key 'status' (List of 32 temperatures, 1 for each sensor).
+        """
+        self.__check_token(token)
+        return self.__success(status=self.__gateway_api.get_sensor_temperature_status())
+
+    @cherrypy.expose
+    def get_sensor_humidity_status(self, token):
+        """ Get the current humidity of all sensors.
+        
+        :returns: dict with key 'status' (List of 32 bytes, 1 for each sensor).
+        """
+        self.__check_token(token)
+        return self.__success(status=self.__gateway_api.get_sensor_humidity_status())
+
+    @cherrypy.expose
+    def get_sensor_brightness_status(self, token):
+        """ Get the current brightness of all sensors.
+        
+        :returns: dict with key 'status' (List of 32 bytes, 1 for each sensor).
+        """
+        self.__check_token(token)
+        return self.__success(status=self.__gateway_api.get_sensor_brightness_status())
+
+    @cherrypy.expose
     def do_group_action(self, token, group_action_id):
         """ Execute a group action.
 
