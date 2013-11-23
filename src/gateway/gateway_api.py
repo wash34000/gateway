@@ -559,10 +559,10 @@ class GatewayApi:
         return { 'resp': 'OK' }
 
     ###### Sensor status
-    
+
     def get_sensor_temperature_status(self):
         """ Get the current temperature of all sensors.
-        
+
         :returns: list with 32 temperatures, 1 for each sensor.
         """
         output = []
@@ -576,8 +576,8 @@ class GatewayApi:
 
     def get_sensor_humidity_status(self):
         """ Get the current humidity of all sensors.
-        
-        :returns: dict with 's0' to 's31'.
+
+        :returns: list with 32 bytes, 1 for each sensor.
         """
         output = []
 
@@ -590,8 +590,8 @@ class GatewayApi:
 
     def get_sensor_brightness_status(self):
         """ Get the current brightness of all sensors.
-        
-        :returns: dict with 's0' to 's31'.
+
+        :returns: list with 32 bytes, 1 for each sensor.
         """
         output = []
 
@@ -801,7 +801,7 @@ class GatewayApi:
         :type id: Id
         :param fields: The field of the thermostat_configuration to get. (None gets all fields)
         :type fields: List of strings
-        :returns: thermostat_configuration dict: contains 'id' (Id), 'fri_start_d1' (Time), 'fri_start_d2' (Time), 'fri_stop_d1' (Time), 'fri_stop_d2' (Time), 'fri_temp_d1' (Temp), 'fri_temp_d2' (Temp), 'fri_temp_n' (Temp), 'mon_start_d1' (Time), 'mon_start_d2' (Time), 'mon_stop_d1' (Time), 'mon_stop_d2' (Time), 'mon_temp_d1' (Temp), 'mon_temp_d2' (Temp), 'mon_temp_n' (Temp), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'sat_start_d1' (Time), 'sat_start_d2' (Time), 'sat_stop_d1' (Time), 'sat_stop_d2' (Time), 'sat_temp_d1' (Temp), 'sat_temp_d2' (Temp), 'sat_temp_n' (Temp), 'sensor' (Temp), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp), 'sun_start_d1' (Time), 'sun_start_d2' (Time), 'sun_stop_d1' (Time), 'sun_stop_d2' (Time), 'sun_temp_d1' (Temp), 'sun_temp_d2' (Temp), 'sun_temp_n' (Temp), 'thu_start_d1' (Time), 'thu_start_d2' (Time), 'thu_stop_d1' (Time), 'thu_stop_d2' (Time), 'thu_temp_d1' (Temp), 'thu_temp_d2' (Temp), 'thu_temp_n' (Temp), 'tue_start_d1' (Time), 'tue_start_d2' (Time), 'tue_stop_d1' (Time), 'tue_stop_d2' (Time), 'tue_temp_d1' (Temp), 'tue_temp_d2' (Temp), 'tue_temp_n' (Temp), 'wed_start_d1' (Time), 'wed_start_d2' (Time), 'wed_stop_d1' (Time), 'wed_stop_d2' (Time), 'wed_temp_d1' (Temp), 'wed_temp_d2' (Temp), 'wed_temp_n' (Temp)
+        :returns: thermostat_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
         """
         return self.__eeprom_controller.read(ThermostatConfiguration, id, fields).to_dict()
 
@@ -810,7 +810,7 @@ class GatewayApi:
         Get all thermostat_configurations.
         :param fields: The field of the thermostat_configuration to get. (None gets all fields)
         :type fields: List of strings
-        :returns: list of thermostat_configuration dict: contains 'id' (Id), 'fri_start_d1' (Time), 'fri_start_d2' (Time), 'fri_stop_d1' (Time), 'fri_stop_d2' (Time), 'fri_temp_d1' (Temp), 'fri_temp_d2' (Temp), 'fri_temp_n' (Temp), 'mon_start_d1' (Time), 'mon_start_d2' (Time), 'mon_stop_d1' (Time), 'mon_stop_d2' (Time), 'mon_temp_d1' (Temp), 'mon_temp_d2' (Temp), 'mon_temp_n' (Temp), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'sat_start_d1' (Time), 'sat_start_d2' (Time), 'sat_stop_d1' (Time), 'sat_stop_d2' (Time), 'sat_temp_d1' (Temp), 'sat_temp_d2' (Temp), 'sat_temp_n' (Temp), 'sensor' (Temp), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp), 'sun_start_d1' (Time), 'sun_start_d2' (Time), 'sun_stop_d1' (Time), 'sun_stop_d2' (Time), 'sun_temp_d1' (Temp), 'sun_temp_d2' (Temp), 'sun_temp_n' (Temp), 'thu_start_d1' (Time), 'thu_start_d2' (Time), 'thu_stop_d1' (Time), 'thu_stop_d2' (Time), 'thu_temp_d1' (Temp), 'thu_temp_d2' (Temp), 'thu_temp_n' (Temp), 'tue_start_d1' (Time), 'tue_start_d2' (Time), 'tue_stop_d1' (Time), 'tue_stop_d2' (Time), 'tue_temp_d1' (Temp), 'tue_temp_d2' (Temp), 'tue_temp_n' (Temp), 'wed_start_d1' (Time), 'wed_start_d2' (Time), 'wed_stop_d1' (Time), 'wed_stop_d2' (Time), 'wed_temp_d1' (Temp), 'wed_temp_d2' (Temp), 'wed_temp_n' (Temp)
+        :returns: list of thermostat_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
         """
         return [ o.to_dict() for o in self.__eeprom_controller.read_all(ThermostatConfiguration, fields) ]
 
@@ -818,7 +818,7 @@ class GatewayApi:
         """
         Set one thermostat_configuration.
         :param config: The thermostat_configuration to set
-        :type config: thermostat_configuration dict: contains 'id' (Id), 'fri_start_d1' (Time), 'fri_start_d2' (Time), 'fri_stop_d1' (Time), 'fri_stop_d2' (Time), 'fri_temp_d1' (Temp), 'fri_temp_d2' (Temp), 'fri_temp_n' (Temp), 'mon_start_d1' (Time), 'mon_start_d2' (Time), 'mon_stop_d1' (Time), 'mon_stop_d2' (Time), 'mon_temp_d1' (Temp), 'mon_temp_d2' (Temp), 'mon_temp_n' (Temp), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'sat_start_d1' (Time), 'sat_start_d2' (Time), 'sat_stop_d1' (Time), 'sat_stop_d2' (Time), 'sat_temp_d1' (Temp), 'sat_temp_d2' (Temp), 'sat_temp_n' (Temp), 'sensor' (Temp), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp), 'sun_start_d1' (Time), 'sun_start_d2' (Time), 'sun_stop_d1' (Time), 'sun_stop_d2' (Time), 'sun_temp_d1' (Temp), 'sun_temp_d2' (Temp), 'sun_temp_n' (Temp), 'thu_start_d1' (Time), 'thu_start_d2' (Time), 'thu_stop_d1' (Time), 'thu_stop_d2' (Time), 'thu_temp_d1' (Temp), 'thu_temp_d2' (Temp), 'thu_temp_n' (Temp), 'tue_start_d1' (Time), 'tue_start_d2' (Time), 'tue_stop_d1' (Time), 'tue_stop_d2' (Time), 'tue_temp_d1' (Temp), 'tue_temp_d2' (Temp), 'tue_temp_n' (Temp), 'wed_start_d1' (Time), 'wed_start_d2' (Time), 'wed_stop_d1' (Time), 'wed_stop_d2' (Time), 'wed_temp_d1' (Temp), 'wed_temp_d2' (Temp), 'wed_temp_n' (Temp)
+        :type config: thermostat_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
         """
         self.__eeprom_controller.write(ThermostatConfiguration.from_dict(config))
 
@@ -826,7 +826,7 @@ class GatewayApi:
         """
         Set multiple thermostat_configurations.
         :param config: The list of thermostat_configurations to set
-        :type config: list of thermostat_configuration dict: contains 'id' (Id), 'fri_start_d1' (Time), 'fri_start_d2' (Time), 'fri_stop_d1' (Time), 'fri_stop_d2' (Time), 'fri_temp_d1' (Temp), 'fri_temp_d2' (Temp), 'fri_temp_n' (Temp), 'mon_start_d1' (Time), 'mon_start_d2' (Time), 'mon_stop_d1' (Time), 'mon_stop_d2' (Time), 'mon_temp_d1' (Temp), 'mon_temp_d2' (Temp), 'mon_temp_n' (Temp), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'sat_start_d1' (Time), 'sat_start_d2' (Time), 'sat_stop_d1' (Time), 'sat_stop_d2' (Time), 'sat_temp_d1' (Temp), 'sat_temp_d2' (Temp), 'sat_temp_n' (Temp), 'sensor' (Temp), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp), 'sun_start_d1' (Time), 'sun_start_d2' (Time), 'sun_stop_d1' (Time), 'sun_stop_d2' (Time), 'sun_temp_d1' (Temp), 'sun_temp_d2' (Temp), 'sun_temp_n' (Temp), 'thu_start_d1' (Time), 'thu_start_d2' (Time), 'thu_stop_d1' (Time), 'thu_stop_d2' (Time), 'thu_temp_d1' (Temp), 'thu_temp_d2' (Temp), 'thu_temp_n' (Temp), 'tue_start_d1' (Time), 'tue_start_d2' (Time), 'tue_stop_d1' (Time), 'tue_stop_d2' (Time), 'tue_temp_d1' (Temp), 'tue_temp_d2' (Temp), 'tue_temp_n' (Temp), 'wed_start_d1' (Time), 'wed_start_d2' (Time), 'wed_stop_d1' (Time), 'wed_stop_d2' (Time), 'wed_temp_d1' (Temp), 'wed_temp_d2' (Temp), 'wed_temp_n' (Temp)
+        :type config: list of thermostat_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
         """
         self.__eeprom_controller.write_batch([ ThermostatConfiguration.from_dict(o) for o in config ] )
 
@@ -1060,7 +1060,6 @@ class GatewayApi:
         :type config: global_thermostat_configuration dict: contains 'outside_sensor' (Byte), 'pump_delay' (Byte), 'threshold_temp' (Temp)
         """
         self.__eeprom_controller.write(GlobalThermostatConfiguration.from_dict(config))
-
 
 
     ###### End of auto generated functions
