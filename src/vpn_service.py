@@ -55,16 +55,14 @@ class Cloud:
     """ Connects to the OpenMotics cloud to check if the vpn should be opened. """
 
     DEFAULT_SLEEP_TIME = 30
-    DEFAULT_SEND_REAL_TIME_DATA = False
 
-    def __init__(self, url, physical_frontend, action_executor, sleep_time=DEFAULT_SLEEP_TIME,
-                 send_real_time_data=DEFAULT_SEND_REAL_TIME_DATA):
+    def __init__(self, url, physical_frontend, action_executor, sleep_time=DEFAULT_SLEEP_TIME):
         self.__url = url
         self.__physical_frontend = physical_frontend
         self.__action_executor = action_executor
         self.__last_connect = time.time()
         self.__sleep_time = sleep_time
-        self.__send_real_time_data = send_real_time_data
+        self.__modes = None
 
     def should_open_vpn(self, extra_data):
         """ Check with the OpenMotics could if we should open a VPN """
@@ -74,12 +72,16 @@ class Cloud:
 
             if 'sleep_time' in data:
                 self.__sleep_time = data['sleep_time']
-
-            if 'send_real_time_data' in data:
-                self.__send_real_time_data = data['send_real_time_data']
+            else:
+                self.__sleep_time = DEFAULT_SLEEP_TIME
 
             if 'actions' in data:
                 self.__action_executor.execute_actions_in_background(data['actions'])
+            
+            if 'modes' in data:
+                self.__modes = data['modes']
+            else:
+                self.__modes = None
 
             self.__physical_frontend.set_led('cloud', True)
             self.__physical_frontend.toggle_led('alive')
@@ -97,9 +99,9 @@ class Cloud:
         """ Get the time to sleep between two cloud checks. """
         return self.__sleep_time
 
-    def should_send_real_time_data(self):
-        """ Whether we should send real time data to the cloud. """
-        return self.__send_real_time_data
+    def get_current_modes(self):
+        """ Get the current modes of the cloud. """
+        return self.__modes
 
     def get_last_connect(self):
         """ Get the timestamp of the last connection with the cloud. """
@@ -234,32 +236,87 @@ class Gateway:
         except:
             return None
 
+    def get_modules(self):
+        """ Get the modules known by the master.
+        :returns: a list of characters. The output modules (O, D or R) followed by the
+        input modules (I or T). 
+        """
+        data = self.do_call("get_modules?token=None")
+        if data == None or data['success'] == False:
+            return None
+        else:
+            ret = []
+            for mod in data['outputs']:
+                ret.append(str(mod))
+            for mod in data['inputs']:
+                ret.append(str(mod))
+            return ret
+    
+    def get_last_inputs(self):
+        """ Get the last pressed inputs.
+        :returns: a list of input ids.
+        """
+        data = self.do_call("get_last_inputs?token=None")
+        if data == None or data['success'] == False:
+            return None
+        else:
+            return [ t[0] for t in data['inputs'] ]
+    
+    def get_sensor_temperature_status(self):
+        """ Get the temperature measured of the sensors.
+        :returns: a list of temperatures.
+        """
+        data = self.do_call("get_sensor_temperature_status?token=None")
+        if data == None or data['success'] == False:
+            return None
+        else:
+            return data['status']
+    
+    def get_sensor_humidity_status(self):
+        """ Get the humidity measured by the sensors.
+        :returns: a list of humidity values.
+        """
+        data = self.do_call("get_sensor_humidity_status?token=None")
+        if data == None or data['success'] == False:
+            return None
+        else:
+            return data['status']
+    
+    def get_sensor_brightness_status(self):
+        """ Get the brightness measured by the sensors.
+        :returns: a list of brightness values.
+        """
+        data = self.do_call("get_sensor_brightness_status?token=None")
+        if data == None or data['success'] == False:
+            return None
+        else:
+            return data['status']
+
 
 class DataCollector:
 
-    def __init__(self, function, period=0, real_time=False):
+    def __init__(self, function, period=0, mode=None):
         """
-        Create a collector with a function to call, a period and a boolean that indicates whether
-        this collector is real time.
+        Create a collector with a function to call and a period.
+        If a mode is provided the collector will only run if that mode is enabled.
 
         If the period is 0, the collector will be executed on each call.
         """
         self.__function = function
         self.__period = period
-        self.__real_time = real_time
         self.__last_collect = 0
+        self.__mode = mode
 
-    def is_real_time(self):
-        """ Check if this is a real_time collector. """
-        return self.__real_time
-
-    def __should_collect(self):
+    def __should_collect(self, current_modes):
         """ Should we execute the collect ? """
+        if self.__mode != None and (current_modes is None or self.__mode not in current_modes):
+            return False
+
         return self.__period == 0 or time.time() >= self.__last_collect + self.__period
 
-    def collect(self):
+    def collect(self, current_modes):
         """ Execute the collect if required, return None otherwise. """
-        if self.__should_collect():
+        if self.__should_collect(current_modes):
             if self.__period != 0:
                 self.__last_collect = time.time()
             return self.__function()
@@ -342,11 +399,16 @@ def main():
     collectors = { 'energy' : DataCollector(gateway.get_total_energy, 300),
                    'thermostats' : DataCollector(gateway.get_thermostats, 60),
                    'pulses' : DataCollector(gateway.get_pulse_counter_status, 60),
-                   'outputs' : DataCollector(gateway.get_enabled_outputs, real_time=True),
-                   'power' : DataCollector(gateway.get_real_time_power, real_time=True),
+                   'outputs' : DataCollector(gateway.get_enabled_outputs, mode='rt'),
+                   'power' : DataCollector(gateway.get_real_time_power, mode='rt'),
                    'update' : DataCollector(gateway.get_update_status),
                    'errors': DataCollector(gateway.get_errors, 600),
-                   'local_ip' : DataCollector(gateway.get_local_ip_address, 1800) }
+                   'local_ip' : DataCollector(gateway.get_local_ip_address, 1800),
+                   'modules' : DataCollector(gateway.get_modules, 10, mode='init'),
+                   'last_inputs' : DataCollector(gateway.get_last_inputs, 10, mode='init'),
+                   'sensor_tmp' : DataCollector(gateway.get_sensor_temperature_status, 30, mode='init'),
+                   'sensor_hum' : DataCollector(gateway.get_sensor_humidity_status, 30, mode='init'),
+                   'sensor_bri' : DataCollector(gateway.get_sensor_brightness_status, 30, mode='init') }
 
     iterations = 0
 
@@ -355,10 +417,9 @@ def main():
         vpn_data = {}
         for collector_name in collectors:
             collector = collectors[collector_name]
-            if cloud.should_send_real_time_data() or not collector.is_real_time():
-                data = collector.collect()
-                if data != None:
-                    vpn_data[collector_name] = data
+            data = collector.collect(cloud.get_current_modes())
+            if data != None:
+                vpn_data[collector_name] = data
 
         should_open = cloud.should_open_vpn(vpn_data)
 
