@@ -8,7 +8,7 @@ Created on Oct 24, 2012
 import time
 
 def main():
-	watchdog = open('/dev/watchdog', 'w')
+    watchdog = open('/dev/watchdog', 'w')
 
     while True:
         watchdog.write("O")
