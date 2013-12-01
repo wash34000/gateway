@@ -115,18 +115,16 @@ class MasterCommandSpecTest(unittest.TestCase):
             pass
     
     def test_encode_var_string(self):
-        """ Test for VarStringFieldType.encode and VarStringFieldType.decode """
-        self.assertEquals('\x01a', Field.varstr("data").encode('a'))
-        self.assertEquals('\x05hello', Field.varstr("data").encode('hello'))
-        self.assertEquals('\x0Ahelloworld', Field.varstr("data").encode('helloworld'))
-        self.assertEquals('\xff' + " " * 255, Field.varstr("data").encode(' ' * 255))
-        self.assertEquals('\x00' + " " * 256, Field.varstr("data").encode(' ' * 256))
+        """ Test for VarStringFieldType.encode """
+        self.assertEquals('\x00' + " " * 10, Field.varstr("bankdata", 10).encode(''))
+        self.assertEquals('\x05hello' + " " * 5, Field.varstr("bankdata", 10).encode('hello'))
+        self.assertEquals('\x0Ahelloworld', Field.varstr("bankdata", 10).encode('helloworld'))
     
-        self.assertEquals('a', Field.varstr("data").decode('\x01a'))
-        self.assertEquals('hello', Field.varstr("data").decode('\x05hello'))
-        self.assertEquals('helloworld', Field.varstr("data").decode('\x0Ahelloworld'))
-        self.assertEquals(" " * 255, Field.varstr("data").decode('\xff' + ' ' * 255))
-        self.assertEquals(" " * 256, Field.varstr("data").decode('\x00' + ' ' * 256))
+        try:
+            Field.varstr("bankdata", 2).encode('toolarggge')
+            self.assertTrue(False)
+        except ValueError:
+            pass
     
     def test_svt(self):
         """ Test for SvtFieldType.encode and SvtFieldType.decode """

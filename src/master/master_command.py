@@ -179,9 +179,9 @@ class Field:
         return Field("literal", LiteralFieldType(value))
     
     @staticmethod
-    def varstr(name):
+    def varstr(name, max_data_length):
         """ String of variable length with fixed total length """
-        return Field(name, VarStringFieldType())
+        return Field(name, VarStringFieldType(max_data_length))
     
     @staticmethod
     def svt(name):
@@ -383,35 +383,32 @@ class SvtFieldType:
     
 
 class VarStringFieldType:
-    """ The VarString uses 1 byte for the length (n), the maximum number of bytes is 256.
-    When the data load is 256 bytes long, the length is 0."""
-    def __init__(self):
-        pass
-    
-    def get_min_decode_bytes(self):
-        """ Get the minimal amount of bytes required to start decoding. """
-        return 1
-    
-    def decode(self, byte_str):
-        """ Decode a byte string. """
-        length = ord(byte_str[0])
-        actual_length = 256 if length == 0 else length
-        bytes_required = 1 + actual_length
-        
-        if len(byte_str) < bytes_required:
-            raise NeedMoreBytesException(bytes_required)
-        elif len(byte_str) > bytes_required:
-            raise ValueError("Got more bytes than required: expected %d, got %d",
-                             bytes_required, len(byte_str))
-        else:
-            return byte_str[1:]
+    """ The VarString uses 1 byte for the length, the total length of the string is fixed.
+    Unused bytes are padded with spaces.
+    """
+    def __init__(self, total_data_length):
+        self.total_data_length = total_data_length
     
     def encode(self, field_value):
         """ Encode a string. """
-        length = len(field_value)
-        encoded_length = 0 if length == 256 else length
-        return str(chr(encoded_length)) + field_value
+        if len(field_value) > self.total_data_length:
+            raise ValueError("Cannot handle more than %d bytes, got %d",
+                             self.total_data_length, len(field_value))
+        else:
+            out = chr(len(field_value))
+            out += field_value
+            out += " " * (self.total_data_length - len(field_value))
+            return out
+
+    def get_min_decode_bytes(self):
+        """ Get the minimal amount of bytes required to start decoding. """
+        return self.total_data_length + 1
     
+    def decode(self, byte_str):
+        """ Decode the data into a string (without padding) """
+        length = ord(byte_str[0])
+        return byte_str[1:1+length]
+
 
 class DimmerFieldType:
     """ The dimmer value is a byte in [0, 63], this is converted to an integer in [0, 100] to

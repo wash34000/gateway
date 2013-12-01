@@ -106,13 +106,13 @@ def read_eeprom():
     """ Read a number (1-10) of bytes from a certain eeprom bank and address. """
     return MasterCommandSpec("RE",
         [ Field.byte('bank'), Field.byte('addr'), Field.byte('num'), Field.padding(10) ],
-        [ Field.byte('bank'), Field.byte('addr'), Field.varstr('data'), Field.lit('\r\n') ])
+        [ Field.byte('bank'), Field.byte('addr'), Field.varstr('data', 10), Field.lit('\r\n') ])
 
 def write_eeprom():
     """ Write data bytes to the addr in the specified eeprom bank """
     return MasterCommandSpec("WE", 
-        [ Field.byte("bank"), Field.byte("address"), Field.varstr("data") ],
-        [ Field.byte("bank"), Field.byte("address"), Field.varstr("data"), Field.lit('\r\n') ])
+        [ Field.byte("bank"), Field.byte("address"), Field.varstr("data", 10) ],
+        [ Field.byte("bank"), Field.byte("address"), Field.varstr("data", 10), Field.lit('\r\n') ])
     
 def activate_eeprom():
     """ Activate eeprom after write """
