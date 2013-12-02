@@ -8,7 +8,7 @@ Created on Sep 2, 2013
 import inspect
 import types
 
-from master_api import eeprom_list, write_eeprom
+from master_api import eeprom_list, write_eeprom, activate_eeprom
 
 
 class EepromController:
@@ -75,6 +75,7 @@ class EepromController:
         """
         eeprom_data = eeprom_model.to_eeprom_data()
         self.__eeprom_file.write(eeprom_data)
+        self.__eeprom_file.activate()
 
     def write_batch(self, eeprom_models):
         """ Write a list of EepromModel instances to the EepromFile.
@@ -86,6 +87,7 @@ class EepromController:
             eeprom_data.extend(eeprom_model.to_eeprom_data())
 
         self.__eeprom_file.write(eeprom_data)
+        self.__eeprom_file.activate()
 
     def get_max_id(self, eeprom_model):
         """ Get the maximum id for an eeprom_model.
@@ -122,6 +124,12 @@ class EepromFile:
         :type master_communicator: instance of MasterCommunicator.
         """
         self.__master_communicator = master_communicator
+
+    def activate(self):
+        """ Activate a change in the Eeprom. The master will read the eeprom
+        and adjust the current settings.
+        """
+        self.__master_communicator.do_command(activate_eeprom(), { 'eep' : 0 })
 
     def read(self, addresses):
         """ Read data from the Eeprom.
@@ -696,11 +704,11 @@ class EepromTime(EepromDataType):
 
     def to_bytes(self, field):
         self.check_writable()
-        split = [ int(x) for x in value.split(":") ]
+        split = [ int(x) for x in field.split(":") ]
         if len(split) != 2:
-            raise ValueError("Time is not in HH:MM format: %s" % value)
-        value = (split[0] * 6) + (split[1] / 10)
-        return str(chr(value))
+            raise ValueError("Time is not in HH:MM format: %s" % field)
+        field = (split[0] * 6) + (split[1] / 10)
+        return str(chr(field))
 
     def get_length(self):
         return 1
