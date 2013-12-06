@@ -141,6 +141,7 @@ class GatewayApi:
             if self.__master_communicator.in_maintenance_mode():
                 current_time = pytime.time()
                 if self.__last_maintenance_send_time + timeout < current_time:
+                    LOGGER.info("Stopping maintenance mode because of timeout.")
                     self.stop_maintenance_mode()
                 else:
                     wait_time = self.__last_maintenance_send_time + timeout - current_time

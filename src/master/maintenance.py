@@ -87,6 +87,7 @@ class MaintenanceService:
         except InMaintenanceModeException:
             connection.sendall("Maintenance mode already started. Closing connection.")
         finally:
+            LOGGER.info("Maintenance connection closed")
             self.__gateway_api.stop_maintenance_mode()
             connection.close()
 
@@ -125,10 +126,18 @@ class SerialRedirector:
             try:
                 try: 
                     data = self.__connection.recv(1024)
+                except SSL.SysCallError as e:
+                    if e[0] == 11: ## temporarily unavailable
+                        continue
+                    else:
+                        raise
                 except SSL.WantReadError:
                     select.select([self.__connection], [], [], 1.0)
                 else:
-                    if not data or data.startswith("exit"):
+                    if not data:
+                        LOGGER.info("Stopping maintenance mode due to no data.")
+                    if data.startswith("exit"):
+                        LOGGER.info("Stopping maintenance mode due to exit.")
                         break
                     self.__gateway_api.send_maintenance_data(data)
             except:
