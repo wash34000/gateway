@@ -245,6 +245,19 @@ class GatewayApi:
 
         return { 'outputs' : outputs, 'inputs' : inputs }
 
+    def flash_leds(self, type, id):
+        """ Flash the leds on the module for an output/input/sensor.
+        
+        :type type: byte
+        :param type: The module type: output/dimmer (0), input (1), sensor/temperatur (2).
+        :type id: bytes
+        :param id: The id of the output/input/sensor.
+        :returns: dict with 'status' ('OK').
+        """
+        ret = self.__master_communicator.do_command(master_api.indicate(), { 'type' : type, 'id' : id })
+        return { 'status' : ret['resp'] }
+
+
     ###### Output functions
 
     def __read_outputs(self):
@@ -851,7 +864,7 @@ class GatewayApi:
         :type id: Id
         :param fields: The field of the sensor_configuration to get. (None gets all fields)
         :type fields: List of strings
-        :returns: sensor_configuration dict: contains 'id' (Id), 'name' (String[16])
+        :returns: sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees))
         """
         return self.__eeprom_controller.read(SensorConfiguration, id, fields).to_dict()
     
@@ -861,7 +874,7 @@ class GatewayApi:
     
         :param fields: The field of the sensor_configuration to get. (None gets all fields)
         :type fields: List of strings
-        :returns: list of sensor_configuration dict: contains 'id' (Id), 'name' (String[16])
+        :returns: list of sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees))
         """
         return [ o.to_dict() for o in self.__eeprom_controller.read_all(SensorConfiguration, fields) ]
     
@@ -870,7 +883,7 @@ class GatewayApi:
         Set one sensor_configuration.
     
         :param config: The sensor_configuration to set
-        :type config: sensor_configuration dict: contains 'id' (Id), 'name' (String[16])
+        :type config: sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees))
         """
         self.__eeprom_controller.write(SensorConfiguration.from_dict(config))
     
@@ -879,7 +892,7 @@ class GatewayApi:
         Set multiple sensor_configurations.
     
         :param config: The list of sensor_configurations to set
-        :type config: list of sensor_configuration dict: contains 'id' (Id), 'name' (String[16])
+        :type config: list of sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees))
         """
         self.__eeprom_controller.write_batch([ SensorConfiguration.from_dict(o) for o in config ] )
     

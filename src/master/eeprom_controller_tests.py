@@ -6,7 +6,7 @@ Created on Sep 2, 2013
 '''
 import unittest
 
-from eeprom_controller import EepromController, EepromFile, EepromModel, EepromId, EepromString, EepromByte, EepromWord, EepromData, EepromAddress, EepromActions, CompositeDataType
+from eeprom_controller import EepromController, EepromFile, EepromModel, EepromId, EepromString, EepromByte, EepromWord, EepromData, EepromAddress, EepromActions, CompositeDataType, EepromSignedTemp
 import master_api
 
 
@@ -280,6 +280,8 @@ class MasterCommunicatorDummy:
             return self.__list_function(data)
         elif cmd == master_api.write_eeprom():
             return self.__write_function(data)
+        elif cmd == master_api.activate_eeprom():
+            return { "eep" : 0, "resp" : "OK" }
         else:
             raise Exception("Command %s not found" % cmd)
 
@@ -820,6 +822,56 @@ class EepromActionsTest(unittest.TestCase):
         
         ea = EepromActions(2, (0, 0))
         self.assertEquals("\x01\x02\xff\xff", ea.to_bytes("1,2"))
+
+
+class EepromSignedTempTest(unittest.TestCase):
+    """ Tests for EepromSignedTemp. """
+    
+    def test_from_bytes(self):
+        """ Test from_bytes. """
+        st = EepromSignedTemp((0, 0))
+        self.assertEquals(0.0, st.from_bytes("\xff"))
+        self.assertEquals(1.0, st.from_bytes("\x02"))
+        self.assertEquals(-1.0, st.from_bytes("\x82"))
+        self.assertEquals(7.5, st.from_bytes("\x0f"))
+        self.assertEquals(-7.5, st.from_bytes("\x8f"))
+    
+    def test_to_bytes(self):
+        """ Test to_bytes. """
+        st = EepromSignedTemp((0, 0))
+        self.assertEquals("\xff", st.to_bytes(0.0))
+        self.assertEquals("\x02", st.to_bytes(1.0))
+        self.assertEquals("\x82", st.to_bytes(-1.0))
+        self.assertEquals("\x0f", st.to_bytes(7.5))
+        self.assertEquals("\x8f", st.to_bytes(-7.5))
+    
+    def test_to_bytes_out_of_range(self):
+        """ Test to_bytes with out of range values. """
+        st = EepromSignedTemp((0, 0))
+        
+        try:
+            st.to_bytes(8)
+            self.fail("Expected ValueError.")
+        except ValueError:
+            pass
+        
+        try:
+            st.to_bytes(45)
+            self.fail("Expected ValueError.")
+        except ValueError:
+            pass
+        
+        try:
+            st.to_bytes(-8)
+            self.fail("Expected ValueError.")
+        except ValueError:
+            pass
+        
+        try:
+            st.to_bytes(-89)
+            self.fail("Expected ValueError.")
+        except ValueError:
+            pass
 
 
 if __name__ == "__main__":

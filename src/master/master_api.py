@@ -304,6 +304,12 @@ def module_discover_stop():
         [ Field.padding(13) ],
         [ Field.str("resp", 2), Field.padding(11), Field.lit("\r\n") ])
 
+def indicate():
+    """ Flash the led for a given output/input/sensor. """
+    return MasterCommandSpec("IN",
+        [ Field.byte('type'), Field.byte('id'), Field.padding(11) ],
+        [ Field.str("resp", 2), Field.padding(11), Field.lit("\r\n") ])
+
 def output_list():
     """ The message sent by the master whenever the outputs change. """
     return MasterCommandSpec("OL",

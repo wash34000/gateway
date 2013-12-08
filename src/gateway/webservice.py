@@ -226,6 +226,18 @@ class WebInterface:
         return self.__wrap(lambda: self.__gateway_api.get_modules())
 
     @cherrypy.expose
+    def flash_leds(self, token, type, id):
+        """ Flash the leds on the module for an output/input/sensor.
+        
+        :type type: byte
+        :param type: The module type: output/dimmer (0), input (1), sensor/temperatur (2).
+        :type id: bytes
+        :param id: The id of the output/input/sensor.
+        :returns: dict with 'status' ('OK').
+        """
+        return self.__wrap(lambda: self.__gateway_api.flash_leds(int(type), int(id)))
+
+    @cherrypy.expose
     def get_status(self, token):
         """ Get the status of the master.
 
@@ -613,7 +625,7 @@ class WebInterface:
         :type id: Id
         :param fields: The field of the sensor_configuration to get. (None gets all fields)
         :type fields: Json encoded list of strings
-        :returns: 'config': sensor_configuration dict: contains 'id' (Id), 'name' (String[16])
+        :returns: 'config': sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees))
         """
         self.__check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -626,7 +638,7 @@ class WebInterface:
     
         :param fields: The field of the sensor_configuration to get. (None gets all fields)
         :type fields: Json encoded list of strings
-        :returns: 'config': list of sensor_configuration dict: contains 'id' (Id), 'name' (String[16])
+        :returns: 'config': list of sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees))
         """
         self.__check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -638,7 +650,7 @@ class WebInterface:
         Set one sensor_configuration.
     
         :param config: The sensor_configuration to set
-        :type config: sensor_configuration dict: contains 'id' (Id), 'name' (String[16])
+        :type config: sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees))
         """
         self.__check_token(token)
         self.__gateway_api.set_sensor_configuration(json.loads(config))
@@ -650,7 +662,7 @@ class WebInterface:
         Set multiple sensor_configurations.
     
         :param config: The list of sensor_configurations to set
-        :type config: list of sensor_configuration dict: contains 'id' (Id), 'name' (String[16])
+        :type config: list of sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees))
         """
         self.__check_token(token)
         self.__gateway_api.set_sensor_configurations(json.loads(config))

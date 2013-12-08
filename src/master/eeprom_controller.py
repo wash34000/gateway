@@ -687,6 +687,39 @@ class EepromTemp(EepromDataType):
         return 1
 
 
+class EepromSignedTemp(EepromDataType):
+    """ A signed temperature (1 byte, converted to a float, from -7.5 to +7.5). """
+
+    def __init__(self, addr_gen, read_only=False):
+        EepromDataType.__init__(self, addr_gen, read_only)
+
+    def get_name(self):
+        return "SignedTemp(-7.5 to 7.5 degrees)"
+
+    def from_bytes(self, bytes):
+        value = ord(bytes)
+        if value == 255:
+            return 0.0
+        else:
+            multiplier = 1 if value & 128 == 0 else -1
+            return multiplier * float(value & 15) / 2.0
+
+    def to_bytes(self, field):
+        self.check_writable()
+        if field <= -8.0 or field >= 8.0:
+            raise ValueError("SignedTemp should be in [-7.5, 7.5], was %f" % field)
+        
+        if field == 0.0:
+            return str(chr(255))
+        else:
+            offset = 0 if field > 0 else 128
+            value = int(abs(field) * 2)
+            return str(chr(offset + value))
+
+    def get_length(self):
+        return 1
+
+
 class EepromTime(EepromDataType):
     """ A time (1 byte, converted into string HH:MM). """
 

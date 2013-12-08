@@ -7,7 +7,7 @@ Created on Sep 4, 2013
 '''
 from eeprom_controller import EepromModel, EepromAddress, EepromId, EepromString, EepromWord, \
                               EepromByte, EepromActions, EepromTemp, EepromTime, EepromCSV, \
-                              CompositeDataType
+                              CompositeDataType, EepromSignedTemp
 
 
 def page_per_module(module_size, start_bank, start_offset, field_size):
@@ -137,6 +137,7 @@ class SensorConfiguration(EepromModel):
     """ Models a sensor. The maximum number of sensors is 16. """
     id = EepromId(16)
     name = EepromString(16, lambda id: (193, id * 16))
+    offset = EepromSignedTemp(lambda id: (0, 60 + id))
 
 
 class PumpGroupConfiguration(EepromModel):
