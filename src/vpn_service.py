@@ -6,6 +6,7 @@ import requests
 import time
 import subprocess
 import os
+import traceback
 
 from threading import Thread
 from ConfigParser import ConfigParser
@@ -238,20 +239,33 @@ class Gateway:
 
     def get_modules(self):
         """ Get the modules known by the master.
-        :returns: a list of characters. The output modules (O, D or R) followed by the
-        input modules (I or T). 
+        :returns: a list of characters. The master module (M), the output modules (O, D or R), 
+        the input modules (I or T), followed by the power modules (P). 
         """
         data = self.do_call("get_modules?token=None")
-        if data == None or data['success'] == False:
+        power_data = self.do_call("get_power_modules?token=None")
+        
+        data_failed = data == None or data['success'] == False
+        power_failed = power_data == None or power_data['success'] == False
+        
+        if data_failed and power_failed:
             return None
         else:
             ret = []
-            for mod in data['outputs']:
-                ret.append(str(mod))
-            for mod in data['inputs']:
-                ret.append(str(mod))
+            
+            if not data_failed:
+                ret.append('M')
+                for mod in data['outputs']:
+                    ret.append(str(mod))
+                for mod in data['inputs']:
+                    ret.append(str(mod))
+            
+            if not power_failed:
+                for i in range(len(power_data['modules'])):
+                    ret.append('P')
+            
             return ret
-    
+
     def get_last_inputs(self):
         """ Get the last pressed inputs.
         :returns: a list of input ids.
@@ -316,12 +330,16 @@ class DataCollector:
 
     def collect(self, current_modes):
         """ Execute the collect if required, return None otherwise. """
-        if self.__should_collect(current_modes):
-            if self.__period != 0:
-                self.__last_collect = time.time()
-            return self.__function()
-        else:
-            return None
+        try:
+            if self.__should_collect(current_modes):
+                if self.__period != 0:
+                    self.__last_collect = time.time()
+                return self.__function()
+            else:
+                return None
+        except Exception as e:
+            print "Exception while collecting data"
+            traceback.print_exc()
 
 
 class ActionExecutor:
