@@ -1027,35 +1027,6 @@ class WebInterface:
         return self.__wrap(self.__gateway_api.in_power_address_mode)
 
     @cherrypy.expose
-    def get_power_peak_times(self, token):
-        """ Get the start and stop times of the peak time of the day.
-
-        :returns: dict with key 'times' and value array containing 7 tuples (start time, stop time)
-        for Monday-Sunday.
-        """
-        self.__check_token(token)
-        return self.__wrap(self.__gateway_api.get_power_peak_times)
-
-    @cherrypy.expose
-    def set_power_peak_times(self, token, times):
-        """ Set the start and stop times of the peak time configuration.
-
-        :type times: string
-        :param times: comma seperated string containing: hour of start of peak time on Monday, \
-        hour of end of peak time on Monday, hour of start of peak time on Tuesday, ...
-        :returns: empty dict
-        """
-        self.__check_token(token)
-
-        parts = times.split(",")
-        times_parsed = [ ( int(parts[0]),  int(parts[1]) ), ( int(parts[2]),  int(parts[3]) ),
-                         ( int(parts[4]),  int(parts[5]) ), ( int(parts[6]),  int(parts[7]) ),
-                         ( int(parts[8]),  int(parts[9]) ), ( int(parts[10]), int(parts[11]) ),
-                         ( int(parts[12]), int(parts[13]) ) ]
-
-        return self.__wrap(lambda: self.__gateway_api.set_power_peak_times(times_parsed))
-
-    @cherrypy.expose
     def set_power_voltage(self, token, module_id, voltage):
         """ Set the voltage for a given module.
 
