@@ -29,7 +29,7 @@ class TimeKeeper:
     def start(self):
         """ Start the background thread of the TimeKeeper. """
         if self.__thread == None:
-            LOGGER.info("Starting Power TimeKeeper")
+            LOGGER.info("Starting TimeKeeper")
             self.__stop = False
             self.__thread = Thread(target=self.__run, name="TimeKeeper thread")
             self.__thread.daemon = True
@@ -47,20 +47,28 @@ class TimeKeeper:
     def __run(self):
         """ Code for the background thread. """
         while not self.__stop:
-            date = datetime.now()
-            for module in self.__power_controller.get_power_modules().values():
-                daynight = []
-                for i in range(8):
-                    if self.is_day_time(module['times%d' % i], date):
-                        daynight.append(power_api.DAY)
-                    else:
-                        daynight.append(power_api.NIGHT)
-                
-                self.__set_mode(module['address'], daynight)
+            try:
+                self.__run_once()
+            except:
+                LOGGER.exception("Exception in TimeKeeper")
             
             time.sleep(self.__period)
             
+        LOGGER.info("Stopped TimeKeeper")
         self.__thread = None
+    
+    def __run_once(self):
+        """ One run of the background thread. """
+        date = datetime.now()
+        for module in self.__power_controller.get_power_modules().values():
+            daynight = []
+            for i in range(8):
+                if self.is_day_time(module['times%d' % i], date):
+                    daynight.append(power_api.DAY)
+                else:
+                    daynight.append(power_api.NIGHT)
+            
+            self.__set_mode(module['address'], daynight)
     
     def is_day_time(self, times, date):
         """ Check if a date is in day time. """
@@ -79,12 +87,7 @@ class TimeKeeper:
 
     def __set_mode(self, address, bytes):
         """ Set the power modules mode. """
-        try:
-            if address not in self.__mode or self.__mode[address] != bytes:
-                LOGGER.info("Setting day/night mode to " + str(bytes))
-                self.__power_communicator.do_command(address, power_api.set_day_night(), *bytes)
-                self.__mode[address] = bytes
-        except:
-            ## Got an exception, we'll just try again later
-            print "Exception while setting mode for power modules."
-            traceback.print_exc()
+        if address not in self.__mode or self.__mode[address] != bytes:
+            LOGGER.info("Setting day/night mode to " + str(bytes))
+            self.__power_communicator.do_command(address, power_api.set_day_night(), *bytes)
+            self.__mode[address] = bytes
