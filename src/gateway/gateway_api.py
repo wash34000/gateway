@@ -535,9 +535,8 @@ class GatewayApi:
 
         ret = self.__master_communicator.do_command(master_api.write_setpoint(),
             { 'thermostat' : thermostat, 'config' : 0, 'temp' : master_api.Svt.temp(temperature) })
-        ret['temp'] = ret['temp'].get_temperature()
 
-        return ret
+        return { 'status': 'OK' }
 
     def set_thermostat_mode(self, thermostat_on, automatic, setpoint):
         """ Set the mode of the thermostats. Thermostats can be on or off, automatic or manual
@@ -550,7 +549,7 @@ class GatewayApi:
         :param setpoint: The current setpoint
         :type setpoint: Integer [0, 5]
 
-        :returns: dict with 'resp'
+        :returns: dict with 'status'
         """
         def checked(ret_dict):
             if ret_dict['resp'] != 'OK':
@@ -570,7 +569,7 @@ class GatewayApi:
                 { 'action_type' : master_api.__dict__['BA_ALL_SETPOINT_' + str(setpoint)],
                   'action_number' : 0 }))
 
-        return { 'resp': 'OK' }
+        return { 'status': 'OK' }
 
     ###### Sensor status
 

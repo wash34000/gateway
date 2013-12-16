@@ -147,9 +147,13 @@ class WebInterface:
 
     @cherrypy.expose
     def login(self, username, password):
-        """ Login to the web service, returns a token if successful, 401 otherwise.
+        """ Login to the web service, returns a token if successful, returns HTTP status code 401 otherwise.
 
-        :returns: token (String)
+        :type username: String
+        :param username: Name of the user.
+        :type password: String
+        :param password: Password of the user.
+        :returns: 'token' : String
         """
         token = self.__user_controller.login(username, password)
         if token == None:
@@ -159,7 +163,13 @@ class WebInterface:
 
     @cherrypy.expose
     def create_user(self, username, password):
-        """ Create a new user using a username and a password. Only possible in authorized mode. """
+        """ Create a new user using a username and a password. Only possible in authorized mode.
+        
+        :type username: String
+        :param username: Name of the user.
+        :type password: String
+        :param password: Password of the user.
+        """
         if self.__authorized_check():
             self.__user_controller.create_user(username, password, 'admin', True)
             return self.__success()
@@ -170,7 +180,7 @@ class WebInterface:
     def get_usernames(self):
         """ Get the names of the users on the gateway. Only possible in authorized mode.
 
-        :returns: dict with key 'usernames' (array of strings).
+        :returns: 'usernames': list of usernames (String).
         """
         if self.__authorized_check():
             return self.__success(usernames=self.__user_controller.get_usernames())
@@ -179,7 +189,11 @@ class WebInterface:
 
     @cherrypy.expose
     def remove_user(self, username):
-        """ Remove a user. Only possible in authorized mode. """
+        """ Remove a user. Only possible in authorized mode.
+        
+        :type username: String
+        :param username: Name of the user to remove.
+        """
         if self.__authorized_check():
             self.__user_controller.remove_user(username)
             return self.__success()
@@ -190,7 +204,7 @@ class WebInterface:
     def open_maintenance(self, token):
         """ Open maintenance mode, return the port of the maintenance socket.
 
-        :returns: dict with key 'port' (Integer between 6000 and 7000)
+        :returns: 'port': Port on which the maintenance ssl socket is listening (Integer between 6000 and 7000).
         """
         self.__check_token(token)
 
@@ -202,7 +216,7 @@ class WebInterface:
     def module_discover_start(self, token):
         """ Start the module discover mode on the master.
 
-        :returns: dict with 'status' ('OK').
+        :returns: 'status': 'OK'.
         """
         self.__check_token(token)
         return self.__wrap(lambda: self.__gateway_api.module_discover_start())
@@ -211,7 +225,7 @@ class WebInterface:
     def module_discover_stop(self, token):
         """ Stop the module discover mode on the master.
 
-        :returns: dict with 'status' ('OK').
+        :returns: 'status': 'OK'.
         """
         self.__check_token(token)
         return self.__wrap(lambda: self.__gateway_api.module_discover_stop())
@@ -220,7 +234,8 @@ class WebInterface:
     def get_modules(self, token):
         """ Get a list of all modules attached and registered with the master.
 
-        :returns: dict with 'output' (list of module types: O,R,D) and 'input' (list of input module types: I,T,L).
+        :returns: 'output': list of module types (O,R,D) and 'input': list of input module \
+        types (I,T,L).
         """
         self.__check_token(token)
         return self.__wrap(lambda: self.__gateway_api.get_modules())
@@ -229,11 +244,11 @@ class WebInterface:
     def flash_leds(self, token, type, id):
         """ Flash the leds on the module for an output/input/sensor.
         
-        :type type: byte
+        :type type: Integer
         :param type: The module type: output/dimmer (0), input (1), sensor/temperatur (2).
-        :type id: bytes
+        :type id: Integer
         :param id: The id of the output/input/sensor.
-        :returns: dict with 'status' ('OK').
+        :returns: 'status': 'OK'.
         """
         return self.__wrap(lambda: self.__gateway_api.flash_leds(int(type), int(id)))
 
@@ -241,8 +256,8 @@ class WebInterface:
     def get_status(self, token):
         """ Get the status of the master.
 
-        :returns: dict with keys 'time' (HH:MM), 'date' (DD:MM:YYYY), 'mode', 'version' (a.b.c) \
-        and 'hw_version' (hardware version)
+        :returns: 'time': hour and minutes (HH:MM), 'date': day, month, year (DD:MM:YYYY), \
+        'mode': Integer, 'version': a.b.c and 'hw_version': hardware version (Integer).
         """
         self.__check_token(token)
         return self.__success(**self.__gateway_api.get_status())
@@ -251,7 +266,7 @@ class WebInterface:
     def get_output_status(self, token):
         """ Get the status of the outputs.
 
-        :returns: dict with key 'status' (List of dictionaries with the following keys: id,\
+        :returns: 'status': list of dictionaries with the following keys: id,\
         status, dimmer and ctimer.
         """
         self.__check_token(token)
@@ -268,8 +283,7 @@ class WebInterface:
         :param dimmer: The dimmer value to set, None if unchanged
         :type dimmer: Integer [0, 100] or None
         :param timer: The timer value to set, None if unchanged
-        :type timer: Integer in [150, 450, 900, 1500, 2220, 3120]
-        :returns: dict with success field.
+        :type timer: Integer in (150, 450, 900, 1500, 2220, 3120)
         """
         self.__check_token(token)
         return self.__wrap(lambda: self.__gateway_api.set_output(
@@ -280,8 +294,6 @@ class WebInterface:
     @cherrypy.expose
     def set_all_lights_off(self, token):
         """ Turn all lights off.
-
-        :returns: empty dict.
         """
         self.__check_token(token)
         return self.__wrap(lambda: self.__gateway_api.set_all_lights_off())
@@ -290,7 +302,8 @@ class WebInterface:
     def set_all_lights_floor_off(self, token, floor):
         """ Turn all lights on a given floor off.
 
-        :returns: empty dict.
+        :param floor: The id of the floor
+        :type floor: Byte
         """
         self.__check_token(token)
         return self.__wrap(lambda: self.__gateway_api.set_all_lights_floor_off(int(floor)))
@@ -299,7 +312,8 @@ class WebInterface:
     def set_all_lights_floor_on(self, token, floor):
         """ Turn all lights on a given floor on.
 
-        :returns: empty dict.
+        :param floor: The id of the floor
+        :type floor: Byte
         """
         self.__check_token(token)
         return self.__wrap(lambda: self.__gateway_api.set_all_lights_floor_on(int(floor)))
@@ -308,7 +322,7 @@ class WebInterface:
     def get_last_inputs(self, token):
         """ Get the 5 last pressed inputs during the last 5 minutes.
 
-        :returns: dict with 'inputs' key containing a list of tuples (input, output).
+        :returns: 'inputs': list of tuples (input, output).
         """
         self.__check_token(token)
         return self.__success(inputs=self.__gateway_api.get_last_inputs())
@@ -317,8 +331,8 @@ class WebInterface:
     def get_thermostat_status(self, token):
         """ Get the status of the thermostats.
 
-        :returns: dict with global status information about the thermostats: 'thermostats_on',
-        'automatic' and 'setpoint' and a list ('status') with status information for all
+        :returns: global status information about the thermostats: 'thermostats_on',
+        'automatic' and 'setpoint' and 'status': a list with status information for all
         thermostats, each element in the list is a dict with the following keys:
         'id', 'act', 'csetp', 'output0', 'output1', 'outside', 'mode'.
         """
@@ -333,7 +347,7 @@ class WebInterface:
         :type thermostat: Integer [0, 24]
         :param temperature: The temperature to set in degrees Celcius
         :type temperature: float
-        :return: dict with 'thermostat', 'config' and 'temp'
+        :return: 'status': 'OK'.
         """
         self.__check_token(token)
         return self.__wrap(lambda: self.__gateway_api.set_current_setpoint(
@@ -345,13 +359,13 @@ class WebInterface:
         and is set to one of the 6 setpoints.
 
         :param thermostat_on: Whether the thermostats are on
-        :type thermostat_on: boolean
+        :type thermostat_on: Boolean
         :param automatic: Automatic mode (True) or Manual mode (False)
-        :type automatic: boolean
+        :type automatic: Boolean
         :param setpoint: The current setpoint
         :type setpoint: Integer [0, 5]
 
-        :return: dict with 'resp'
+        :return: 'status': 'OK'.
         """
         self.__check_token(token)
         return self.__wrap(lambda: self.__gateway_api.set_thermostat_mode(
@@ -361,7 +375,7 @@ class WebInterface:
     def get_sensor_temperature_status(self, token):
         """ Get the current temperature of all sensors.
 
-        :returns: dict with key 'status' (List of 32 temperatures, 1 for each sensor).
+        :returns: 'status': list of 32 temperatures, 1 for each sensor.
         """
         self.__check_token(token)
         return self.__success(status=self.__gateway_api.get_sensor_temperature_status())
@@ -370,7 +384,7 @@ class WebInterface:
     def get_sensor_humidity_status(self, token):
         """ Get the current humidity of all sensors.
 
-        :returns: dict with key 'status' (List of 32 bytes, 1 for each sensor).
+        :returns: 'status': List of 32 bytes, 1 for each sensor.
         """
         self.__check_token(token)
         return self.__success(status=self.__gateway_api.get_sensor_humidity_status())
@@ -379,7 +393,7 @@ class WebInterface:
     def get_sensor_brightness_status(self, token):
         """ Get the current brightness of all sensors.
 
-        :returns: dict with key 'status' (List of 32 bytes, 1 for each sensor).
+        :returns: 'status': List of 32 bytes, 1 for each sensor.
         """
         self.__check_token(token)
         return self.__success(status=self.__gateway_api.get_sensor_brightness_status())
@@ -389,8 +403,7 @@ class WebInterface:
         """ Execute a group action.
 
         :param group_action_id: The id of the group action
-        :type group_action_id: Integer (0 - 159)
-        :returns: empty dict.
+        :type group_action_id: Integer [0, 159]
         """
         self.__check_token(token)
         return self.__wrap(lambda: self.__gateway_api.do_group_action(int(group_action_id)))
@@ -400,7 +413,7 @@ class WebInterface:
         """ Set the status of the leds on the master.
 
         :param status: whether the leds should be on (true) or off (false).
-        :returns: empty dict.
+        :type status Boolean
         """
         self.__check_token(token)
         return self.__wrap(
@@ -410,7 +423,8 @@ class WebInterface:
     def get_master_backup(self, token):
         """ Get a backup of the eeprom of the master.
 
-        :returns: String of bytes (size = 64kb).
+        :returns: This function does not return a dict, unlike all other API functions: it \
+        returns a string of bytes (size = 64kb).
         """
         self.__check_token(token)
         cherrypy.response.headers['Content-Type'] = 'application/octet-stream'
@@ -422,7 +436,7 @@ class WebInterface:
 
         :param data: The eeprom backup to restore.
         :type data: multipart/form-data encoded bytes (size = 64 kb).
-        :returns: dict with 'output' key (contains an array with the addresses that were written).
+        :returns: 'output': array with the addresses that were written.
         """
         self.__check_token(token)
         data = data.file.read()
@@ -434,8 +448,9 @@ class WebInterface:
         power modules (master_last_success, power_last_success) and the error list per module
         (input and output modules). The modules are identified by O1, O2, I1, I2, ...
 
-        :returns: dict with 'errors' key (contains list of tuples (module, nr_errors)), \
-        'master_last_success' and 'power_last_success'.
+        :returns: 'errors': list of tuples (module, nr_errors), 'master_last_success': UNIX \
+        timestamp of the last succesful master communication and 'power_last_success': UNIX \
+        timestamp of the last successful power communication.
         """
         self.__check_token(token)
         try:
@@ -452,8 +467,6 @@ class WebInterface:
     @cherrypy.expose
     def master_clear_error_list(self, token):
         """ Clear the number of errors.
-
-        :returns: empty dict.
         """
         self.__check_token(token)
         return self.__wrap(lambda: self.__gateway_api.master_clear_error_list())
@@ -959,10 +972,10 @@ class WebInterface:
         HH:MM formatted times times (index 0 = start Monday, index 1 = stop Monday,
         index 2 = start Tuesday, ...).
 
-        :returns: List of dictionaries with the following keys: 'id', 'name', 'address', \
-        'input0', 'input1', 'input2', 'input3', 'input4', 'input5', 'input6', 'input7', 'sensor0', \
-        'sensor1', 'sensor2', 'sensor3', 'sensor4', 'sensor5', 'sensor6', 'sensor7', 'times0', \
-        'times1', 'times2', 'times3', 'times4', 'times5', 'times6', 'times7'.
+        :returns: 'modules': list of dictionaries with the following keys: 'id', 'name', \
+        'address', 'input0', 'input1', 'input2', 'input3', 'input4', 'input5', 'input6', \
+        'input7', 'sensor0', 'sensor1', 'sensor2', 'sensor3', 'sensor4', 'sensor5', 'sensor6', \
+        'sensor7', 'times0', 'times1', 'times2', 'times3', 'times4', 'times5', 'times6', 'times7'.
         """
         self.__check_token(token)
         return self.__success(modules=self.__gateway_api.get_power_modules())
@@ -971,11 +984,10 @@ class WebInterface:
     def set_power_modules(self, token, modules):
         """ Set information for the power modules.
 
-        :param modules: list of dicts with keys: 'id', 'name', 'input0', 'input1', \
+        :param modules: json encoded list of dicts with keys: 'id', 'name', 'input0', 'input1', \
         'input2', 'input3', 'input4', 'input5', 'input6', 'input7', 'sensor0', 'sensor1', \
         'sensor2', 'sensor3', 'sensor4', 'sensor5', 'sensor6', 'sensor7', 'times0', 'times1', \
         'times2', 'times3', 'times4', 'times5', 'times6', 'times7'.
-        :returns: empty dict.
         """
         self.__check_token(token)
         return self.__wrap(lambda: self.__gateway_api.set_power_modules(json.loads(modules)))
@@ -984,44 +996,37 @@ class WebInterface:
     def get_realtime_power(self, token):
         """ Get the realtime power measurements.
 
-        :returns: dict with the module id as key and the follow array as value: \
-        [voltage, frequency, current, power].
+        :returns: module id as the keys: [voltage, frequency, current, power].
         """
         self.__check_token(token)
         return self.__wrap(self.__gateway_api.get_realtime_power)
 
     @cherrypy.expose
     def get_total_energy(self, token):
-        """ Get the total energy (kWh) consumed by the power modules.
+        """ Get the total energy (Wh) consumed by the power modules.
 
-        :returns: dict with the module id as key and the following array as value: [day, night].
+        :returns: modules id as key: [day, night].
         """
         self.__check_token(token)
         return self.__wrap(self.__gateway_api.get_total_energy)
 
     @cherrypy.expose
     def start_power_address_mode(self, token):
-        """ Start the address mode on the power modules.
-
-        :returns: empty dict.
-        """
+        """ Start the address mode on the power modules. """
         self.__check_token(token)
         return self.__wrap(self.__gateway_api.start_power_address_mode)
 
     @cherrypy.expose
     def stop_power_address_mode(self, token):
-        """ Stop the address mode on the power modules.
-
-        :returns: empty dict.
-        """
+        """ Stop the address mode on the power modules. """
         self.__check_token(token)
         return self.__wrap(self.__gateway_api.stop_power_address_mode)
 
     @cherrypy.expose
     def in_power_address_mode(self, token):
-        """ Check if the power modules are in address mode
-
-        :returns: dict with key 'address_mode' and value True or False.
+        """ Check if the power modules are in address mode.
+        
+        :returns: 'address_mode': Boolean
         """
         self.__check_token(token)
         return self.__wrap(self.__gateway_api.in_power_address_mode)
@@ -1031,10 +1036,9 @@ class WebInterface:
         """ Set the voltage for a given module.
 
         :param module_id: The id of the power module.
-        :type module_id: int
+        :type module_id: Byte
         :param voltage: The voltage to set for the power module.
-        :type voltage: float
-        :returns: empty dict
+        :type voltage: Float
         """
         self.__check_token(token)
         return self.__wrap(lambda: self.__gateway_api.set_power_voltage(int(module_id), float(voltage)))
@@ -1043,7 +1047,7 @@ class WebInterface:
     def get_pulse_counter_status(self, token):
         """ Get the pulse counter values.
 
-        :returns: dict with key 'counters' (value is array with the 8 pulse counter values).
+        :returns: 'counters': array with the 8 pulse counter values.
         """
         self.__check_token(token)
         return self.__success(counters=self.__gateway_api.get_pulse_counter_status())
@@ -1052,7 +1056,7 @@ class WebInterface:
     def get_version(self, token):
         """ Get the version of the openmotics software.
 
-        :returns: dict with 'version' key.
+        :returns: 'version': String (a.b.c).
         """
         self.__check_token(token)
         config = ConfigParser.ConfigParser()
@@ -1064,12 +1068,11 @@ class WebInterface:
         """ Perform an update.
 
         :param version: the new version number.
-        :type version: string
+        :type version: String
         :param md5: the md5 sum of update_data.
-        :type md5: string
+        :type md5: String
         :param update_data: a tgz file containing the update script (update.sh) and data.
         :type update_data: multipart/form-data encoded byte string.
-        :returns: dict with 'msg'.
         """
 
         self.__check_token(token)
@@ -1088,13 +1091,13 @@ class WebInterface:
 
         subprocess.Popen(constants.get_update_cmd(version, md5), close_fds=True)
 
-        return self.__success(msg='Started update')
+        return self.__success()
 
     @cherrypy.expose
     def get_update_output(self, token):
         """ Get the output of the last update.
 
-        :returns: dict with 'output'.
+        :returns: 'output': String with the output from the update script.
         """
         self.__check_token(token)
 
@@ -1108,9 +1111,8 @@ class WebInterface:
     def set_timezone(self, token, timezone):
         """ Set the timezone for the gateway.
 
-        :type timezone: string
         :param timezone: in format 'Continent/City'.
-        :returns: dict with 'msg' key.
+        :type timezone: String
         """
         self.__check_token(token)
 
@@ -1122,7 +1124,7 @@ class WebInterface:
             os.symlink(timezone_file_path, constants.get_timezone_file())
 
             self.__gateway_api.sync_master_time()
-            return self.__success(msg='Timezone set successfully')
+            return self.__success()
         else:
             return self.__error("Could not find timezone '" + timezone + "'")
 
@@ -1130,7 +1132,7 @@ class WebInterface:
     def get_timezone(self, token):
         """ Get the timezone for the gateway.
 
-        :returns: dict with 'timezone' key containing the timezone in 'Continent/City' format.
+        :returns: 'timezone': the timezone in 'Continent/City' format (String).
         """
         self.__check_token(token)
 
@@ -1145,12 +1147,18 @@ class WebInterface:
         """ Execute an url action.
 
         :param url: The url to fetch.
+        :type url: String
         :param method: (optional) The http method (defaults to GET).
+        :type method: String
         :param headers: (optional) The http headers to send (format: json encoded dict)
+        :type headers: String
         :param data: (optional) Bytes to send in the body of the request.
+        :type data: String
         :param auth: (optional) Json encoded tuple (username, password).
+        :type auth: String
         :param timeout: (optional) Timeout in seconds for the http request (default = 10 sec).
-        :returns: dict with 'headers' and 'data' keys.
+        :type timeout: Integer
+        :returns: 'headers': response headers, 'data': response body.
         """
         self.__check_token(token)
 
@@ -1177,9 +1185,9 @@ class WebInterface:
         action.
 
         :param timestamp: UNIX timestamp.
-        :type timestamp: integer.
-        :param action: JSON encoded dict.
-        :type action: string.
+        :type timestamp: Integer.
+        :param action: JSON encoded dict (see above).
+        :type action: String.
         """
         self.__check_token(token)
         timestamp = int(timestamp)
@@ -1220,11 +1228,12 @@ class WebInterface:
     @cherrypy.expose
     def list_scheduled_actions(self, token):
         """ Get a list of all scheduled actions.
-        :returns: dict with key 'actions' containing a list of dicts with keys: 'timestamp',
-        'from_now', 'id', 'description' and 'action'. 'timestamp' is the UNIX timestamp when the
-        action will be executed. 'from_now' is the number of seconds until the action will be
-        scheduled. 'id' is a unique integer for the scheduled action. 'description' contains a
-        user set description for the action. 'action' contains the function and params that will be
+        
+        :returns: 'actions': a list of dicts with keys: 'timestamp', 'from_now', 'id', \
+        'description' and 'action'. 'timestamp' is the UNIX timestamp when the action will be \
+        executed. 'from_now' is the number of seconds until the action will be scheduled. 'id' \
+        is a unique integer for the scheduled action. 'description' contains a user set \
+        description for the action. 'action' contains the function and params that will be \
         used to execute the scheduled action.
         """
         self.__check_token(token)
@@ -1238,8 +1247,9 @@ class WebInterface:
     @cherrypy.expose
     def remove_scheduled_action(self, token, id):
         """ Remove a scheduled action when the id of the action is given.
+        
         :param id: the id of the scheduled action to remove.
-        :returns: { 'success' : True }
+        :type id: Integer
         """
         self.__check_token(token)
         self.__scheduling_controller.remove_scheduled_action(id)
@@ -1247,6 +1257,7 @@ class WebInterface:
 
     def __exec_scheduled_action(self, action):
         """ Callback for the SchedulingController executing a scheduled actions.
+        
         :param action: JSON encoded action.
         """
         action = json.loads(action)
