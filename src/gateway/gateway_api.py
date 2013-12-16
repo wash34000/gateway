@@ -41,6 +41,8 @@ class GatewayApi:
         self.__last_maintenance_send_time = 0
         self.__maintenance_timeout_timer = None
 
+        self.__discover_mode_timer = None
+
         self.__output_status = None
         self.__master_communicator.register_consumer(
                     BackgroundConsumer(master_api.output_list(), 0, self.__update_outputs))
@@ -203,12 +205,19 @@ class GatewayApi:
 
     ###### Master module functions
 
-    def module_discover_start(self):
+    def module_discover_start(self, timeout=900):
         """ Start the module discover mode on the master.
 
         :returns: dict with 'status' ('OK').
         """
         ret = self.__master_communicator.do_command(master_api.module_discover_start())
+
+        if self.__discover_mode_timer != None:
+            self.__discover_mode_timer.cancel()
+
+        self.__discover_mode_timer = Timer(timeout, self.module_discover_stop)
+        self.__discover_mode_timer.start()
+
         return { 'status' : ret['resp'] }
 
     def module_discover_stop(self):
@@ -217,6 +226,11 @@ class GatewayApi:
         :returns: dict with 'status' ('OK').
         """
         ret = self.__master_communicator.do_command(master_api.module_discover_stop())
+
+        if self.__discover_mode_timer != None:
+            self.__discover_mode_timer.cancel()
+            self.__discover_mode_timer = None
+
         return { 'status' : ret['resp'] }
 
     def get_modules(self):
