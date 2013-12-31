@@ -58,8 +58,14 @@ class GatewayApi:
         self.__power_communicator = power_communicator
         self.__power_controller = power_controller
 
+        self.__plugin_controller = None
+
         self.init_master()
         self.__run_master_timer()
+
+    def set_plugin_controller(self, plugin_controller):
+        """ Set the plugin controller. """
+        self.__plugin_controller = plugin_controller
 
     def init_master(self):
         """ Initialize the master: disable the async RO messages, enable async OL messages. """
@@ -291,8 +297,12 @@ class GatewayApi:
     def __update_outputs(self, ol_output):
         """ Update the OutputStatus when an OL is received. """
         on_outputs = ol_output['outputs']
+
         if self.__output_status != None:
             self.__output_status.partial_update(on_outputs)
+
+        if self.__plugin_controller != None:
+            self.__plugin_controller.process_output_status(on_outputs)
 
     def get_output_status(self):
         """ Get a list containing the status of the Outputs.
@@ -447,6 +457,8 @@ class GatewayApi:
     def __update_inputs(self, api_data):
         """ Update the InputStatus with data from an IL message. """
         self.__input_status.add_data((api_data['input'], api_data['output']))
+        if self.__plugin_controller != None:
+            self.__plugin_controller.process_input_status(api_data)
 
     def get_last_inputs(self):
         """ Get the 5 last pressed inputs during the last 5 minutes.

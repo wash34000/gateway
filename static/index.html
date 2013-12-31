@@ -86,9 +86,10 @@
             }
         }
         function show_outputs(data) {
-            $.each(data['outputs'], function(index, output) {
-                if (output['light'] == 1) {
-                    var output_nr = output['id'];
+            $.each(data['status'], function(index, output) {
+                var output_nr = output['id'];
+
+                if (output_nr in configs['outputs']) {
                     var output_name = configs['outputs'][output_nr];
 
                     if ($("#output_block_" + output_nr).length === 1) {
@@ -322,7 +323,7 @@
             var onoff = $("#thermostat_onoff");
             onoff.text(data['thermostats_on'] ? 'on' : 'off');
             onoff.css('color', data['thermostats_on'] ? '#51A351' : '#BD362F');
-            $("#thermostat_outside_temp").text(round_fixed(data['thermostats'][0]['outside'], 1));
+            $("#thermostat_outside_temp").text(round_fixed(data['status'][0]['outside'], 1));
 
 
             // Set enabled mode
@@ -341,7 +342,7 @@
             }
 
             // Add all thermostas
-            $.each(data['thermostats'], function (index, thermostat) {
+            $.each(data['status'], function (index, thermostat) {
                 var id = thermostat['id'];
                 var thermostat_name = configs['thermostats'][id];
 
@@ -433,7 +434,6 @@
             }
             url += "&fe_time=" + gettimestamp();
 
-            $(".loading").show();
             $.ajax({
                 url: url,
                 type: 'GET',
@@ -445,9 +445,6 @@
                     location.reload(true);
                 }
                 show_message("Error", "Fetching data for " + name + " failed.");
-            })
-            .always(function() {
-                $(".loading").hide();
             });
 
             $("#"+name).addClass("loaded");
@@ -462,17 +459,20 @@
             };
         }
 
-        function create_config_loaded(dict, key) {
+        function create_config_loaded(key, filter) {
             return function(data) {
-                $.each(data, function(i, element) {
-                    var id = element['id'];
-                    var name = element['name'];
-                    dict[key][id] = name;
+                $.each(data['config'], function(i, element) {
+                    if (filter == undefined || filter(element)) {
+                        var id = element['id'];
+                        var name = element['name'];
+                        configs[key][id] = name;
+                    }
                 });
                 
                 configs_loaded += 1;
                 if (configs_loaded == 3) {
                     $('.loading').hide();
+                    $('.tabs').show();
                     $('#outputs_button').trigger('click');
                     auto_refresh();
                 }
@@ -480,34 +480,72 @@
         }
 
         function logged_in_callback() {
-            $('.tabs').show();
             $('#login_form').hide();
+            $(".loading").show();
+            
             /* Load the configuration */
-            $('.loading').show();
-
-            $.post({
+            $.ajax({
                 url: '/get_output_configurations',
-                data: { 'token' : token, 'fields' : [ 'name' ] },
+                type: 'POST',
+                data: { 'token' : token, 'fields' : JSON.stringify([ 'name', 'type' ]) },
                 dataType: 'json'
             })
-            .done(create_config_loaded(configs, "outputs"))
+            .done(create_config_loaded("outputs", function(element) { return element['type'] == 255 }))
             .fail(create_error("Fetching output configuration data"));
 
-            $.post({
+            $.ajax({
                 url: '/get_thermostat_configurations',
-                data: { 'token' : token, 'fields' : [ 'name' ] },
+                type: 'POST',
+                data: { 'token' : token, 'fields' : JSON.stringify([ 'name' ]) },
                 dataType: 'json'
             })
-            .done(create_config_loaded(configs, "thermostats"))
+            .done(create_config_loaded("thermostats"))
             .fail(create_error("Fetching thermostat configuration data"));
 
-            $.post({
+            $.ajax({
                 url: '/get_group_action_configurations',
-                data: { 'token' : token, 'fields' : [ 'name' ] },
+                type: 'POST',
+                data: { 'token' : token, 'fields' : JSON.stringify([ 'name' ]) },
                 dataType: 'json'
             })
-            .done(create_config_loaded(configs, "group_actions"))
+            .done(create_config_loaded("group_actions"))
             .fail(create_error("Fetching thermostat configuration data"));
+
+            $.ajax({
+                url: '/get_plugins',
+                type: 'POST',
+                data: { 'token' : token },
+                dataType: 'json'
+            })
+            .done(function(data) {
+                $.each(data['plugins'], function(i, plugin) {
+                    var is_webui = false;
+                    $.each(plugin['interfaces'], function (j, interface) {
+                        if (interface[0] == "webui") {
+                            is_webui = true;
+                        }
+                    });
+
+                    if (is_webui) {
+                        var content = $("#content");
+                        content.append('<div class="section" style="display: none; height: 100%;" id="' + plugin['name'] + '"><iframe style="height:100%;width:100%" width="100%" height="100%" frameborder="0" scrolling="no" marginheight="0" marginwidth="0" src="/plugins/' + plugin['name'] + '/html_index?token=' + token + '"></iframe></div>');
+
+                        var tabs = $(".tabs");
+                        tabs.append('<li class="tab"><a id="' + plugin['name'] + '_button" href="#">' + plugin['name'] + '</a></li>');
+
+                        $("#" + plugin['name'] + "_button").on("click", {name: plugin['name']}, function(e) {
+                            var name = e.data.name;
+
+                            $(".section").hide();
+                            $("#" + name).show();
+
+                            $(".tab").removeClass('active');
+                            $("#" + name + "_button").parent().addClass('active');
+                        });
+                    }
+                });
+            })
+            .fail(create_error("Fetching plugins failed"));
         }
 
         $(document).ready(function() {
@@ -518,9 +556,7 @@
                     $(".section").hide();
                     $("#" + name).show();
 
-                    $("#outputs_button").parent().removeClass('active');
-                    $("#group_actions_button").parent().removeClass('active');
-                    $("#thermostats_button").parent().removeClass('active');
+                    $(".tab").removeClass('active');
                     $("#" + name + "_button").parent().addClass('active');
 
                     if (name != "group_actions") {
@@ -684,7 +720,7 @@
     </div>
     <div class="container">
         <div class="row">
-            <div class="span12">
+            <div class="span12" id="content">
                 <ul class="tabs nav nav-tabs"
                     style="display: none; float: left; width: 100%; padding-top: 5px; background-color: #fff;">
                     <li class="tab"><a id="outputs_button" href="#">Lights</a></li>
@@ -720,6 +756,11 @@
                         <b>Remark:</b> For maximum security, your gateway account is different from the one in the cloud and is not synchronized.
                         It may thus have a different username and/or password. To create an account, click the button above, and follow the displayed steps.
                     </p>
+                </div>
+
+                <div class="loading" style="display: none;">
+                    <h3>Loading configuration</h3>
+                    <img src="/static/img/loading_round.gif" class="spaced" style="padding: 50px; width: 25px; height: 25px;"/>
                 </div>
 
                 <div class="section" style="display: none;" id="outputs">

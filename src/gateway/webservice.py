@@ -93,6 +93,12 @@ def timestampFilter():
 cherrypy.tools.timestampFilter = cherrypy.Tool('before_handler', timestampFilter)
 
 
+class DummyToken:
+    """ The DummyToken is used for internal calls from the plugins to the webinterface, so 
+    that the plugin does not required a real token. """
+    pass
+
+
 class WebInterface:
     """ This class defines the web interface served by cherrypy. """
 
@@ -120,10 +126,17 @@ class WebInterface:
 
         self.__maintenance_service = maintenance_service
         self.__authorized_check = authorized_check
+        
+        self.__plugin_controller = None
+        self.dummy_token = DummyToken()
 
-    def __check_token(self, token):
+    def set_plugin_controller(self, plugin_controller):
+        """ Set the plugin controller. """
+        self.__plugin_controller = plugin_controller
+
+    def check_token(self, token):
         """ Check if the token is valid, raises HTTPError(401) if invalid. """
-        if cherrypy.request.remote.ip == '127.0.0.1':
+        if cherrypy.request.remote.ip == '127.0.0.1' or token is self.dummy_token:
             # Don't check tokens for localhost
             return
         if not self.__user_controller.check_token(token):
@@ -206,7 +219,7 @@ class WebInterface:
 
         :returns: 'port': Port on which the maintenance ssl socket is listening (Integer between 6000 and 7000).
         """
-        self.__check_token(token)
+        self.check_token(token)
 
         port = random.randint(6000, 7000)
         self.__maintenance_service.start_in_thread(port)
@@ -218,7 +231,7 @@ class WebInterface:
 
         :returns: 'status': 'OK'.
         """
-        self.__check_token(token)
+        self.check_token(token)
         return self.__wrap(lambda: self.__gateway_api.module_discover_start())
 
     @cherrypy.expose
@@ -227,7 +240,7 @@ class WebInterface:
 
         :returns: 'status': 'OK'.
         """
-        self.__check_token(token)
+        self.check_token(token)
         return self.__wrap(lambda: self.__gateway_api.module_discover_stop())
 
     @cherrypy.expose
@@ -237,7 +250,7 @@ class WebInterface:
         :returns: 'output': list of module types (O,R,D) and 'input': list of input module \
         types (I,T,L).
         """
-        self.__check_token(token)
+        self.check_token(token)
         return self.__wrap(lambda: self.__gateway_api.get_modules())
 
     @cherrypy.expose
@@ -250,6 +263,7 @@ class WebInterface:
         :param id: The id of the output/input/sensor.
         :returns: 'status': 'OK'.
         """
+        self.check_token(token)
         return self.__wrap(lambda: self.__gateway_api.flash_leds(int(type), int(id)))
 
     @cherrypy.expose
@@ -259,7 +273,7 @@ class WebInterface:
         :returns: 'time': hour and minutes (HH:MM), 'date': day, month, year (DD:MM:YYYY), \
         'mode': Integer, 'version': a.b.c and 'hw_version': hardware version (Integer).
         """
-        self.__check_token(token)
+        self.check_token(token)
         return self.__success(**self.__gateway_api.get_status())
 
     @cherrypy.expose
@@ -269,7 +283,7 @@ class WebInterface:
         :returns: 'status': list of dictionaries with the following keys: id,\
         status, dimmer and ctimer.
         """
-        self.__check_token(token)
+        self.check_token(token)
         return self.__success(status=self.__gateway_api.get_output_status())
 
     @cherrypy.expose
@@ -285,7 +299,7 @@ class WebInterface:
         :param timer: The timer value to set, None if unchanged
         :type timer: Integer in (150, 450, 900, 1500, 2220, 3120)
         """
-        self.__check_token(token)
+        self.check_token(token)
         return self.__wrap(lambda: self.__gateway_api.set_output(
                                         int(id), is_on.lower() == "true",
                                         int(dimmer) if dimmer is not None else None,
@@ -295,7 +309,7 @@ class WebInterface:
     def set_all_lights_off(self, token):
         """ Turn all lights off.
         """
-        self.__check_token(token)
+        self.check_token(token)
         return self.__wrap(lambda: self.__gateway_api.set_all_lights_off())
 
     @cherrypy.expose
@@ -305,7 +319,7 @@ class WebInterface:
         :param floor: The id of the floor
         :type floor: Byte
         """
-        self.__check_token(token)
+        self.check_token(token)
         return self.__wrap(lambda: self.__gateway_api.set_all_lights_floor_off(int(floor)))
 
     @cherrypy.expose
@@ -315,7 +329,7 @@ class WebInterface:
         :param floor: The id of the floor
         :type floor: Byte
         """
-        self.__check_token(token)
+        self.check_token(token)
         return self.__wrap(lambda: self.__gateway_api.set_all_lights_floor_on(int(floor)))
 
     @cherrypy.expose
@@ -324,7 +338,7 @@ class WebInterface:
 
         :returns: 'inputs': list of tuples (input, output).
         """
-        self.__check_token(token)
+        self.check_token(token)
         return self.__success(inputs=self.__gateway_api.get_last_inputs())
 
     @cherrypy.expose
@@ -336,7 +350,7 @@ class WebInterface:
         thermostats, each element in the list is a dict with the following keys:
         'id', 'act', 'csetp', 'output0', 'output1', 'outside', 'mode'.
         """
-        self.__check_token(token)
+        self.check_token(token)
         return self.__wrap(self.__gateway_api.get_thermostat_status)
 
     @cherrypy.expose
@@ -349,7 +363,7 @@ class WebInterface:
         :type temperature: float
         :return: 'status': 'OK'.
         """
-        self.__check_token(token)
+        self.check_token(token)
         return self.__wrap(lambda: self.__gateway_api.set_current_setpoint(
                                             int(thermostat), float(temperature)))
 
@@ -367,7 +381,7 @@ class WebInterface:
 
         :return: 'status': 'OK'.
         """
-        self.__check_token(token)
+        self.check_token(token)
         return self.__wrap(lambda: self.__gateway_api.set_thermostat_mode(
                        boolean(thermostat_on), boolean(automatic), int(setpoint)))
 
@@ -377,7 +391,7 @@ class WebInterface:
 
         :returns: 'status': list of 32 temperatures, 1 for each sensor.
         """
-        self.__check_token(token)
+        self.check_token(token)
         return self.__success(status=self.__gateway_api.get_sensor_temperature_status())
 
     @cherrypy.expose
@@ -386,7 +400,7 @@ class WebInterface:
 
         :returns: 'status': List of 32 bytes, 1 for each sensor.
         """
-        self.__check_token(token)
+        self.check_token(token)
         return self.__success(status=self.__gateway_api.get_sensor_humidity_status())
 
     @cherrypy.expose
@@ -395,7 +409,7 @@ class WebInterface:
 
         :returns: 'status': List of 32 bytes, 1 for each sensor.
         """
-        self.__check_token(token)
+        self.check_token(token)
         return self.__success(status=self.__gateway_api.get_sensor_brightness_status())
 
     @cherrypy.expose
@@ -405,7 +419,7 @@ class WebInterface:
         :param group_action_id: The id of the group action
         :type group_action_id: Integer [0, 159]
         """
-        self.__check_token(token)
+        self.check_token(token)
         return self.__wrap(lambda: self.__gateway_api.do_group_action(int(group_action_id)))
 
     @cherrypy.expose
@@ -415,7 +429,7 @@ class WebInterface:
         :param status: whether the leds should be on (true) or off (false).
         :type status Boolean
         """
-        self.__check_token(token)
+        self.check_token(token)
         return self.__wrap(
                     lambda: self.__gateway_api.set_master_status_leds(status.lower() == "true"))
 
@@ -426,7 +440,7 @@ class WebInterface:
         :returns: This function does not return a dict, unlike all other API functions: it \
         returns a string of bytes (size = 64kb).
         """
-        self.__check_token(token)
+        self.check_token(token)
         cherrypy.response.headers['Content-Type'] = 'application/octet-stream'
         return self.__gateway_api.get_master_backup()
 
@@ -438,7 +452,7 @@ class WebInterface:
         :type data: multipart/form-data encoded bytes (size = 64 kb).
         :returns: 'output': array with the addresses that were written.
         """
-        self.__check_token(token)
+        self.check_token(token)
         data = data.file.read()
         return self.__wrap(lambda: self.__gateway_api.master_restore(data))
 
@@ -452,7 +466,7 @@ class WebInterface:
         timestamp of the last succesful master communication and 'power_last_success': UNIX \
         timestamp of the last successful power communication.
         """
-        self.__check_token(token)
+        self.check_token(token)
         try:
             errors = self.__gateway_api.master_error_list()
         except Exception:
@@ -468,7 +482,7 @@ class WebInterface:
     def master_clear_error_list(self, token):
         """ Clear the number of errors.
         """
-        self.__check_token(token)
+        self.check_token(token)
         return self.__wrap(lambda: self.__gateway_api.master_clear_error_list())
 
     ###### Below are the auto generated master configuration api functions
@@ -484,7 +498,7 @@ class WebInterface:
         :type fields: Json encoded list of strings
         :returns: 'config': output_configuration dict: contains 'id' (Id), 'floor' (Byte), 'module_type' (String[1]), 'name' (String[16]), 'timer' (Word), 'type' (Byte)
         """
-        self.__check_token(token)
+        self.check_token(token)
         fields = None if fields is None else json.loads(fields)
         return self.__success(config=self.__gateway_api.get_output_configuration(int(id), fields))
     
@@ -497,7 +511,7 @@ class WebInterface:
         :type fields: Json encoded list of strings
         :returns: 'config': list of output_configuration dict: contains 'id' (Id), 'floor' (Byte), 'module_type' (String[1]), 'name' (String[16]), 'timer' (Word), 'type' (Byte)
         """
-        self.__check_token(token)
+        self.check_token(token)
         fields = None if fields is None else json.loads(fields)
         return self.__success(config=self.__gateway_api.get_output_configurations(fields))
     
@@ -509,7 +523,7 @@ class WebInterface:
         :param config: The output_configuration to set
         :type config: output_configuration dict: contains 'id' (Id), 'floor' (Byte), 'name' (String[16]), 'timer' (Word), 'type' (Byte)
         """
-        self.__check_token(token)
+        self.check_token(token)
         self.__gateway_api.set_output_configuration(json.loads(config))
         return self.__success()
     
@@ -521,7 +535,7 @@ class WebInterface:
         :param config: The list of output_configurations to set
         :type config: list of output_configuration dict: contains 'id' (Id), 'floor' (Byte), 'name' (String[16]), 'timer' (Word), 'type' (Byte)
         """
-        self.__check_token(token)
+        self.check_token(token)
         self.__gateway_api.set_output_configurations(json.loads(config))
         return self.__success()
     
@@ -536,7 +550,7 @@ class WebInterface:
         :type fields: Json encoded list of strings
         :returns: 'config': input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'module_type' (String[1]), 'name' (String[8])
         """
-        self.__check_token(token)
+        self.check_token(token)
         fields = None if fields is None else json.loads(fields)
         return self.__success(config=self.__gateway_api.get_input_configuration(int(id), fields))
     
@@ -549,7 +563,7 @@ class WebInterface:
         :type fields: Json encoded list of strings
         :returns: 'config': list of input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'module_type' (String[1]), 'name' (String[8])
         """
-        self.__check_token(token)
+        self.check_token(token)
         fields = None if fields is None else json.loads(fields)
         return self.__success(config=self.__gateway_api.get_input_configurations(fields))
     
@@ -561,7 +575,7 @@ class WebInterface:
         :param config: The input_configuration to set
         :type config: input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'name' (String[8])
         """
-        self.__check_token(token)
+        self.check_token(token)
         self.__gateway_api.set_input_configuration(json.loads(config))
         return self.__success()
     
@@ -573,7 +587,7 @@ class WebInterface:
         :param config: The list of input_configurations to set
         :type config: list of input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'name' (String[8])
         """
-        self.__check_token(token)
+        self.check_token(token)
         self.__gateway_api.set_input_configurations(json.loads(config))
         return self.__success()
     
@@ -588,7 +602,7 @@ class WebInterface:
         :type fields: Json encoded list of strings
         :returns: 'config': thermostat_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
         """
-        self.__check_token(token)
+        self.check_token(token)
         fields = None if fields is None else json.loads(fields)
         return self.__success(config=self.__gateway_api.get_thermostat_configuration(int(id), fields))
     
@@ -601,7 +615,7 @@ class WebInterface:
         :type fields: Json encoded list of strings
         :returns: 'config': list of thermostat_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
         """
-        self.__check_token(token)
+        self.check_token(token)
         fields = None if fields is None else json.loads(fields)
         return self.__success(config=self.__gateway_api.get_thermostat_configurations(fields))
     
@@ -613,7 +627,7 @@ class WebInterface:
         :param config: The thermostat_configuration to set
         :type config: thermostat_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
         """
-        self.__check_token(token)
+        self.check_token(token)
         self.__gateway_api.set_thermostat_configuration(json.loads(config))
         return self.__success()
     
@@ -625,7 +639,7 @@ class WebInterface:
         :param config: The list of thermostat_configurations to set
         :type config: list of thermostat_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
         """
-        self.__check_token(token)
+        self.check_token(token)
         self.__gateway_api.set_thermostat_configurations(json.loads(config))
         return self.__success()
     
@@ -640,7 +654,7 @@ class WebInterface:
         :type fields: Json encoded list of strings
         :returns: 'config': sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees))
         """
-        self.__check_token(token)
+        self.check_token(token)
         fields = None if fields is None else json.loads(fields)
         return self.__success(config=self.__gateway_api.get_sensor_configuration(int(id), fields))
     
@@ -653,7 +667,7 @@ class WebInterface:
         :type fields: Json encoded list of strings
         :returns: 'config': list of sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees))
         """
-        self.__check_token(token)
+        self.check_token(token)
         fields = None if fields is None else json.loads(fields)
         return self.__success(config=self.__gateway_api.get_sensor_configurations(fields))
     
@@ -665,7 +679,7 @@ class WebInterface:
         :param config: The sensor_configuration to set
         :type config: sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees))
         """
-        self.__check_token(token)
+        self.check_token(token)
         self.__gateway_api.set_sensor_configuration(json.loads(config))
         return self.__success()
     
@@ -677,7 +691,7 @@ class WebInterface:
         :param config: The list of sensor_configurations to set
         :type config: list of sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees))
         """
-        self.__check_token(token)
+        self.check_token(token)
         self.__gateway_api.set_sensor_configurations(json.loads(config))
         return self.__success()
     
@@ -692,7 +706,7 @@ class WebInterface:
         :type fields: Json encoded list of strings
         :returns: 'config': pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32])
         """
-        self.__check_token(token)
+        self.check_token(token)
         fields = None if fields is None else json.loads(fields)
         return self.__success(config=self.__gateway_api.get_pump_group_configuration(int(id), fields))
     
@@ -705,7 +719,7 @@ class WebInterface:
         :type fields: Json encoded list of strings
         :returns: 'config': list of pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32])
         """
-        self.__check_token(token)
+        self.check_token(token)
         fields = None if fields is None else json.loads(fields)
         return self.__success(config=self.__gateway_api.get_pump_group_configurations(fields))
     
@@ -717,7 +731,7 @@ class WebInterface:
         :param config: The pump_group_configuration to set
         :type config: pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32])
         """
-        self.__check_token(token)
+        self.check_token(token)
         self.__gateway_api.set_pump_group_configuration(json.loads(config))
         return self.__success()
     
@@ -729,7 +743,7 @@ class WebInterface:
         :param config: The list of pump_group_configurations to set
         :type config: list of pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32])
         """
-        self.__check_token(token)
+        self.check_token(token)
         self.__gateway_api.set_pump_group_configurations(json.loads(config))
         return self.__success()
     
@@ -744,7 +758,7 @@ class WebInterface:
         :type fields: Json encoded list of strings
         :returns: 'config': group_action_configuration dict: contains 'id' (Id), 'actions' (Actions[16]), 'name' (String[16])
         """
-        self.__check_token(token)
+        self.check_token(token)
         fields = None if fields is None else json.loads(fields)
         return self.__success(config=self.__gateway_api.get_group_action_configuration(int(id), fields))
     
@@ -757,7 +771,7 @@ class WebInterface:
         :type fields: Json encoded list of strings
         :returns: 'config': list of group_action_configuration dict: contains 'id' (Id), 'actions' (Actions[16]), 'name' (String[16])
         """
-        self.__check_token(token)
+        self.check_token(token)
         fields = None if fields is None else json.loads(fields)
         return self.__success(config=self.__gateway_api.get_group_action_configurations(fields))
     
@@ -769,7 +783,7 @@ class WebInterface:
         :param config: The group_action_configuration to set
         :type config: group_action_configuration dict: contains 'id' (Id), 'actions' (Actions[16]), 'name' (String[16])
         """
-        self.__check_token(token)
+        self.check_token(token)
         self.__gateway_api.set_group_action_configuration(json.loads(config))
         return self.__success()
     
@@ -781,7 +795,7 @@ class WebInterface:
         :param config: The list of group_action_configurations to set
         :type config: list of group_action_configuration dict: contains 'id' (Id), 'actions' (Actions[16]), 'name' (String[16])
         """
-        self.__check_token(token)
+        self.check_token(token)
         self.__gateway_api.set_group_action_configurations(json.loads(config))
         return self.__success()
     
@@ -796,7 +810,7 @@ class WebInterface:
         :type fields: Json encoded list of strings
         :returns: 'config': scheduled_action_configuration dict: contains 'id' (Id), 'action' (Actions[1]), 'day' (Byte), 'hour' (Byte), 'minute' (Byte)
         """
-        self.__check_token(token)
+        self.check_token(token)
         fields = None if fields is None else json.loads(fields)
         return self.__success(config=self.__gateway_api.get_scheduled_action_configuration(int(id), fields))
     
@@ -809,7 +823,7 @@ class WebInterface:
         :type fields: Json encoded list of strings
         :returns: 'config': list of scheduled_action_configuration dict: contains 'id' (Id), 'action' (Actions[1]), 'day' (Byte), 'hour' (Byte), 'minute' (Byte)
         """
-        self.__check_token(token)
+        self.check_token(token)
         fields = None if fields is None else json.loads(fields)
         return self.__success(config=self.__gateway_api.get_scheduled_action_configurations(fields))
     
@@ -821,7 +835,7 @@ class WebInterface:
         :param config: The scheduled_action_configuration to set
         :type config: scheduled_action_configuration dict: contains 'id' (Id), 'action' (Actions[1]), 'day' (Byte), 'hour' (Byte), 'minute' (Byte)
         """
-        self.__check_token(token)
+        self.check_token(token)
         self.__gateway_api.set_scheduled_action_configuration(json.loads(config))
         return self.__success()
     
@@ -833,7 +847,7 @@ class WebInterface:
         :param config: The list of scheduled_action_configurations to set
         :type config: list of scheduled_action_configuration dict: contains 'id' (Id), 'action' (Actions[1]), 'day' (Byte), 'hour' (Byte), 'minute' (Byte)
         """
-        self.__check_token(token)
+        self.check_token(token)
         self.__gateway_api.set_scheduled_action_configurations(json.loads(config))
         return self.__success()
     
@@ -848,7 +862,7 @@ class WebInterface:
         :type fields: Json encoded list of strings
         :returns: 'config': pulse_counter_configuration dict: contains 'id' (Id), 'input' (Byte), 'name' (String[16])
         """
-        self.__check_token(token)
+        self.check_token(token)
         fields = None if fields is None else json.loads(fields)
         return self.__success(config=self.__gateway_api.get_pulse_counter_configuration(int(id), fields))
     
@@ -861,7 +875,7 @@ class WebInterface:
         :type fields: Json encoded list of strings
         :returns: 'config': list of pulse_counter_configuration dict: contains 'id' (Id), 'input' (Byte), 'name' (String[16])
         """
-        self.__check_token(token)
+        self.check_token(token)
         fields = None if fields is None else json.loads(fields)
         return self.__success(config=self.__gateway_api.get_pulse_counter_configurations(fields))
     
@@ -873,7 +887,7 @@ class WebInterface:
         :param config: The pulse_counter_configuration to set
         :type config: pulse_counter_configuration dict: contains 'id' (Id), 'input' (Byte), 'name' (String[16])
         """
-        self.__check_token(token)
+        self.check_token(token)
         self.__gateway_api.set_pulse_counter_configuration(json.loads(config))
         return self.__success()
     
@@ -885,7 +899,7 @@ class WebInterface:
         :param config: The list of pulse_counter_configurations to set
         :type config: list of pulse_counter_configuration dict: contains 'id' (Id), 'input' (Byte), 'name' (String[16])
         """
-        self.__check_token(token)
+        self.check_token(token)
         self.__gateway_api.set_pulse_counter_configurations(json.loads(config))
         return self.__success()
     
@@ -898,7 +912,7 @@ class WebInterface:
         :type fields: Json encoded list of strings
         :returns: 'config': startup_action_configuration dict: contains 'actions' (Actions[100])
         """
-        self.__check_token(token)
+        self.check_token(token)
         fields = None if fields is None else json.loads(fields)
         return self.__success(config=self.__gateway_api.get_startup_action_configuration(fields))
     
@@ -910,7 +924,7 @@ class WebInterface:
         :param config: The startup_action_configuration to set
         :type config: startup_action_configuration dict: contains 'actions' (Actions[100])
         """
-        self.__check_token(token)
+        self.check_token(token)
         self.__gateway_api.set_startup_action_configuration(json.loads(config))
         return self.__success()
     
@@ -923,7 +937,7 @@ class WebInterface:
         :type fields: Json encoded list of strings
         :returns: 'config': dimmer_configuration dict: contains 'dim_memory' (Byte), 'dim_step' (Byte), 'dim_wait_cycle' (Byte), 'min_dim_level' (Byte)
         """
-        self.__check_token(token)
+        self.check_token(token)
         fields = None if fields is None else json.loads(fields)
         return self.__success(config=self.__gateway_api.get_dimmer_configuration(fields))
     
@@ -935,7 +949,7 @@ class WebInterface:
         :param config: The dimmer_configuration to set
         :type config: dimmer_configuration dict: contains 'dim_memory' (Byte), 'dim_step' (Byte), 'dim_wait_cycle' (Byte), 'min_dim_level' (Byte)
         """
-        self.__check_token(token)
+        self.check_token(token)
         self.__gateway_api.set_dimmer_configuration(json.loads(config))
         return self.__success()
     
@@ -948,7 +962,7 @@ class WebInterface:
         :type fields: Json encoded list of strings
         :returns: 'config': global_thermostat_configuration dict: contains 'outside_sensor' (Byte), 'pump_delay' (Byte), 'threshold_temp' (Temp)
         """
-        self.__check_token(token)
+        self.check_token(token)
         fields = None if fields is None else json.loads(fields)
         return self.__success(config=self.__gateway_api.get_global_thermostat_configuration(fields))
     
@@ -960,7 +974,7 @@ class WebInterface:
         :param config: The global_thermostat_configuration to set
         :type config: global_thermostat_configuration dict: contains 'outside_sensor' (Byte), 'pump_delay' (Byte), 'threshold_temp' (Temp)
         """
-        self.__check_token(token)
+        self.check_token(token)
         self.__gateway_api.set_global_thermostat_configuration(json.loads(config))
         return self.__success()
 
@@ -977,7 +991,7 @@ class WebInterface:
         'input7', 'sensor0', 'sensor1', 'sensor2', 'sensor3', 'sensor4', 'sensor5', 'sensor6', \
         'sensor7', 'times0', 'times1', 'times2', 'times3', 'times4', 'times5', 'times6', 'times7'.
         """
-        self.__check_token(token)
+        self.check_token(token)
         return self.__success(modules=self.__gateway_api.get_power_modules())
 
     @cherrypy.expose
@@ -989,7 +1003,7 @@ class WebInterface:
         'sensor2', 'sensor3', 'sensor4', 'sensor5', 'sensor6', 'sensor7', 'times0', 'times1', \
         'times2', 'times3', 'times4', 'times5', 'times6', 'times7'.
         """
-        self.__check_token(token)
+        self.check_token(token)
         return self.__wrap(lambda: self.__gateway_api.set_power_modules(json.loads(modules)))
 
     @cherrypy.expose
@@ -998,7 +1012,7 @@ class WebInterface:
 
         :returns: module id as the keys: [voltage, frequency, current, power].
         """
-        self.__check_token(token)
+        self.check_token(token)
         return self.__wrap(self.__gateway_api.get_realtime_power)
 
     @cherrypy.expose
@@ -1007,19 +1021,19 @@ class WebInterface:
 
         :returns: modules id as key: [day, night].
         """
-        self.__check_token(token)
+        self.check_token(token)
         return self.__wrap(self.__gateway_api.get_total_energy)
 
     @cherrypy.expose
     def start_power_address_mode(self, token):
         """ Start the address mode on the power modules. """
-        self.__check_token(token)
+        self.check_token(token)
         return self.__wrap(self.__gateway_api.start_power_address_mode)
 
     @cherrypy.expose
     def stop_power_address_mode(self, token):
         """ Stop the address mode on the power modules. """
-        self.__check_token(token)
+        self.check_token(token)
         return self.__wrap(self.__gateway_api.stop_power_address_mode)
 
     @cherrypy.expose
@@ -1028,7 +1042,7 @@ class WebInterface:
         
         :returns: 'address_mode': Boolean
         """
-        self.__check_token(token)
+        self.check_token(token)
         return self.__wrap(self.__gateway_api.in_power_address_mode)
 
     @cherrypy.expose
@@ -1040,7 +1054,7 @@ class WebInterface:
         :param voltage: The voltage to set for the power module.
         :type voltage: Float
         """
-        self.__check_token(token)
+        self.check_token(token)
         return self.__wrap(lambda: self.__gateway_api.set_power_voltage(int(module_id), float(voltage)))
 
     @cherrypy.expose
@@ -1049,7 +1063,7 @@ class WebInterface:
 
         :returns: 'counters': array with the 8 pulse counter values.
         """
-        self.__check_token(token)
+        self.check_token(token)
         return self.__success(counters=self.__gateway_api.get_pulse_counter_status())
 
     @cherrypy.expose
@@ -1058,7 +1072,7 @@ class WebInterface:
 
         :returns: 'version': String (a.b.c).
         """
-        self.__check_token(token)
+        self.check_token(token)
         config = ConfigParser.ConfigParser()
         config.read(constants.get_config_file())
         return self.__success(version=str(config.get('OpenMotics', 'version')))
@@ -1074,8 +1088,7 @@ class WebInterface:
         :param update_data: a tgz file containing the update script (update.sh) and data.
         :type update_data: multipart/form-data encoded byte string.
         """
-
-        self.__check_token(token)
+        self.check_token(token)
         update_data = update_data.file.read()
 
         if not os.path.exists(constants.get_update_dir()):
@@ -1099,7 +1112,7 @@ class WebInterface:
 
         :returns: 'output': String with the output from the update script.
         """
-        self.__check_token(token)
+        self.check_token(token)
 
         output_file = open(constants.get_update_output_file(), "r")
         output = output_file.read()
@@ -1114,7 +1127,7 @@ class WebInterface:
         :param timezone: in format 'Continent/City'.
         :type timezone: String
         """
-        self.__check_token(token)
+        self.check_token(token)
 
         timezone_file_path = "/usr/share/zoneinfo/" + timezone
         if os.path.isfile(timezone_file_path):
@@ -1134,7 +1147,7 @@ class WebInterface:
 
         :returns: 'timezone': the timezone in 'Continent/City' format (String).
         """
-        self.__check_token(token)
+        self.check_token(token)
 
         path = os.path.realpath(constants.get_timezone_file())
         if path.startswith("/usr/share/zoneinfo/"):
@@ -1160,7 +1173,7 @@ class WebInterface:
         :type timeout: Integer
         :returns: 'headers': response headers, 'data': response body.
         """
-        self.__check_token(token)
+        self.check_token(token)
 
         try:
             headers = json.loads(headers) if headers != None else None
@@ -1189,7 +1202,7 @@ class WebInterface:
         :param action: JSON encoded dict (see above).
         :type action: String.
         """
-        self.__check_token(token)
+        self.check_token(token)
         timestamp = int(timestamp)
         action = json.loads(action)
 
@@ -1236,7 +1249,7 @@ class WebInterface:
         description for the action. 'action' contains the function and params that will be \
         used to execute the scheduled action.
         """
-        self.__check_token(token)
+        self.check_token(token)
         now = time.time()
         actions = self.__scheduling_controller.list_scheduled_actions()
         for action in actions:
@@ -1251,7 +1264,7 @@ class WebInterface:
         :param id: the id of the scheduled action to remove.
         :type id: Integer
         """
-        self.__check_token(token)
+        self.check_token(token)
         self.__scheduling_controller.remove_scheduled_action(id)
         return self.__success()
 
@@ -1289,25 +1302,31 @@ class WebInterface:
         else:
             return self.__success(**ret)
 
+    @cherrypy.expose
+    def get_plugins(self, token):
+        """ Get the installed plugins.
+        
+        :returns: 'plugins': dict with name, version and interfaces where name and version
+        are strings and interfaces is a list of tuples (interface, version) which are both strings.
+        """
+        self.check_token(token)
+        plugins = self.__plugin_controller.get_plugins()
+        ret = [ { 'name' : p.name, 'version' : p.version, 'interfaces' : p.interfaces }
+                for p in plugins ]
+        return self.__success(plugins=ret)
+
 
 class WebService:
     """ The web service serves the gateway api over http. """
 
     name = 'web'
 
-    def __init__(self, user_controller, gateway_api, scheduling_filename, maintenance_service,
-                 authorized_check):
-        self.__user_controller = user_controller
-        self.__gateway_api = gateway_api
-        self.__scheduling_filename = scheduling_filename
-        self.__maintenance_service = maintenance_service
-        self.__authorized_check = authorized_check
+    def __init__(self, webinterface):
+        self.__webinterface = webinterface
 
     def run(self):
         """ Run the web service: start cherrypy. """
-        cherrypy.tree.mount(WebInterface(self.__user_controller, self.__gateway_api,
-                                         self.__scheduling_filename, self.__maintenance_service,
-                                         self.__authorized_check),
+        cherrypy.tree.mount(self.__webinterface,
                             config={'/static' : {'tools.staticdir.on' : True,
                                                  'tools.staticdir.dir' : '/opt/openmotics/static'},
                                     '/' : { 'tools.timestampFilter.on' : True }

@@ -18,7 +18,7 @@ import constants
 
 from serial_utils import RS485
 
-from gateway.webservice import WebService
+from gateway.webservice import WebInterface, WebService
 from gateway.gateway_api import GatewayApi
 from gateway.users import UserController
 
@@ -30,6 +30,8 @@ from master.passthrough import PassthroughService
 
 from power.power_communicator import PowerCommunicator
 from power.power_controller import PowerController
+
+from plugins.base import PluginController
 
 def setup_logger():
     """ Setup the OpenMotics logger. """
@@ -95,8 +97,18 @@ def main():
     passthrough_service = PassthroughService(master_communicator, passthrough_serial)
     passthrough_service.start()
     
-    web_service = WebService(user_controller, gateway_api, constants.get_scheduling_database_file(),
-                             maintenance_service, physical_frontend.in_authorized_mode)
+    web_interface = WebInterface(user_controller, gateway_api,
+                                constants.get_scheduling_database_file(), maintenance_service,
+                                physical_frontend.in_authorized_mode)
+    
+    plugin_controller = PluginController(web_interface)
+    plugin_controller.start_background_tasks()
+    plugin_controller.expose_plugins()
+    
+    web_interface.set_plugin_controller(plugin_controller)
+    gateway_api.set_plugin_controller(plugin_controller)
+    
+    web_service = WebService(web_interface)
     web_service.start()
     
     physical_frontend.set_led('stat2', True)

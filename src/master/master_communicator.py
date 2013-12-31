@@ -112,7 +112,10 @@ class MasterCommunicator:
     
     def get_seconds_since_last_success(self):
         """ Get the number of seconds since the last successful communication. """
-        return time.time() - self.__last_success
+        if self.__last_success == 0:
+            return 0 ## No communication - return 0 sec since last success
+        else:
+            return time.time() - self.__last_success
     
     def __get_cid(self):
         """ Get a communication id """
