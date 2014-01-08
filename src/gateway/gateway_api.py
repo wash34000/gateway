@@ -1185,19 +1185,22 @@ class GatewayApi:
 
         modules = self.__power_controller.get_power_modules()
         for id in sorted(modules.keys()):
-            addr = modules[id]['address']
-
-            volt = self.__power_communicator.do_command(addr, power_api.get_voltage())[0]
-            freq = self.__power_communicator.do_command(addr, power_api.get_frequency())[0]
-            current = self.__power_communicator.do_command(addr, power_api.get_current())
-            power = self.__power_communicator.do_command(addr, power_api.get_power())
-
-            out = []
-            for i in range(0, 8):
-                out.append([ checkNaN(volt), checkNaN(freq), checkNaN(current[i]),
-                             checkNaN(power[i]) ])
-
-            output[str(id)] = out
+            try:
+                addr = modules[id]['address']
+    
+                volt = self.__power_communicator.do_command(addr, power_api.get_voltage())[0]
+                freq = self.__power_communicator.do_command(addr, power_api.get_frequency())[0]
+                current = self.__power_communicator.do_command(addr, power_api.get_current())
+                power = self.__power_communicator.do_command(addr, power_api.get_power())
+    
+                out = []
+                for i in range(0, 8):
+                    out.append([ checkNaN(volt), checkNaN(freq), checkNaN(current[i]),
+                                 checkNaN(power[i]) ])
+    
+                output[str(id)] = out
+            except Exception as e:
+                LOGGER.exception("Got Exception for power module %s" % id)
 
         return output
 
@@ -1210,16 +1213,19 @@ class GatewayApi:
 
         modules = self.__power_controller.get_power_modules()
         for id in sorted(modules.keys()):
-            addr = modules[id]['address']
-
-            day = self.__power_communicator.do_command(addr, power_api.get_day_energy())
-            night = self.__power_communicator.do_command(addr, power_api.get_night_energy())
-
-            out = []
-            for i in range(0, 8):
-                out.append([ checkNaN(day[i]), checkNaN(night[i]) ])
-
-            output[str(id)] = out
+            try:
+                addr = modules[id]['address']
+    
+                day = self.__power_communicator.do_command(addr, power_api.get_day_energy())
+                night = self.__power_communicator.do_command(addr, power_api.get_night_energy())
+    
+                out = []
+                for i in range(0, 8):
+                    out.append([ checkNaN(day[i]), checkNaN(night[i]) ])
+    
+                output[str(id)] = out
+            except Exception:
+                LOGGER.error("Got Exception for power module %s" % id)
 
         return output
 
