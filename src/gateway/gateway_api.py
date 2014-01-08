@@ -430,7 +430,7 @@ class GatewayApi:
         
         thermostats_on = (mode & 128 == 128)
         automatic = (mode & 8 == 8)
-        setpoint = (mode & 7)
+        setpoint = 0 if automatic else (mode & 7)
         
         thermostats = []
         for thermostat_id in range(0, 24):
@@ -509,7 +509,7 @@ class GatewayApi:
         
         thermostats_on = (mode & 128 == 128)
         automatic = (mode & 8 == 8)
-        setpoint = (mode & 7)
+        setpoint = 0 if automatic else (mode & 7)
         
         thermostats = []
         outputs = self.get_outputs()
@@ -575,7 +575,8 @@ class GatewayApi:
         # If we are currently in manual mode and in this setpoint, set the mode to update to the new
         # configuration value.
         mode = self.__master_communicator.do_command(master_api.thermostat_mode())['mode']
-        (on, automatic, csetp) = (mode & 128 == 128, mode & 8 == 8, mode & 7) 
+        (on, automatic) = (mode & 128 == 128, mode & 8 == 8)
+        csetp = 0 if automatic else (mode & 7)
         
         if not automatic and csetp == setpoint:
             self.set_thermostat_mode(on, automatic, csetp)
@@ -644,7 +645,8 @@ class GatewayApi:
         # If we are currently in automatic mode, set the mode to update to the new
         # configuration value.
         mode = self.__master_communicator.do_command(master_api.thermostat_mode())['mode']
-        (on, automatic, csetp) = (mode & 128 == 128, mode & 8 == 8, mode & 7) 
+        (on, automatic) = (mode & 128 == 128, mode & 8 == 8)
+        csetp = 0 if automatic else (mode & 7)
         
         if automatic:
             self.set_thermostat_mode(on, automatic, csetp)
