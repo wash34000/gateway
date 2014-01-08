@@ -510,8 +510,8 @@ class GatewayApi:
 
         thermostats_on = (mode & 128 == 128)
         automatic = (mode & 8 == 8)
-        setpoint = (mode & 7)
-
+        setpoint = 0 if automatic else (mode & 7)
+        
         thermostats = []
         outputs = self.get_output_status()
 
