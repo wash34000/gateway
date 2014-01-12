@@ -427,7 +427,7 @@ class WebInterface:
         """ Set the status of the leds on the master.
 
         :param status: whether the leds should be on (true) or off (false).
-        :type status Boolean
+        :type status: Boolean
         """
         self.check_token(token)
         return self.__wrap(
