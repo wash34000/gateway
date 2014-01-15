@@ -657,11 +657,11 @@ class EepromWord(EepromDataType):
         return "Word"
 
     def from_bytes(self, bytes):
-        return ord(bytes[0]) * 256 + ord(bytes[1])
+        return ord(bytes[1]) * 256 + ord(bytes[0])
 
     def to_bytes(self, field):
         self.check_writable()
-        return "".join([chr(int(field) / 256), chr(int(field) % 256)])
+        return "".join([chr(int(field) % 256), chr(int(field) / 256)])
 
     def get_length(self):
         return 2
