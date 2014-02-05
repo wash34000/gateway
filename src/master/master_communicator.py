@@ -177,9 +177,9 @@ class MasterCommunicator:
                 raise
 
     def __check_crc(self, cmd, result):
-        """ Check the CRC of the result of a certain master command.
+        """ Calculate the CRC of the data for a certain master command.
             
-        :param masterCommandSpec: instance of MasterCommandSpec.
+        :param cmd: instance of MasterCommandSpec.
         :param result: A dict containing the result of the master command.
         :returns: boolean
         """

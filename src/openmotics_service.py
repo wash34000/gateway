@@ -102,8 +102,7 @@ def main():
                                 physical_frontend.in_authorized_mode)
     
     plugin_controller = PluginController(web_interface)
-    plugin_controller.start_background_tasks()
-    plugin_controller.expose_plugins()
+    plugin_controller.start_plugins()
     
     web_interface.set_plugin_controller(plugin_controller)
     gateway_api.set_plugin_controller(plugin_controller)

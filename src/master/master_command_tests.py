@@ -140,7 +140,7 @@ class MasterCommandSpecTest(unittest.TestCase):
             val = chr(value)
             self.assertEquals(dimmer_type.encode(dimmer_type.decode(val)), val)
     
-    def test_crc(self):
+    def test_output_wiht_crc(self):
         """ Test crc and is_crc functions. """
         field = Field.crc()
         
@@ -158,6 +158,15 @@ class MasterCommandSpecTest(unittest.TestCase):
         
         self.assertEquals(21, len(ba_input))
         self.assertEquals("STRBA\x01\x02\x04" + ("\x00" * 11) + "\r\n", ba_input)
+    
+    def test_input_with_crc(self):
+        """ Test encoding with crc. """
+        spec = MasterCommandSpec("TE",
+                    [ Field.byte("one"), Field.byte("two"), Field.crc()], [])
+        spec_input = spec.create_input(1, { "one": 255, "two": 128})
+        
+        self.assertEquals(13, len(spec_input))
+        self.assertEquals("STRTE\x01\xff\x80C\x01\x7f\r\n", spec_input)
     
     def test_consume_output(self):
         """ Test for MasterCommandSpec.consume_output """
@@ -298,7 +307,7 @@ class MasterCommandSpecTest(unittest.TestCase):
         """ Test for MasterCommandSpec.output_has_crc. """
         self.assertFalse(master_api.basic_action().output_has_crc())
         self.assertTrue(master_api.read_output().output_has_crc())
-        
+    
     
 if __name__ == "__main__":
     #import sys;sys.argv = ['', 'Test.testName']

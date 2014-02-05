@@ -191,6 +191,335 @@ class P2(OMPluginBase):
         except PluginException as e:
             self.assertEquals("Plugin 'test' has no method named 'html_index'", str(e))
 
+
+from base import PluginConfigChecker, PluginException
+
+full_descr = [
+    { 'name' : 'hostname', 'type' : 'str',      'description': 'The hostname of the server.' },
+    { 'name' : 'port',     'type' : 'int',      'description': 'Port on the server.' },
+    { 'name' : 'use_auth', 'type' : 'bool',     'description': 'Use authentication while connecting.' },
+    { 'name' : 'password', 'type' : 'password', 'description': 'Your secret password.' },
+    { 'name' : 'enumtest', 'type' : 'enum',     'description': 'Test for enum', 'choices': [ 'First', 'Second' ] },
+    
+    { 'name' : 'outputs', 'type' : 'section', 'repeat' : True, 'min' : 1, 'content' : [
+        { 'name' : 'output', 'type' : 'int' }
+    ] },
+
+    { 'name' : 'network',  'type' : 'nested_enum', 'choices' : [
+        { 'value': 'Facebook',  'content' : [ { 'name' : 'likes', 'type' : 'int' } ] },
+        { 'value': 'Twitter',  'content' : [ { 'name' : 'followers', 'type' : 'int' } ] }
+    ] }
+]
+
+class PluginConfigCheckerTest(unittest.TestCase):
+    """ Tests for the PluginConfigChecker. """
+
+    def test_constructor(self):
+        """ Test for the constructor. """
+        PluginConfigChecker(full_descr)
+
+    def test_constructor_error(self):
+        """ Test with an invalid data type """
+        try:
+            PluginConfigChecker({ 'test' : 123 })
+            self.fail("Expected PluginException")
+        except PluginException as e:
+            self.assertTrue('list' in str(e))
+        
+        try:
+            PluginConfigChecker([ { 'test' : 123 } ])
+            self.fail("Expected PluginException")
+        except PluginException as e:
+            self.assertTrue('name' in str(e))
+        
+        try:
+            PluginConfigChecker([ { 'name' : 123 } ])
+            self.fail("Expected PluginException")
+        except PluginException as e:
+            self.assertTrue('name' in str(e) and 'string' in str(e))
+        
+        try:
+            PluginConfigChecker([ { 'name' : 'test' } ])
+            self.fail("Expected PluginException")
+        except PluginException as e:
+            self.assertTrue('type' in str(e))
+        
+        try:
+            PluginConfigChecker([ { 'name' : 'test', 'type' : 123 } ])
+            self.fail("Expected PluginException")
+        except PluginException as e:
+            self.assertTrue('type' in str(e) and 'string' in str(e))
+        
+        try:
+            PluginConfigChecker([ { 'name' : 'test', 'type' : 'something_else' } ])
+            self.fail("Expected PluginException")
+        except PluginException as e:
+            self.assertTrue('type' in str(e) and 'something_else' in str(e))
+        
+        try:
+            PluginConfigChecker([ { 'name' : 'test', 'type' : 'str', 'description': [] } ])
+            self.fail("Expected PluginException")
+        except PluginException as e:
+            self.assertTrue('description' in str(e) and 'string' in str(e))
+        
+    def test_constructor_str(self):
+        """ Test for the constructor for str. """
+        PluginConfigChecker([ { 'name' : 'hostname', 'type' : 'str', 'description': 'The hostname of the server.' } ])
+        PluginConfigChecker([ { 'name' : 'hostname', 'type' : 'str' } ])
+        
+        try:
+            PluginConfigChecker([ { 'type' : 'str' } ])
+            self.fail('Excepted exception')
+        except PluginException as e:
+            self.assertTrue('name' in str(e))
+
+    def test_constructor_int(self):
+        """ Test for the constructor for int. """
+        PluginConfigChecker([ { 'name' : 'port', 'type' : 'int', 'description': 'Port on the server.' } ])
+        PluginConfigChecker([ { 'name' : 'port', 'type' : 'int' } ])
+        
+        try:
+            PluginConfigChecker([ { 'type' : 'int' } ])
+            self.fail('Excepted exception')
+        except PluginException as e:
+            self.assertTrue('name' in str(e))
+
+    def test_constructor_bool(self):
+        """ Test for the constructor for bool. """
+        PluginConfigChecker([ { 'name' : 'use_auth', 'type' : 'bool', 'description': 'Use authentication while connecting.' } ])
+        PluginConfigChecker([ { 'name' : 'use_auth', 'type' : 'bool' } ])
+        
+        try:
+            PluginConfigChecker([ { 'type' : 'bool' } ])
+            self.fail('Excepted exception')
+        except PluginException as e:
+            self.assertTrue('name' in str(e))
+
+    def test_constructor_password(self):
+        """ Test for the constructor for bool. """
+        PluginConfigChecker([ { 'name' : 'password', 'type' : 'password', 'description': 'A password.' } ])
+        PluginConfigChecker([ { 'name' : 'password', 'type' : 'password' } ])
+        
+        try:
+            PluginConfigChecker([ { 'type' : 'password' } ])
+            self.fail('Excepted exception')
+        except PluginException as e:
+            self.assertTrue('name' in str(e))
+
+    def test_constructor_enum(self):
+        """ Test for the constructor for enum. """
+        PluginConfigChecker([ { 'name' : 'enumtest', 'type' : 'enum', 'description': 'Test for enum', 'choices': [ 'First', 'Second' ] } ])
+        PluginConfigChecker([ { 'name' : 'enumtest', 'type' : 'enum', 'choices': [ 'First', 'Second' ] } ])
+        
+        try:
+            PluginConfigChecker([ { 'name' : 'enumtest', 'type' : 'enum', 'choices': 'First' } ])
+            self.fail('Excepted exception')
+        except PluginException as e:
+            self.assertTrue('choices' in str(e) and 'list' in str(e))
+    
+    def test_constructor_section(self):
+        """ Test for the constructor for section. """
+        PluginConfigChecker([ { 'name' : 'outputs', 'type' : 'section', 'repeat' : True, 'min' : 1,
+                                'content' : [ { 'name' : 'output', 'type' : 'int' } ] } ])
+        
+        PluginConfigChecker([ { 'name' : 'outputs', 'type' : 'section', 'repeat' : False,
+                                'content' : [ { 'name' : 'output', 'type' : 'int' } ] } ])
+        
+        PluginConfigChecker([ { 'name' : 'outputs', 'type' : 'section',
+                                'content' : [ { 'name' : 'output', 'type' : 'int' } ] } ])
+        
+        try:
+            PluginConfigChecker([ { 'name' : 'outputs', 'type' : 'section', 'repeat' : 'hello',
+                                    'content' : [ { 'name' : 'output', 'type' : 'int' } ] } ])
+            self.fail('Excepted exception')
+        except PluginException as e:
+            self.assertTrue('repeat' in str(e) and 'bool' in str(e))
+        
+        try:
+            PluginConfigChecker([ { 'name' : 'outputs', 'type' : 'section', 'min' : 1,
+                                    'content' : [ { 'name' : 'output', 'type' : 'int' } ] } ])
+            self.fail('Excepted exception')
+        except PluginException as e:
+            self.assertTrue('min' in str(e))
+        
+        try:
+            PluginConfigChecker([ { 'name' : 'outputs', 'type' : 'section',
+                                    'content' : 'error' } ])
+            self.fail('Excepted exception')
+        except PluginException as e:
+            self.assertTrue('content' in str(e) and 'list' in str(e))
+
+        try:
+            PluginConfigChecker([ { 'name' : 'outputs', 'type' : 'section',
+                                    'content' : [ { 'name' : 123 } ] } ])
+            self.fail('Excepted exception')
+        except PluginException as e:
+            self.assertTrue('content' in str(e) and 'name' in str(e) and 'string' in str(e))
+    
+    def test_constructor_nested_enum(self):
+        """ Test for constructor for nested enum. """
+        PluginConfigChecker([ { 'name' : 'network',  'type' : 'nested_enum', 'choices' : [
+                                { 'value': 'Facebook',  'content' : [ { 'name' : 'likes', 'type' : 'int' } ] },
+                                { 'value': 'Twitter',  'content' : [ { 'name' : 'followers', 'type' : 'int' } ] }
+                            ] } ])
+        
+        try:
+            PluginConfigChecker([ { 'name' : 'network',  'type' : 'nested_enum', 'choices' : 'test' } ])
+            self.fail('Excepted exception')
+        except PluginException as e:
+            self.assertTrue('choices' in str(e) and 'list' in str(e))
+        
+        try:
+            PluginConfigChecker([ { 'name' : 'network',  'type' : 'nested_enum', 'choices' : [ 'test' ] } ])
+            self.fail('Excepted exception')
+        except PluginException as e:
+            self.assertTrue('choices' in str(e) and 'dict' in str(e))
+        
+        try:
+            PluginConfigChecker([ { 'name' : 'network',  'type' : 'nested_enum', 'choices' : [ { } ] } ])
+            self.fail('Excepted exception')
+        except PluginException as e:
+            self.assertTrue('choices' in str(e) and 'value' in str(e))
+        
+        try:
+            PluginConfigChecker([ { 'name' : 'network',  'type' : 'nested_enum', 'choices' : [ { 'value' : 123 } ] } ])
+            self.fail('Excepted exception')
+        except PluginException as e:
+            self.assertTrue('choices' in str(e) and 'value' in str(e) and 'string' in str(e))
+        
+        try:
+            PluginConfigChecker([ { 'name' : 'network',  'type' : 'nested_enum', 'choices' : [ { 'value' : 'test' } ] } ])
+            self.fail('Excepted exception')
+        except PluginException as e:
+            self.assertTrue('choices' in str(e) and 'content' in str(e))
+        
+        try:
+            PluginConfigChecker([ { 'name' : 'network',  'type' : 'nested_enum', 'choices' : [ { 'value' : 'test', 'content' : 'test' } ] } ])
+            self.fail('Excepted exception')
+        except PluginException as e:
+            self.assertTrue('choices' in str(e) and 'content' in str(e) and 'list' in str(e))
+        
+        try:
+            PluginConfigChecker([ { 'name' : 'network',  'type' : 'nested_enum', 'choices' : [ { 'value' : 'test', 'content' : [ { }] } ] } ])
+            self.fail('Excepted exception')
+        except PluginException as e:
+            self.assertTrue('choices' in str(e) and 'content' in str(e) and 'name' in str(e))
+    
+    def test_check_config_error(self):
+        """ Test check_config with an invalid data type """
+        pcc = PluginConfigChecker([ { 'name' : 'hostname', 'type' : 'str' } ])
+        
+        try:
+            pcc.check_config('string')
+            self.fail("Expected PluginException")
+        except PluginException as e:
+            self.assertTrue('dict' in str(e))
+        
+        try:
+            pcc.check_config({ })
+            self.fail("Expected PluginException")
+        except PluginException as e:
+            self.assertTrue('hostname' in str(e))
+        
+    def test_check_config_str(self):
+        """ Test check_config for str. """
+        pcc = PluginConfigChecker([ { 'name' : 'hostname', 'type' : 'str' } ])
+        pcc.check_config({ 'hostname' : 'cloud.openmotics.com' })
+        
+        try:
+            pcc.check_config({ 'hostname' : 123 })
+            self.fail('Excepted exception')
+        except PluginException as e:
+            self.assertTrue('str' in str(e))
+
+    def test_check_config_int(self):
+        """ Test check_config for int. """
+        pcc = PluginConfigChecker([ { 'name' : 'port', 'type' : 'int' } ])
+        pcc.check_config({ 'port' : 123 })
+        
+        try:
+            pcc.check_config({ 'port' : "123" })
+            self.fail('Excepted exception')
+        except PluginException as e:
+            self.assertTrue('int' in str(e))
+
+    def test_check_config_bool(self):
+        """ Test check_config for bool. """
+        pcc = PluginConfigChecker([ { 'name' : 'use_auth', 'type' : 'bool' } ])
+        pcc.check_config({ 'use_auth' : True })
+        
+        try:
+            pcc.check_config({ 'use_auth' : 234543 })
+            self.fail('Excepted exception')
+        except PluginException as e:
+            self.assertTrue('bool' in str(e))
+
+    def test_check_config_password(self):
+        """ Test check_config for bool. """
+        pcc = PluginConfigChecker([ { 'name' : 'password', 'type' : 'password' } ])
+        pcc.check_config({ 'password' : 'test' })
+        
+        try:
+            pcc.check_config({ 'password' : 123 })
+            self.fail('Excepted exception')
+        except PluginException as e:
+            self.assertTrue('str' in str(e))
+    
+    def test_check_config_section(self):
+        """ Test check_config for section. """
+        pcc = PluginConfigChecker([ { 'name' : 'outputs', 'type' : 'section', 'repeat' : True, 'min' : 1,
+                                      'content' : [ { 'name' : 'output', 'type' : 'int' } ] } ])
+        
+        pcc.check_config({ 'outputs' : [ ] })
+        pcc.check_config({ 'outputs' : [ { 'output' : 2 } ] })
+        pcc.check_config({ 'outputs' : [ { 'output' : 2 }, { 'output' : 4 } ] })
+        
+        try:
+            pcc.check_config({ 'outputs' : 'test' })
+            self.fail('Excepted exception')
+        except PluginException as e:
+            self.assertTrue('list' in str(e))
+        
+        try:
+            pcc.check_config({ 'outputs' : [ { 'test' : 123 }] })
+            self.fail('Excepted exception')
+        except PluginException as e:
+            self.assertTrue('section' in str(e) and 'output' in str(e))
+    
+    def test_check_config_nested_enum(self):
+        """ Test check_config for nested_enum. """
+        pcc = PluginConfigChecker([ { 'name' : 'network',  'type' : 'nested_enum', 'choices' : [
+                                        { 'value': 'Facebook',  'content' : [ { 'name' : 'likes', 'type' : 'int' } ] },
+                                        { 'value': 'Twitter',  'content' : [ { 'name' : 'followers', 'type' : 'int' } ] }
+                                    ] } ])
+        
+        pcc.check_config({ 'network' : [ 'Twitter' , { 'followers' : 3 } ] })
+        pcc.check_config({ 'network' : [ 'Facebook' , { 'likes' : 3 } ] })
+        
+        try:
+            pcc.check_config({ 'network' : 'test' })
+            self.fail('Excepted exception')
+        except PluginException as e:
+            self.assertTrue('list' in str(e))
+        
+        try:
+            pcc.check_config({ 'network' : [] })
+            self.fail('Excepted exception')
+        except PluginException as e:
+            self.assertTrue('list' in str(e) and '2' in str(e))
+            
+        try:
+            pcc.check_config({ 'network' : [ 'something else', {} ] })
+            self.fail('Excepted exception')
+        except PluginException as e:
+            self.assertTrue('choices' in str(e))
+        
+        try:
+            pcc.check_config({ 'network' : [ 'Twitter', {} ] })
+            self.fail('Excepted exception')
+        except PluginException as e:
+            self.assertTrue('nested_enum dict' in str(e) and 'followers' in str(e))
+    
 if __name__ == "__main__":
     #import sys;sys.argv = ['', 'Test.testName']
     unittest.main()

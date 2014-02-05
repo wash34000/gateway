@@ -42,10 +42,23 @@ class MasterCommandSpec:
         :type fields: dict
         :rtype: string
         """
-        ret = 'STR' + self.action + chr(cid)
+        start = "STR" + self.action + chr(cid)
+        encoded_fields = ""
         for field in self.input_fields:
-            ret += field.encode(fields.get(field.name))
-        return ret + "\r\n"
+            if Field.is_crc(field):
+                encoded_fields += self.__calc_crc(encoded_fields)
+            else :
+                encoded_fields += field.encode(fields.get(field.name))
+        
+        return start + encoded_fields + "\r\n"
+    
+    def __calc_crc(self, encoded_string):
+        """ Calculate the crc of an string. """
+        crc = 0
+        for byte in encoded_string:
+            crc += ord(byte)
+        
+        return 'C' + chr(crc / 256) + chr(crc % 256)
     
     def create_output(self, cid, fields):
         """ Create an output command from the master using this spec and the provided fields. 

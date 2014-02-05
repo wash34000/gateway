@@ -1288,17 +1288,15 @@ class WebInterface:
             LOGGER.error("Could not find function WebInterface.%s" % func_name)
 
     def __wrap(self, func):
-        """ Wrap a gateway_api function and catches a possible ValueError.
+        """ Wrap a gateway_api function and catches a possible Exception.
 
-        :returns: {'success': False, 'msg': ...} on ValueError, otherwise {'success': True, ...}
+        :returns: {'success': False, 'msg': ...} on Exception, otherwise {'success': True, ...}
         """
         try:
             ret = func()
-        except ValueError:
-            return self.__error(traceback.format_exc())
-        except:
+        except Exception as e:
             traceback.print_exc()
-            raise
+            return self.__error(str(e))
         else:
             return self.__success(**ret)
 
@@ -1314,6 +1312,34 @@ class WebInterface:
         ret = [ { 'name' : p.name, 'version' : p.version, 'interfaces' : p.interfaces }
                 for p in plugins ]
         return self.__success(plugins=ret)
+
+    @cherrypy.expose
+    def install_plugin(self, token, md5, package_data):
+        """ Install a new plugin. The package_data should include a __init__.py file and
+        will be installed in /opt/openmotics/python/plugins/<name>.
+        
+        :param name: Name of the plugin to install.
+        :type name: String
+        :param version: Version of the plugin to install.
+        :type version: String
+        :param md5: md5 sum of the package_data.
+        :type md5: String
+        :param update_data: a tgz file containing the content of the plugin package.
+        :type update_data: multipart/form-data encoded byte string.
+        """
+        self.check_token(token)
+        return self.__wrap(lambda: self.__plugin_controller.install_plugin(
+                                                                md5, package_data.file.read()))
+
+    @cherrypy.expose
+    def remove_plugin(self, token, name):
+        """ Remove a plugin. This removes the package data and configuration data of the plugin.
+        
+        :param name: Name of the plugin to remove.
+        :param type: String
+        """
+        self.check_token(token)
+        return self.__wrap(lambda: self.__plugin_controller.remove_plugin(name))
 
 
 class WebService:

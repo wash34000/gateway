@@ -421,6 +421,17 @@
 
         }
 
+        // Plugins
+        function show_plugins(data) {
+            $.each(data['plugins'], function (index, plugin) {
+                row = '<tr><td><div>';
+                row += '<span class="output_name">' + plugin['name'] + ' (v ' + plugin['version'] + ')</span>';
+                row += '<a href="/remove_plugin?token=' + token + '&name=' + plugin['name'] + '" class="btn btn-small">Remove</a></div></td></tr>';
+                $("#plugin_table").append(row);
+            });
+        }
+
+
         // General
         function load_data(name) {
             var url, callback;
@@ -431,6 +442,9 @@
             } else if (name == "thermostats") {
                 url = "/get_thermostat_status?token=" + token;
                 callback = show_thermostats;
+            } else if (name == "plugins") {
+                url = "/get_plugins?token=" + token;
+                callback = show_plugins;
             }
             url += "&fe_time=" + gettimestamp();
 
@@ -549,7 +563,7 @@
         }
 
         $(document).ready(function() {
-            $.each(["outputs", "group_actions", "thermostats"], function(index, value) {
+            $.each(["outputs", "group_actions", "thermostats", "plugins"], function(index, value) {
                 $("#"+value+"_button").on("click", {name: value}, function(e) {
                     var name = e.data.name;
 
@@ -559,9 +573,9 @@
                     $(".tab").removeClass('active');
                     $("#" + name + "_button").parent().addClass('active');
 
-                    if (name != "group_actions") {
+                    if (name == 'outputs' || name == 'thermostats' || name == 'plugins') {
                         load_data(name);
-                    } else {
+                    } else if (name == "group_actions") {
                         show_group_actions();
                     }
                 });
@@ -587,6 +601,7 @@
                 .done(function(result) {
                     loggedIn = true;
                     token = result['token'];
+                    $('#token').val(token);
                     logged_in_callback();
                 })
                 .fail(function(xhr) {
@@ -726,6 +741,7 @@
                     <li class="tab"><a id="outputs_button" href="#">Lights</a></li>
                     <li class="tab"><a id="group_actions_button" href="#">Group actions</a></li>
                     <li class="tab"><a id="thermostats_button" href="#">Thermostats</a></li>
+                    <li class="tab"><a id="plugins_button" href="#">Plugins</a></li>
                 </ul>
 
                 <div id='login_form'>
@@ -775,6 +791,40 @@
 
                 <div class="section" style="display: none;" id="thermostats">
                 </div>
+
+                <div class="section" style="display: none;" id="plugins">
+                    <h3>Manage your plugins</h3>
+                    <p>
+                        Below is a list of the installed plugins.
+                    </p>
+
+                    <table class="table table-striped table-condensed" id="plugin_table">
+                        <tbody></tbody>
+                    </table>
+
+
+                    <form action="/install_plugin" method="post" class="form-horizontal" enctype="multipart/form-data">
+                        <h4>Install a new plugin.</h4>
+                        <input id="token" name="token" type="hidden"/>
+                        <div class="control-group ">
+                            <label for="package_data" class="control-label">Plugin package file</label>
+                            <div class="controls">
+                                <input id="package_data" name="package_data" type="file">
+                                <p class="help-block">Tgz file containing the python files for the plugin package.</p>
+                            </div>
+                        </div>
+                        <div class="control-group">
+                            <label class="control-label" for="md5">MD5 sum</label>
+                            <div class="controls">
+                                <input type="text" id="md5" name="md5" placeholder="MD5" />
+                            </div>
+                        </div>
+                        <div class="form-actions">
+                            <input type="submit" value="Install" class="btn btn-primary">
+                        </div>
+                    </form>
+                </div>
+
             </div>
         </div>
         <footer class="footer" xmlns:dc="http://purl.org/dc/elements/1.1/">

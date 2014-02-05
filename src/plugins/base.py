@@ -7,6 +7,9 @@ import importlib
 import inspect
 import threading
 import re
+import sys
+import os
+import simplejson as json
 
 import cherrypy
 
@@ -86,6 +89,15 @@ def background_task(method):
     return method
 
 
+def on_remove(method):
+    """ Decorator to indicate that the method should be called just before removing the plugin.
+    This can be used to cleanup files written by the plugin. Note: the plugin package and plugin
+    configuration data will be removed automatically and should not be touched by this method.
+    """
+    method.on_remove = True
+    return method
+
+
 class OMPluginBase:
     """ Base class for an OpenMotics plugin. Every plugin package should contain a 
     module with the name 'main' that contains a class that extends this class.
@@ -94,6 +106,39 @@ class OMPluginBase:
         """ The web interface is provided to the plugin to interface with the OpenMotics
         system. """
         self.webinterface = webinterface
+
+    def __get_config_path(self):
+        """ Get the path for the plugin configuration file based on the plugin name. """
+        return '/opt/openmotics/etc/pi_%s.conf' % self.__class__.name
+
+    def read_config(self):
+        """ Read the configuration file for the plugin: the configuration file contains json
+        string that will be converted to a python dict, if an error occurs, None is returned.
+        The PluginConfigChecker can be used to check if the configuration is valid, this has
+        to be done explicitly in the Plugin class.
+        """
+        config_path = self.__get_config_path()
+        
+        if os.exists(config_path):
+            config_file = open(config_path, 'r')
+            config = config_file.read()
+            config_file.close()
+            
+            try :
+                return json.loads(config)
+            except Exception as e:
+                LOGGER.error("Exception while getting config for plugin '%s': "
+                             "%s" % (self.__class__.name, e))
+        
+        return None
+
+    def write_config(self, config):
+        """ Write the plugin configuration to the configuration file: the config is a python dict
+        that will be serialized to a json string.
+        """ 
+        config_file = open(self.__get_config_path(), 'w')
+        config_file.write(json.dumps(config))
+        config_file.close()
 
 
 class PluginException(Exception):
@@ -110,16 +155,29 @@ class PluginController:
         self.__plugins = self._gather_plugins()
 
         self.__input_status_receivers = []
-        for plugin in self.__plugins:
-            isrs = self._get_special_methods(plugin, 'input_status')
-            for isr in isrs:
-                self.__input_status_receivers.append((plugin.name, isr))
-
         self.__output_status_receivers = []
+        
         for plugin in self.__plugins:
-            osrs = self._get_special_methods(plugin, 'output_status')
-            for osr in osrs:
-                self.__output_status_receivers.append((plugin.name, osr))
+            self.__add_receivers(plugin)
+
+    def __add_receivers(self, plugin):
+        """ Add the input and output receivers for a plugin. """
+        isrs = self._get_special_methods(plugin, 'input_status')
+        for isr in isrs:
+            self.__input_status_receivers.append((plugin.name, isr))
+        
+        osrs = self._get_special_methods(plugin, 'output_status')
+        for osr in osrs:
+            self.__output_status_receivers.append((plugin.name, osr))
+
+    def start_plugins(self):
+        """ Start the background tasks for the plugins and expose them via the webinterface. """
+        for plugin in self.__plugins:
+            self.__start_plugin(plugin)
+
+    def __start_plugin(self, plugin):
+        self.__start_background_tasks(plugin)
+        self.__expose_plugin(plugin)
 
     def _gather_plugins(self):
         """ Scan the plugins package for installed plugins in the form of subpackages. """
@@ -131,8 +189,8 @@ class PluginController:
         plugin_descriptions = []
         for package_name in package_names:
             try:
-                plugin_class = self._get_plugin_class(package_name)
-                self._check_plugin(plugin_class)
+                plugin_class = PluginController.get_plugin_class(package_name)
+                PluginController.check_plugin(plugin_class)
                 plugin_descriptions.append((package_name, plugin_class.name, plugin_class))
             except Exception as e:
                 LOGGER.error("Could not load plugin in package '%s': %s" % (package_name, e))
@@ -160,9 +218,10 @@ class PluginController:
 
         return plugins
 
-    def _get_plugin_class(self, package_name):
+    @staticmethod
+    def get_plugin_class(package_name):
         """ Get the plugin class using the name of the plugin package. """
-        plugin = __import__("plugins.%s" % package_name, globals(), locals(), [ 'main' ])
+        plugin = __import__(package_name, globals(), locals(), [ 'main' ])
         plugin_class = None
 
         if not hasattr(plugin, 'main'):
@@ -180,7 +239,8 @@ class PluginController:
         else:
             raise PluginException('OMPluginBase class not found in %s.main' % package_name)
 
-    def _check_plugin(self, plugin_class):
+    @staticmethod
+    def check_plugin(plugin_class):
         """ Check if the plugin class has name, version and interfaces attributes.
         Raises PluginException when the attributes are not present.
         """
@@ -194,6 +254,11 @@ class PluginController:
 
         if not hasattr(plugin_class, 'version'):
             raise PluginException("attribute 'version' is missing from the plugin class")
+
+        ## Check if valid version (a.b.c)
+        if not re.match("^[0-9]+\.[0-9]+\.[0-9]+$", plugin_class.version):
+            raise PluginException("Plugin version '%s' is malformed: expected 'a.b.c' "
+                                  "where a, b and c are numbers." % plugin_class.version)
 
         if not hasattr(plugin_class, 'interfaces'):
             raise PluginException("attribute 'interfaces' is missing from the plugin class")
@@ -212,20 +277,160 @@ class PluginController:
         """ Get a list of all installed plugins. """
         return self.__plugins
 
-    def start_background_tasks(self):
-        """ Start all background tasks. """
+    def __get_plugin(self, name):
+        """ Get a plugin by name, None if it the plugin is not installed. """
         for plugin in self.__plugins:
-            bts = self._get_special_methods(plugin, 'background_task')
-            for bt in bts:
-                thread = threading.Thread(target=bt)
-                thread.name  = "Background thread for plugin '%s'" % plugin.name
-                thread.daemon = True
-                thread.start()
+            if plugin.name == name:
+                return plugin
+        
+        return None
 
-    def expose_plugins(self):
+    def install_plugin(self, md5, package_data):
+        """ Install a new plugin. """
+        from tempfile import mkdtemp
+        from shutil import rmtree
+        from subprocess import call, check_output
+        import hashlib
+
+        ## Check if the md5 sum matches the provided md5 sum
+        hasher = hashlib.md5()
+        hasher.update(package_data)
+        calculated_md5 = hasher.hexdigest()
+
+        if calculated_md5 != md5:
+            raise Exception("The provided md5sum (%s) does not match the actual md5 of the "
+                            "package data (%s)." % (md5, calculated_md5))
+
+        tmp_dir = mkdtemp()
+        try:
+            ## Extract the package_data
+            tgz = open("%s/package.tgz" % tmp_dir, "wb")
+            tgz.write(package_data)
+            tgz.close()
+
+            retcode = call("cd %s; mkdir new_package; tar xzf package.tgz -C new_package/" % tmp_dir, shell=True)
+            if retcode != 0:
+                raise Exception("The package data (tgz format) could not be extracted.")
+
+            ## Create an __init__.py file, if it does not exist
+            init_path = "%s/new_package/__init__.py" % tmp_dir
+            if not os.path.exists(init_path):
+                init_file = open(init_path, 'w')
+                init_file.close()
+
+            ## Check if the package contains a valid plugin
+            checker = open("%s/check.py" % tmp_dir, "w")
+            checker.write("""import sys
+sys.path.append('/opt/openmotics/python')
+from plugins.base import PluginController, PluginException
+
+try:
+    p = PluginController.get_plugin_class('new_package')
+    PluginController.check_plugin(p)
+except Exception as e:
+    print "!! %s" % e
+else:
+    print p.name
+    print p.version
+""")
+            checker.close()
+            
+            checker_output = check_output("cd %s; python check.py" % tmp_dir, shell=True)
+            if checker_output.startswith("!! "):
+                raise Exception(checker_output[3:-1])
+            
+            ## Get the name and version of the package
+            checker_output = checker_output.split("\n")
+            name = checker_output[0]
+            version = checker_output[1]
+            
+            def parse_version(version_string):
+                return tuple([ int(x) for x in version_string.split(".") ])
+            
+            ## Check if a newer version of the package is already installed
+            installed_plugin = self.__get_plugin(name)
+            if installed_plugin is not None:
+                if parse_persion(version) <= parse_version(installed_plugin.version):
+                    raise Exception("A newer version of plugins %s is already installed "
+                                    "(current version = %s, to installed = %s)." %
+                                    (name, installed_plugin.version, version))
+                else:
+                    ## Remove the old version of the plugin
+                    retcode = call("cd /opt/openmotics/python/plugins; rm -R %s" % name, shell=True)
+                    if retcode != 0:
+                        raise Exception("The old version of the plugin could not be removed.")
+            
+            ## Check if the package directory exists, this can only be the case if a previous install failed
+            ## or if the plugin has gone corrupt: remove it !
+            plugin_path = '/opt/openmotics/python/plugins/%s' % name
+            if os.path.exists(plugin_path):
+                rmtree(plugin_path)
+            
+            ## Install the package
+            retcode = call("cd %s; mv new_package %s" % (tmp_dir, plugin_path), shell=True)
+            if retcode != 0:
+                raise Exception("The package could not be installed.")
+            
+            ## Initiate a reload of the OpenMotics daemon
+            raise SystemExit(1) ## TODO TEST This --> perhaps in timer ?
+            
+            cherrypy.engine.exit() ## Shutdown the cherrypy server: no new requests
+            cherrypy.server.stop()
+            threading.Timer(2, lambda: sys.exit(1)).start() ## Make sure we shutdown the daemon after 2 seconds.
+            
+        finally:
+            pass # rmtree(tmp_dir) TODO
+
+
+    def remove_plugin(self, name):
+        """ Remove a plugin, this removes the plugin package and configuration.
+        It also calls the remove function on the plugin to cleanup other files written by the
+        plugin. """
+        from shutil import rmtree
+        
+        plugin = self.__get_plugin(name)
+        
+        ## Check if the plugin in installed
+        if plugin is None:
+            raise Exception("Plugin '%s' is not installed." % name)
+        
+        ## Execute the on_remove callbacks
+        remove_callbacks = self._get_special_methods(plugin, 'on_remove')
+        for remove_callback in remove_callbacks:
+            try:
+                remove_callback()
+            except Exception as e:
+                LOGGER.error("Exception while removing plugin '%s': %s" % (name, e))
+        
+        ## Remove the plugin package
+        plugin_path = '/opt/openmotics/python/plugins/%s' % name
+        try:
+            rmtree(plugin_path)
+        except Exception as e:
+            raise Exception("Error while removing package for plugin '%s': %s" % (name, e))
+        
+        ## Remove the plugin configuration
+        conf_file = '/opt/openmotics/etc/pi_%s.conf' % name
+        if os.path.exists(conf_file):
+            os.remove(conf_file)
+        
+        ## Initiate a reload of the OpenMotics daemon
+        cherrypy.engine.exit() ## Shutdown the cherrypy server: no new requests
+        threading.Timer(2, lambda: sys.exit(1)).start() ## Make sure we shutdown the daemon after 2 seconds.
+
+
+    def __start_background_tasks(self, plugin):
+        """ Start all background tasks. """
+        bts = self._get_special_methods(plugin, 'background_task')
+        for bt in bts:
+            thread = threading.Thread(target=bt)
+            thread.name  = "Background thread for plugin '%s'" % plugin.name
+            thread.daemon = True
+            thread.start()
+
+    def __expose_plugin(self, plugin):
         """ Expose the plugins using cherrypy. """
-        for plugin in self.__plugins:
-            cherrypy.tree.mount(plugin, "/plugins/%s" % plugin.name)
+        cherrypy.tree.mount(plugin, "/plugins/%s" % plugin.name)
 
     def process_input_status(self, input_status):
         """ Should be called when the input status changes, notifies all plugins. """
@@ -293,7 +498,7 @@ class PluginConfigChecker:
         self.__description = description
 
     def _check_description(self, description):
-        if not isinstance(config, list):
+        if not isinstance(description, list):
             raise PluginException("The configuration description is not a list")
         else:
             for item in description:
@@ -343,7 +548,10 @@ class PluginConfigChecker:
         if 'content' not in item:
             raise PluginException("The configuration item '%s' does not contain a 'content' key." % item)
         
-        self._check_description(item['content'])
+        try:
+            self._check_description(item['content'])
+        except PluginException as e:
+            raise PluginException("Exception in 'content': %s" % e)
 
     def _check_nested_enum(self, item):
         if 'choices' not in item:
@@ -365,11 +573,14 @@ class PluginConfigChecker:
             if 'content' not in choice:
                 raise PluginException("The choices dict '%s' of item '%s' does not contain a 'content' key." % (choice, item['name']))
             
-            self._check_description(choice['content'])
+            try:
+                self._check_description(choice['content'])
+            except PluginException as e:
+                raise PluginException("Exception in 'choices' - 'content': %s" % e)
 
     def check_config(self, config):
         """ Check if a config is valid for the description. Raises a PluginException if the config is not valid. """
-        self._check_config(config, self._description)
+        self._check_config(config, self.__description)
 
     def _check_config(self, config, description):
         """ Check if a config is valid for this description. Raises a PluginException if the config is not valid. """
@@ -401,7 +612,10 @@ class PluginConfigChecker:
                     raise PluginException("Config '%s': '%s' is not a list" % (name, config[name]))
                 
                 for config_section in config[name]:
-                    self._check_config(config_section, item['content'])
+                    try:
+                        self._check_config(config_section, item['content'])
+                    except PluginException as e:
+                        raise PluginException("Exception in section list: %s" % e)
             elif item['type'] == 'nested_enum':
                 if not isinstance(config[name], list) or len(config[name]) != 2:
                     raise PluginException("Config '%s': '%s' is not a list of length 2" % (name, config[name]))
@@ -412,4 +626,7 @@ class PluginConfigChecker:
                 except ValueError:
                     raise PluginException("Config '%s': '%s' is not in the choices '%s'" % (name, config[name], choices))
                 else:
-                    self._check_config(config[name][1], item['choices'][i]['content'])
+                    try:
+                        self._check_config(config[name][1], item['choices'][i]['content'])
+                    except PluginException as e:
+                        raise PluginException("Exception in nested_enum dict: %s" % e)
