@@ -84,7 +84,7 @@ class EepromControllerTest(unittest.TestCase):
 
     def test_read_field(self):
         """ Test read with a field. """
-        controller = EepromController(get_eeprom_file_dummy([ "", "", "", "\x00" * 4 + "helloworld\x01\x00\x02" + "\x00" * 239 ]))
+        controller = EepromController(get_eeprom_file_dummy([ "", "", "", "\x00" * 4 + "helloworld\x01\x02\x00" + "\x00" * 239 ]))
         model = controller.read(Model5, 0, [ u"name" ])
         self.assertEquals(0, model.id)
         self.assertEquals("helloworld", model.name)
@@ -589,7 +589,7 @@ class EepromModelTest(unittest.TestCase):
         self.assertEquals(3, data[2].address.bank)
         self.assertEquals(15, data[2].address.offset)
         self.assertEquals(2, data[2].address.length)
-        self.assertEquals(str(chr(1) + chr(200)), data[2].bytes)
+        self.assertEquals(str(chr(200) + chr(1)), data[2].bytes)
         
         model6 = Model6(name=u"test", status=[1,2])
         data = model6.to_eeprom_data()
@@ -608,7 +608,7 @@ class EepromModelTest(unittest.TestCase):
         self.assertEquals(3, data[2].address.bank)
         self.assertEquals(15, data[2].address.offset)
         self.assertEquals(2, data[2].address.length)
-        self.assertEquals("\x00\x02", data[2].bytes)
+        self.assertEquals("\x02\x00", data[2].bytes)
         
 
     def test_to_eeprom_data_readonly(self):
@@ -640,7 +640,7 @@ class EepromModelTest(unittest.TestCase):
 
         model3_data = [ EepromData(EepromAddress(3, 4, 10), "hello worl"),
                         EepromData(EepromAddress(3, 14, 1), str(chr(123))),
-                        EepromData(EepromAddress(3, 15, 2), str(chr(1) + chr(200))) ]
+                        EepromData(EepromAddress(3, 15, 2), str(chr(200) + chr(1))) ]
         model3 = Model3.from_eeprom_data(model3_data)
         self.assertEquals("hello worl", model3.name)
         self.assertEquals(123, model3.link)
@@ -648,7 +648,7 @@ class EepromModelTest(unittest.TestCase):
 
         model6_data = [ EepromData(EepromAddress(3, 4, 10), "test" + "\xff" * 6),
                         EepromData(EepromAddress(3, 14, 1), str(chr(1))),
-                        EepromData(EepromAddress(3, 15, 2), str(chr(0) + chr(2))) ]
+                        EepromData(EepromAddress(3, 15, 2), str(chr(2) + chr(0))) ]
         model6 = Model6.from_eeprom_data(model6_data)
         
         self.assertEquals("test", model6.name)

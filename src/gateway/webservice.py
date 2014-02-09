@@ -7,6 +7,7 @@ import random
 import ConfigParser
 import subprocess
 import os
+import signal
 from types import MethodType
 import traceback
 import inspect
@@ -1314,6 +1315,16 @@ class WebInterface:
         return self.__success(plugins=ret)
 
     @cherrypy.expose
+    def get_plugin_logs(self, token):
+        """ Get the logs for all plugins.
+        
+        :returns: 'logs': dict with the names of the plugins as keys and the logs (String) as
+        value.
+        """
+        self.check_token(token)
+        return self.__success(logs=self.__plugin_controller.get_logs())
+
+    @cherrypy.expose
     def install_plugin(self, token, md5, package_data):
         """ Install a new plugin. The package_data should include a __init__.py file and
         will be installed in /opt/openmotics/python/plugins/<name>.
@@ -1349,6 +1360,8 @@ class WebService:
 
     def __init__(self, webinterface):
         self.__webinterface = webinterface
+        self.__https_server = None
+        self.__http_server = None
 
     def run(self):
         """ Run the web service: start cherrypy. """
@@ -1361,20 +1374,20 @@ class WebService:
 
         cherrypy.server.unsubscribe()
 
-        https_server = cherrypy._cpserver.Server()
-        https_server.socket_port = 443
-        https_server._socket_host = '0.0.0.0'
-        https_server.socket_timeout = 60
-        https_server.ssl_module = 'pyopenssl'
-        https_server.ssl_certificate = constants.get_ssl_certificate_file()
-        https_server.ssl_private_key = constants.get_ssl_private_key_file()
-        https_server.subscribe()
+        self.__https_server = cherrypy._cpserver.Server()
+        self.__https_server.socket_port = 443
+        self.__https_server._socket_host = '0.0.0.0'
+        self.__https_server.socket_timeout = 60
+        self.__https_server.ssl_module = 'pyopenssl'
+        self.__https_server.ssl_certificate = constants.get_ssl_certificate_file()
+        self.__https_server.ssl_private_key = constants.get_ssl_private_key_file()
+        self.__https_server.subscribe()
 
-        http_server = cherrypy._cpserver.Server()
-        http_server.socket_port = 80
-        http_server._socket_host = '127.0.0.1'
-        http_server.socket_timeout = 60
-        http_server.subscribe()
+        self.__http_server = cherrypy._cpserver.Server()
+        self.__http_server.socket_port = 80
+        self.__http_server._socket_host = '127.0.0.1'
+        self.__http_server.socket_timeout = 60
+        self.__http_server.subscribe()
 
         cherrypy.engine.autoreload_on = False
 
@@ -1385,8 +1398,13 @@ class WebService:
         """ Start the web service in a new thread. """
         thread = threading.Thread(target=self.run)
         thread.setName("Web service thread")
+        thread.daemon = True
         thread.start()
 
     def stop(self):
         """ Stop the web service. """
-        cherrypy.engine.exit()
+        cherrypy.engine.exit() ## Shutdown the cherrypy server: no new requests
+        if self.__https_server is not None:
+            self.__https_server.stop()
+        if self.__http_server is not None:
+            self.__http_server.stop()

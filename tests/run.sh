@@ -40,3 +40,5 @@ python -m power.power_communicator_tests
 echo "Running time keeper tests"
 python -m power.time_keeper_tests
 
+echo "Running plugin tests"
+python -m plugins.base_tests

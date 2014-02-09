@@ -456,9 +456,10 @@ class GatewayApi:
 
     def __update_inputs(self, api_data):
         """ Update the InputStatus with data from an IL message. """
-        self.__input_status.add_data((api_data['input'], api_data['output']))
+        tuple = (api_data['input'], api_data['output'])
+        self.__input_status.add_data(tuple)
         if self.__plugin_controller != None:
-            self.__plugin_controller.process_input_status(api_data)
+            self.__plugin_controller.process_input_status(tuple)
 
     def get_last_inputs(self):
         """ Get the 5 last pressed inputs during the last 5 minutes.

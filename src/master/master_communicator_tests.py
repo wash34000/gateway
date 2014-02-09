@@ -209,8 +209,8 @@ class MasterCommunicatorTest(unittest.TestCase):
         out_fields = {"resp": "OK" }
         
         serial_mock = SerialMock([
-                        sout("OL\x00\x01\x03\x0c\r\n\r\n"), sin(action.create_input(1, in_fields)),
-                        sout("junkOL\x00\x02\x03\x0c\x05\x06\r\n\r\n here"),
+                        sout("OL\x00\x01\x03\x0c\r\n"), sin(action.create_input(1, in_fields)),
+                        sout("junkOL\x00\x02\x03\x0c\x05\x06\r\n here"),
                         sout(action.create_output(1, out_fields)) ])
         
         comm = MasterCommunicator(serial_mock, init_master=False)

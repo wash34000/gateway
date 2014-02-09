@@ -214,7 +214,9 @@ class MasterCommunicator:
             self.__command_lock.acquire()
             self.__passthrough_done.clear()
             self.__passthrough_mode = True
-            Thread(target=self.__passthrough_wait).start()
+            passthrough_thread = Thread(target=self.__passthrough_wait)
+            passthrough_thread.daemon = True
+            passthrough_thread.start()
         
         self.__write_to_serial(data)            
     

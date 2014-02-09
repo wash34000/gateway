@@ -44,6 +44,7 @@ class MaintenanceService:
         """
         thread = threading.Thread(target=self.start, args=(port, connection_timeout))
         thread.setName("Maintenance thread")
+        thread.daemon = True
         thread.start()
 
     def start(self, port, connection_timeout):

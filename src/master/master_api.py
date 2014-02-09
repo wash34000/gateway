@@ -94,13 +94,13 @@ def set_time():
         [ Field.byte('sec'), Field.byte('min'), Field.byte('hours'), Field.byte('weekday'),
           Field.byte('day'), Field.byte('month'), Field.byte('year'), Field.padding(6) ],
         [ Field.byte('sec'), Field.byte('min'), Field.byte('hours'), Field.byte('weekday'),
-          Field.byte('day'), Field.byte('month'), Field.byte('year'), Field.padding(6) ])
+          Field.byte('day'), Field.byte('month'), Field.byte('year'), Field.padding(6), Field.lit("\r\n") ])
 
 def eeprom_list():
     """ List all bytes from a certain eeprom bank """
     return MasterCommandSpec("EL", 
         [ Field.byte("bank"), Field.padding(12) ],
-        [ Field.byte("bank"), Field.str("data", 256) ])
+        [ Field.byte("bank"), Field.str("data", 256), Field.lit("\r\n") ])
 
 def read_eeprom():
     """ Read a number (1-10) of bytes from a certain eeprom bank and address. """
@@ -134,14 +134,14 @@ def read_output():
           Field.int('ctimer'), Field.byte('status'), Field.dimmer('dimmer'),
           Field.byte('controller_out'), Field.byte('max_power'), Field.byte('floor_level'),
           Field.bytes('menu_position', 3), Field.str('name', 16), Field.crc(),
-          Field.lit('\r\n\r\n') ])
+          Field.lit('\r\n') ])
 
 def read_input():
     """ Read the information about an input """
     return MasterCommandSpec("ri", 
         [ Field.byte("input_nr"), Field.padding(12) ],
         [ Field.byte('input_nr'), Field.byte('output_action'), Field.bytes('output_list', 30),
-          Field.str('input_name', 8), Field.crc(), Field.lit('\r\n\r\n') ])
+          Field.str('input_name', 8), Field.crc(), Field.lit('\r\n') ])
 
 def temperature_list():
     """ Read the temperature thermostat sensor list for a series of 12 sensors """
@@ -195,7 +195,7 @@ def read_setpoint():
           Field.svt('sat_temp_d2'), Field.svt('sun_temp_d2'),  Field.svt('mon_temp_n'),
           Field.svt('tue_temp_n'), Field.svt('wed_temp_n'), Field.svt('thu_temp_n'),
           Field.svt('fri_temp_n'), Field.svt('sat_temp_n'), Field.svt('sun_temp_n'),
-          Field.crc(), Field.lit('\r\n\r\n') ])
+          Field.crc(), Field.lit('\r\n') ])
 
 def write_setpoint():
     """ Write a setpoints of a thermostats """
@@ -278,7 +278,7 @@ def error_list():
     """ Get the number of errors for each input and output module. """
     return MasterCommandSpec("el",
         [ Field.padding(13) ],
-        [ Field("errors", ErrorListFieldType()), Field.crc(), Field.lit("\r\n\r\n") ])
+        [ Field("errors", ErrorListFieldType()), Field.crc(), Field.lit("\r\n") ])
 
 def clear_error_list():
     """ Clear the number of errors. """
@@ -310,17 +310,19 @@ def indicate():
         [ Field.byte('type'), Field.byte('id'), Field.padding(11) ],
         [ Field.str("resp", 2), Field.padding(11), Field.lit("\r\n") ])
 
+### Below are the asynchronous messages, sent by the master to the gateway
+
 def output_list():
     """ The message sent by the master whenever the outputs change. """
     return MasterCommandSpec("OL",
         [],
-        [ Field("outputs", OutputFieldType()), Field.lit("\r\n\r\n") ])
+        [ Field("outputs", OutputFieldType()), Field.lit("\r\n") ])
 
 def input_list():
     """ The message sent by the master whenever an input is enabled. """
     return MasterCommandSpec("IL", 
         [],
-        [ Field.byte('input'), Field.byte('output'), Field.lit("\r\n\r\n") ])
+        [ Field.byte('input'), Field.byte('output'), Field.lit("\r\n") ])
 
 def module_initialize():
     """ The message sent by the master whenever a module is initialized in module discovery mode. """
@@ -328,6 +330,63 @@ def module_initialize():
         [],
         [ Field.str('id', 4), Field.str('instr', 1), Field.byte('module_nr'), Field.byte('data'),
           Field.padding(6), Field.lit('\r\n') ])
+
+### Below are the function to update the firmware of the modules (input/output/dimmer/thermostat)
+
+def modules_new_firmware_version():
+    """ Preprare the slave modules for a new version. """
+    return MasterCommandSpec("FN",
+        [ Field.str("module_type", 1), Field.byte("f1n"), Field.byte("f2n"), Field.byte("f3n"),
+          Field.padding(9) ],
+        [ Field.str("resp", 2), Field.padding(11), Field.lit("\r\n") ])
+
+def change_communication_mode_to_long():
+    """ Change the number of bytes used to communicate with the master to 75. """
+    return MasterCommandSpec("cm",
+        [ Field.lit('\x4d'), Field.padding(12) ],
+        [ Field.lit('\x4d'), Field.padding(12), Field.lit("\r\n") ])
+
+def change_communication_mode_to_short():
+    """ Change the number of bytes used to communicate with the master to 18. """
+    return MasterCommandSpec("cm",
+        [ Field.lit('\x12'), Field.padding(72) ],
+        [ Field.lit('\x12'), Field.padding(12), Field.lit("\r\n") ])
+
+def modules_update_firmware_block():
+    """ Upload 1 block of 64 bytes to the modules. """
+    return MasterCommandSpec("FL",
+        [ Field.str("module_type", 1), Field.byte("block_nr"), Field.lit("\x00"),
+          Field.lit("B"), Field.str("bytes", 64), Field.crc() ],
+        [ Field.str("resp", 2), Field.padding(11), Field.lit("\r\n") ])
+
+def modules_end_firmware_update():
+    """ Let the master know that the firmware update is done. """
+    return MasterCommandSpec("FE",
+        [ Field.str("module_type", 1), Field.padding(12) ],
+        [ Field.str("resp", 2), Field.padding(11), Field.lit("\r\n") ])
+
+def modules_verify_firmware():
+    """ Tell the master to verify the update firmware. """
+    return MasterCommandSpec("FV",
+        [ Field.byte("id0"), Field.byte("id1"), Field.byte("id2"), Field.byte("id3"),
+          Field.lit('C'), Field.byte('crc0'), Field.byte('crc1'), Field.padding(6) ],
+        [ Field.byte("id0"), Field.byte("id1"), Field.byte("id2"), Field.byte("id3"),
+          Field.byte("hw_version"), Field.byte("f1"), Field.byte("f2"), Field.byte("f3"),
+          Field.byte("status"), Field.lit('C'), Field.byte('crc0'), Field.byte('crc1'),
+          Field.padding(1), Field.lit("\r\n") ])
+
+def modules_reset():
+    """ Reset the modules to load the new firmware. """
+    return MasterCommandSpec("FR",
+        [ Field.byte("id0"), Field.byte("id1"), Field.byte("id2"), Field.byte("id3"),
+          Field.byte('sec'), Field.lit('C'), Field.byte('crc0'), Field.byte('crc1'),
+          Field.padding(5) ],
+        [ Field.byte("id0"), Field.byte("id1"), Field.byte("id2"), Field.byte("id3"),
+          Field.byte("status"), Field.lit('C'), Field.byte('crc0'), Field.byte('crc1'),
+          Field.padding(5), Field.lit("\r\n") ])
+
+
+### Below are helpers for the Svt (System value type).
 
 class Svt:
     """ Class for the system value type, this can be either a time or a temperature. """
