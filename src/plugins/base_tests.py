@@ -39,7 +39,7 @@ from plugins.base import *
 
 class P1(OMPluginBase):
     name = "P1"
-    version = "1.0"
+    version = "1.0.0"
     interfaces = [ ]
 """)
             from base import PluginController
@@ -59,7 +59,7 @@ from plugins.base import *
 
 class P1(OMPluginBase):
     name = "P1"
-    version = "1.0"
+    version = "1.0.0"
     interfaces = [ ]
 """)
             
@@ -68,7 +68,7 @@ from plugins.base import *
 
 class P2(OMPluginBase):
     name = "P2"
-    version = "1.0"
+    version = "1.0.0"
     interfaces = [ ]
 """)
 
@@ -94,8 +94,8 @@ class P2(OMPluginBase):
             version = "0.1.0"
             interfaces = [ ("webui", "1.0") ]
     
-            def __init__(self, webservice):
-                OMPluginBase.__init__(self, webservice)
+            def __init__(self, webservice, logger):
+                OMPluginBase.__init__(self, webservice, logger)
     
             @om_expose(auth=True)
             def html_index(self):
@@ -120,7 +120,7 @@ class P2(OMPluginBase):
         from base import PluginController
         
         pc = PluginController(None)
-        p1 = P1(None)
+        p1 = P1(None, None)
         
         ins = pc._get_special_methods(p1, "input_status")
         self.assertEquals(1, len(ins))
@@ -145,7 +145,7 @@ class P2(OMPluginBase):
             pass
 
         try:
-            pc._check_plugin(P1)
+            pc.check_plugin(P1)
         except PluginException as e:
             self.assertEquals("attribute 'name' is missing from the plugin class", str(e))
 
@@ -153,7 +153,7 @@ class P2(OMPluginBase):
             name = "malformed name"
         
         try:
-            pc._check_plugin(P2)
+            pc.check_plugin(P2)
         except PluginException as e:
             self.assertEquals("Plugin name 'malformed name' is malformed: can only contain letters, numbers and underscores.", str(e))
 
@@ -161,7 +161,7 @@ class P2(OMPluginBase):
             name = "test_name123"
         
         try:
-            pc._check_plugin(P2)
+            pc.check_plugin(P2)
         except PluginException as e:
             self.assertEquals("attribute 'version' is missing from the plugin class", str(e))
 
@@ -170,7 +170,7 @@ class P2(OMPluginBase):
             version = "1.0.0"
         
         try:
-            pc._check_plugin(P3)
+            pc.check_plugin(P3)
         except PluginException as e:
             self.assertEquals("attribute 'interfaces' is missing from the plugin class", str(e))
         
@@ -179,7 +179,7 @@ class P2(OMPluginBase):
             version = "1.0.0"
             interfaces = []
         
-        pc._check_plugin(P4)
+        pc.check_plugin(P4)
 
         class P4(OMPluginBase):
             name = "test"
@@ -187,7 +187,7 @@ class P2(OMPluginBase):
             interfaces = [ ("webui", "1.0") ]
         
         try:
-            pc._check_plugin(P4)
+            pc.check_plugin(P4)
         except PluginException as e:
             self.assertEquals("Plugin 'test' has no method named 'html_index'", str(e))
 
@@ -519,6 +519,17 @@ class PluginConfigCheckerTest(unittest.TestCase):
             self.fail('Excepted exception')
         except PluginException as e:
             self.assertTrue('nested_enum dict' in str(e) and 'followers' in str(e))
+    
+    def test_simple(self):
+        pcc = PluginConfigChecker([
+            { 'name' : 'log_inputs',  'type' : 'bool', 'description': 'Log the input data.'  },
+            { 'name' : 'log_outputs', 'type' : 'bool', 'description': 'Log the output data.' }
+        ])
+        
+        print pcc.check_config({ 'log_inputs' : True, 'log_outputs' : False })
+        
+        print "Hello !"
+        
     
 if __name__ == "__main__":
     #import sys;sys.argv = ['', 'Test.testName']

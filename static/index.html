@@ -12,6 +12,7 @@
     <link rel="stylesheet" type="text/css" href="/static/css/bootstrap.override.css" title="Variant Multi" media="all"/>
     <script type="text/javascript" src="/static/js/jquery-2.0.0.min.js"></script>
     <script type="text/javascript" src="/static/js/bootstrap.js"></script>
+    <script type="text/javascript" src="/static/js/om_config.js"></script>
     <script type="text/javascript">
         var loggedIn = false;
         var token = null;
@@ -421,17 +422,6 @@
 
         }
 
-        // Plugins
-        function show_plugins(data) {
-            $.each(data['plugins'], function (index, plugin) {
-                row = '<tr><td><div>';
-                row += '<span class="output_name">' + plugin['name'] + ' (v ' + plugin['version'] + ')</span>';
-                row += '<a href="/remove_plugin?token=' + token + '&name=' + plugin['name'] + '" class="btn btn-small">Remove</a></div></td></tr>';
-                $("#plugin_table").append(row);
-            });
-        }
-
-
         // General
         function load_data(name) {
             var url, callback;
@@ -442,9 +432,6 @@
             } else if (name == "thermostats") {
                 url = "/get_thermostat_status?token=" + token;
                 callback = show_thermostats;
-            } else if (name == "plugins") {
-                url = "/get_plugins?token=" + token;
-                callback = show_plugins;
             }
             url += "&fe_time=" + gettimestamp();
 
@@ -493,6 +480,65 @@
             };
         }
 
+        function create_config_div(container, plugin_name) {
+            var description = null;
+            var config = null;
+
+            function create_div() {
+                if (description != null && config != null) {
+                    create_config(container, description);
+                    container.append('<a href="#" id="save-config-' + plugin_name + '" class="btn btn-small">Save</a>');
+                    set_config(container, description, config);
+
+                    $("#save-config-" + plugin_name).click(function() {
+                        var config = get_config(container, description);
+                        
+                        $.ajax({
+                            url: '/plugins/' + plugin_name + '/set_config',
+                            type: 'POST',
+                            dataType: 'json',
+                            data: { token : token, config : JSON.stringify(config) }
+                        })
+                        .done(function(data) {
+                            show_message("Info", "Successfully set the config for plugin " + plugin_name + ".");
+                        })
+                        .fail(function(xhr) {
+                            show_message("Error", "Failed to set config for plugin " + plugin_name + ".");
+                        })
+                        .always(function() {
+                            container.hide();
+                        });
+                    });
+                }
+            }
+
+            $.ajax({
+                url: '/plugins/' + plugin_name + '/get_config_description?token=' + token,
+                type: 'GET',
+                dataType: 'json'
+            })
+            .done(function(data){
+                description = data;
+                create_div();
+            })
+            .fail(function(xhr) {
+                show_message("Error", "Fetching configuration for " + plugin_name + " failed.");
+            });
+
+            $.ajax({
+                url: '/plugins/' + plugin_name + '/get_config?token=' + token,
+                type: 'GET',
+                dataType: 'json'
+            })
+            .done(function(data){
+                config = data;
+                create_div();
+            })
+            .fail(function(xhr) {
+                show_message("Error", "Fetching configuration for " + plugin_name + " failed.");
+            });
+        }
+
         function logged_in_callback() {
             $('#login_form').hide();
             $(".loading").show();
@@ -534,11 +580,34 @@
             .done(function(data) {
                 $.each(data['plugins'], function(i, plugin) {
                     var is_webui = false;
+                    var is_configurable = false;
+
                     $.each(plugin['interfaces'], function (j, interface) {
                         if (interface[0] == "webui") {
                             is_webui = true;
+                        } else if (interface[0] == "config") {
+                            is_configurable = true;
                         }
                     });
+
+                    row = '<tr><td><div>';
+                    row += '<span class="output_name">' + plugin['name'] + ' (v ' + plugin['version'] + ')</span>';
+                    if (is_configurable) {
+                        row += '<a href="#" class="btn btn-small" id="btn-config-' + plugin['name'] + '">Configure</a>';
+                    }
+                    row += '<a href="/remove_plugin?token=' + token + '&name=' + plugin['name'] + '" class="btn btn-small">Remove</a>';
+                    row += "</div></td></tr>";
+                    $("#plugin_table").append(row);
+
+                    if (is_configurable) {
+                        $("#plugins").append('<div style="display: none;" id="div-config-' + plugin['name'] + '"><h4>Configure plugin ' + plugin['name'] + '</h4></div>');
+                        
+                        create_config_div($("#div-config-" + plugin['name']), plugin['name']);
+                        
+                        $("#btn-config-" + plugin['name']).click(function (e) {
+                            $("#div-config-" + plugin['name']).show();
+                        });
+                    }
 
                     if (is_webui) {
                         var content = $("#content");
@@ -573,7 +642,7 @@
                     $(".tab").removeClass('active');
                     $("#" + name + "_button").parent().addClass('active');
 
-                    if (name == 'outputs' || name == 'thermostats' || name == 'plugins') {
+                    if (name == 'outputs' || name == 'thermostats') {
                         load_data(name);
                     } else if (name == "group_actions") {
                         show_group_actions();

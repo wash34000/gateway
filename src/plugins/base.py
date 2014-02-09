@@ -9,7 +9,14 @@ import threading
 import re
 import sys
 import os
-import simplejson as json
+import traceback
+
+try:
+    import json
+except ImportError:
+    import simplejson as json
+
+from datetime import datetime
 
 import cherrypy
 
@@ -98,28 +105,36 @@ def on_remove(method):
     return method
 
 
-class OMPluginBase:
+class OMPluginBase(object):
     """ Base class for an OpenMotics plugin. Every plugin package should contain a 
     module with the name 'main' that contains a class that extends this class.
     """
-    def __init__(self, webinterface):
+    def __init__(self, webinterface, logger):
         """ The web interface is provided to the plugin to interface with the OpenMotics
-        system. """
+        system.
+        
+        :param webinterface: Reference the OpenMotics webinterface, this can be used to
+        perform actions, fetch status data, etc.
+        :param logger: Function that can be called with one parameter: message (String),
+        the message will be appended to the plugin's log. This log can be fetched using
+        the webinterface.
+        """
         self.webinterface = webinterface
+        self.logger = logger
 
     def __get_config_path(self):
         """ Get the path for the plugin configuration file based on the plugin name. """
         return '/opt/openmotics/etc/pi_%s.conf' % self.__class__.name
 
-    def read_config(self):
+    def read_config(self, default_config=None):
         """ Read the configuration file for the plugin: the configuration file contains json
-        string that will be converted to a python dict, if an error occurs, None is returned.
-        The PluginConfigChecker can be used to check if the configuration is valid, this has
-        to be done explicitly in the Plugin class.
+        string that will be converted to a python dict, if an error occurs, the default confi 
+        is returned. The PluginConfigChecker can be used to check if the configuration is valid,
+        this has to be done explicitly in the Plugin class.
         """
         config_path = self.__get_config_path()
         
-        if os.exists(config_path):
+        if os.path.exists(config_path):
             config_file = open(config_path, 'r')
             config = config_file.read()
             config_file.close()
@@ -130,7 +145,7 @@ class OMPluginBase:
                 LOGGER.error("Exception while getting config for plugin '%s': "
                              "%s" % (self.__class__.name, e))
         
-        return None
+        return default_config
 
     def write_config(self, config):
         """ Write the plugin configuration to the configuration file: the config is a python dict
@@ -152,6 +167,7 @@ class PluginController:
     def __init__(self, webinterface):
         self.__webinterface = webinterface
 
+        self.__logs = {}
         self.__plugins = self._gather_plugins()
 
         self.__input_status_receivers = []
@@ -184,7 +200,7 @@ class PluginController:
         import plugins
         objects = pkgutil.iter_modules(plugins.__path__) # (module_loader, name, ispkg)
 
-        package_names = [ o[1] for o in objects if o[2] ] 
+        package_names = [ o[1] for o in objects if o[2] ]
 
         plugin_descriptions = []
         for package_name in package_names:
@@ -193,7 +209,7 @@ class PluginController:
                 PluginController.check_plugin(plugin_class)
                 plugin_descriptions.append((package_name, plugin_class.name, plugin_class))
             except Exception as e:
-                LOGGER.error("Could not load plugin in package '%s': %s" % (package_name, e))
+                self.log(package_name, "Could not load plugin", e)
 
         # Check for double plugins
         per_name = {}
@@ -207,14 +223,14 @@ class PluginController:
         plugins = []
         for name in per_name:
             if len(per_name[name]) > 1:
-                LOGGER.error("Plugin '%s' is not enabled, it was found in multiple packages : %s" %
-                             (name, [ t[0] for t in per_name[name] ]))
+                self.log(name, "Could not enable plugin",
+                         "found in multiple pacakges: %s" % ([ t[0] for t in per_name[name] ], ))
             else:
                 try:
                     plugin_class = per_name[name][0][2]
-                    plugins.append(plugin_class(self.__webinterface))
+                    plugins.append(plugin_class(self.__webinterface, self.get_logger(name)))
                 except Exception as e:
-                    LOGGER.error("Exception while initializing plugin '%s': %s" % (name, e))
+                    self.log(name, "Could not initialize plugin", e, traceback.format_exc())
 
         return plugins
 
@@ -372,14 +388,24 @@ else:
                 raise Exception("The package could not be installed.")
             
             ## Initiate a reload of the OpenMotics daemon
-            raise SystemExit(1) ## TODO TEST This --> perhaps in timer ?
+            self.__exit()
             
-            cherrypy.engine.exit() ## Shutdown the cherrypy server: no new requests
-            cherrypy.server.stop()
-            threading.Timer(2, lambda: sys.exit(1)).start() ## Make sure we shutdown the daemon after 2 seconds.
+            return { 'msg' : 'Plugin successfully installed'}
             
         finally:
-            pass # rmtree(tmp_dir) TODO
+            rmtree(tmp_dir)
+
+
+    def __exit(self):
+        """ Shutdown the cherrypy server. """
+        cherrypy.engine.exit() ## Shutdown the cherrypy server: no new requests
+        
+        def do_kill():
+            import os, signal
+            os.kill(os.getpid(), signal.SIGKILL)
+        
+        ## Send the kill signal to the process after 3 seconds
+        threading.Timer(3, do_kill).start()
 
 
     def remove_plugin(self, name):
@@ -415,18 +441,28 @@ else:
             os.remove(conf_file)
         
         ## Initiate a reload of the OpenMotics daemon
-        cherrypy.engine.exit() ## Shutdown the cherrypy server: no new requests
-        threading.Timer(2, lambda: sys.exit(1)).start() ## Make sure we shutdown the daemon after 2 seconds.
+        self.__exit()
+        
+        return { 'msg' : 'Plugin successfully removed'}
 
 
     def __start_background_tasks(self, plugin):
         """ Start all background tasks. """
         bts = self._get_special_methods(plugin, 'background_task')
         for bt in bts:
-            thread = threading.Thread(target=bt)
+            thread = threading.Thread(target=self.__wrap_background_task, args=(plugin.name, bt))
             thread.name  = "Background thread for plugin '%s'" % plugin.name
             thread.daemon = True
             thread.start()
+
+    def __wrap_background_task(self, plugin_name, target):
+        """ Wrapper for a background task, an exception in the background task will be added to
+        the plugin's log.
+        """
+        try:
+            target()
+        except Exception as e:
+            self.log(plugin_name, "Exception in background thread", e, traceback.format_exc())
 
     def __expose_plugin(self, plugin):
         """ Expose the plugins using cherrypy. """
@@ -438,7 +474,7 @@ else:
             try:
                 isr[1](input_status)
             except Exception as e:
-                LOGGER.error("Exception while processing input status for plugin '%s': %s" % (isr[0], e))
+                self.log(isr[0], "Exception while processing input status", e, traceback.format_exc())
 
     def process_output_status(self, output_status):
         """ Should be called when the output status changes, notifies all plugins. """
@@ -446,7 +482,34 @@ else:
             try:
                 osr[1](output_status)
             except Exception as e:
-                LOGGER.error("Exception while processing output status for plugin '%s': %s" % (osr[0], e))
+                self.log(osr[0], "Exception while processing output status", e, traceback.format_exc())
+    
+    def log(self, plugin, msg, exception, stacktrace=None):
+        """ Append an exception to the log for the plugins. This log can be retrieved
+        using get_logs. """
+        if plugin not in self.__logs:
+            self.__logs[plugin] = ""
+        
+        LOGGER.error("Plugin %s: %s (%s)" % (plugin, msg, exception))
+        if stacktrace is None:
+            self.__logs[plugin] += "%s - %s: %s\n\n" % (datetime.now(), msg, exception)
+        else:
+            self.__logs[plugin] += "%s - %s: %s\n%s\n\n" % (datetime.now(), msg, exception, stacktrace)
+
+    def get_logger(self, plugin_name):
+        """ Get a logger for a plugin. """
+        if plugin_name not in self.__logs:
+            self.__logs[plugin_name] = ""
+        
+        def log(msg):
+            self.__logs[plugin_name] += "%s - %s\n\n" % (datetime.now(), msg)
+        
+        return log
+
+    def get_logs(self):
+        """ Get the logs for all plugins. Returns a dict where the keys are the plugin
+        names and the value is a string. """
+        return self.__logs
 
 
 class PluginConfigChecker:
