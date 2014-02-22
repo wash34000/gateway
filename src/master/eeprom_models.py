@@ -49,6 +49,7 @@ class InputConfiguration(EepromModel):
     name = EepromString(8, per_module(8, lambda mid, iid: (115+(mid/4), 64*(mid % 4) + 8*iid)))
     action = EepromByte(page_per_module(8, 2, 4, 1))
     basic_actions = EepromActions(15, page_per_module(8, 2, 12, 30))
+    invert = EepromByte(lambda id: (32, i))
 
 
 class ThermostatConfiguration(EepromModel):
@@ -158,8 +159,9 @@ class ScheduledActionConfiguration(EepromModel):
     id = EepromId(102)
     hour = EepromByte(lambda id: (113 + (id / 51), 5 * (id % 51) + 0))
     minute = EepromByte(lambda id: (113 + (id / 51), 5 * (id % 51) + 1))
-    day = EepromByte(lambda id: (113 + (id / 51), 5 * (id % 51) + 2))
+    day = EepromByte(lambda id: (113 + (id / 51), 5 * (id % 51) + 2)) ## 8th byte -> one time or reschedule !
     action = EepromActions(1, lambda id: (113 + (id / 51), 5 * (id % 51) + 3))
+    ## 24:00 -> execute every minute, 24:05 -> execute every 5 minutes
 
 
 class PulseCounterConfiguration(EepromModel):

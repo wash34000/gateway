@@ -761,7 +761,6 @@ class GatewayApi:
                  out_dict['pv4'], out_dict['pv5'], out_dict['pv6'], out_dict['pv7'] ]
 
     ###### Below are the auto generated master configuration functions
-
     def get_output_configuration(self, id, fields=None):
         """
         Get a specific output_configuration defined by its id.
@@ -810,7 +809,7 @@ class GatewayApi:
         :type id: Id
         :param fields: The field of the input_configuration to get. (None gets all fields)
         :type fields: List of strings
-        :returns: input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'module_type' (String[1]), 'name' (String[8])
+        :returns: input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'module_type' (String[1]), 'name' (String[8])
         """
         return self.__eeprom_controller.read(InputConfiguration, id, fields).to_dict()
     
@@ -820,7 +819,7 @@ class GatewayApi:
     
         :param fields: The field of the input_configuration to get. (None gets all fields)
         :type fields: List of strings
-        :returns: list of input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'module_type' (String[1]), 'name' (String[8])
+        :returns: list of input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'module_type' (String[1]), 'name' (String[8])
         """
         return [ o.to_dict() for o in self.__eeprom_controller.read_all(InputConfiguration, fields) ]
     
@@ -829,7 +828,7 @@ class GatewayApi:
         Set one input_configuration.
     
         :param config: The input_configuration to set
-        :type config: input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'name' (String[8])
+        :type config: input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'name' (String[8])
         """
         self.__eeprom_controller.write(InputConfiguration.from_dict(config))
     
@@ -838,7 +837,7 @@ class GatewayApi:
         Set multiple input_configurations.
     
         :param config: The list of input_configurations to set
-        :type config: list of input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'name' (String[8])
+        :type config: list of input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'name' (String[8])
         """
         self.__eeprom_controller.write_batch([ InputConfiguration.from_dict(o) for o in config ] )
     
@@ -1138,6 +1137,8 @@ class GatewayApi:
         :type config: global_thermostat_configuration dict: contains 'outside_sensor' (Byte), 'pump_delay' (Byte), 'threshold_temp' (Temp)
         """
         self.__eeprom_controller.write(GlobalThermostatConfiguration.from_dict(config))
+    
+
 
     ###### End of auto generated functions
 

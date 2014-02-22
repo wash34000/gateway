@@ -549,7 +549,7 @@ class WebInterface:
         :type id: Id
         :param fields: The field of the input_configuration to get. (None gets all fields)
         :type fields: Json encoded list of strings
-        :returns: 'config': input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'module_type' (String[1]), 'name' (String[8])
+        :returns: 'config': input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'module_type' (String[1]), 'name' (String[8])
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -562,7 +562,7 @@ class WebInterface:
     
         :param fields: The field of the input_configuration to get. (None gets all fields)
         :type fields: Json encoded list of strings
-        :returns: 'config': list of input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'module_type' (String[1]), 'name' (String[8])
+        :returns: 'config': list of input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'module_type' (String[1]), 'name' (String[8])
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -574,7 +574,7 @@ class WebInterface:
         Set one input_configuration.
     
         :param config: The input_configuration to set
-        :type config: input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'name' (String[8])
+        :type config: input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'name' (String[8])
         """
         self.check_token(token)
         self.__gateway_api.set_input_configuration(json.loads(config))
@@ -586,7 +586,7 @@ class WebInterface:
         Set multiple input_configurations.
     
         :param config: The list of input_configurations to set
-        :type config: list of input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'name' (String[8])
+        :type config: list of input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'name' (String[8])
         """
         self.check_token(token)
         self.__gateway_api.set_input_configurations(json.loads(config))
