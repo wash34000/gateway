@@ -209,6 +209,27 @@ class GatewayApi:
                  'hw_version' : out_dict['h']
                }
 
+    def reset_master(self):
+        """ Perform a cold reset on the master. Turns the power off, waits 5 seconds and
+        turns the power back on.
+        
+        :returns: 'status': 'OK'.
+        """
+        gpio_direction = open('/sys/class/gpio/gpio44/direction', 'w')
+        gpio_direction.write('out')
+        gpio_direction.close()
+        
+        def power(on):
+            gpio_file = open('/sys/class/gpio/gpio44/value', 'w')
+            gpio_file.write('1' if on else '0')
+            gpio_file.close()
+        
+        power(False)
+        pytime.sleep(5)
+        power(True)
+        
+        return { 'status' : 'OK' }
+
     ###### Master module functions
 
     def module_discover_start(self, timeout=900):

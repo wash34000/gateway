@@ -227,6 +227,15 @@ class WebInterface:
         return self.__success(port=port)
 
     @cherrypy.expose
+    def reset_master(self, token):
+        """ Perform a cold reset on the master.
+        
+        :returns: 'status': 'OK'.
+        """
+        self.check_token(token)
+        return self.__wrap(self.__gateway_api.reset_master)
+
+    @cherrypy.expose
     def module_discover_start(self, token):
         """ Start the module discover mode on the master.
 

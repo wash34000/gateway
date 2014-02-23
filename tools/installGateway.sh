@@ -51,6 +51,8 @@ done
 # Input button
 echo 38 > /sys/class/gpio/export
 echo in > /sys/class/gpio/gpio38/direction
+# Master reset output
+echo 44 > /sys/class/gpio/export
 EOF
 chmod +x /opt/openmotics/bin/configure_ports.sh
 
