@@ -207,6 +207,11 @@ class Field:
         return Field(name, DimmerFieldType())
     
     @staticmethod
+    def hum(name):
+        """ Humidity value. """
+        return Field(name, HumidityFieldType())
+    
+    @staticmethod
     def crc():
         """ Create a crc field type (3-byte string) """
         return Field.bytes('crc', 3)
@@ -393,7 +398,26 @@ class SvtFieldType:
     def decode(self, byte_str):
         """ Decode a svt byte string into a instance of the Svt class. """
         return master_api.Svt.from_byte(byte_str[0])
+
+class HumidityFieldType:
+    """ The humidity field is one byte. This types encodes and decodes
+    into a float (percentage). 
+    """
+    def __init__(self):
+        pass
     
+    def encode(self, field_value):
+        """ Encode an instance of the Svt class to a byte. """
+        return chr(int(field_value * 2) if field_value != 255.0 else 255)
+    
+    def get_min_decode_bytes(self):
+        """ Get the minimal amount of bytes required to start decoding. """
+        return 1
+    
+    def decode(self, byte_str):
+        """ Decode a byte string into a float. """
+        value =  ord(byte_str[0])
+        return (value / 2.0) if value != 255 else 255.0
 
 class VarStringFieldType:
     """ The VarString uses 1 byte for the length, the total length of the string is fixed.
