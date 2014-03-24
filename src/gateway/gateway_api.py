@@ -100,35 +100,34 @@ class GatewayApi:
             LOGGER.error("Got CommunicationTimedOutException during gateway_api initialization.")
 
     def __run_master_timer(self):
-        """ Run the master timer, this sets the masters clock every day at 2:01am and 3:01 am. """
-        self.sync_master_time()
+        """ Run the master timer, this sets the masters clock if it differs more than 3 minutes from the
+        gateway clock. """
+        
+        try:
+            status = self.__master_communicator.do_command(master_api.status())
+            date = "%d.%d.%d %d:%d:%d" % (status['day'], status['month'], status['year'],
+                                          status['hours'], status['minutes'], status['seconds'])
 
-        # Calculate the time to sleep until the next sync.
-        now = datetime.datetime.now()
-        today = datetime.datetime(now.year, now.month, now.day)
-        if now.hour < 3: # Check again at 3:01 am
-            next_check = today + datetime.timedelta(0, 3600 * 3 + 60)
-        else:
-            next_check = today + datetime.timedelta(1, 3600 * 2 + 60)
+            epoch_master = pytime.mktime(pytime.strptime(date, "%d.%m.%y %H:%M:%S"))
+            epoch_gateway = pytime.time()
 
-        to_sleep = (next_check - now).seconds
-        if to_sleep <= 0:
-            to_sleep = 60
+            if abs(epoch_master - epoch_gateway) > 180: # Allow 3 minutes slack
+                self.sync_master_time()
 
-        Timer(to_sleep, self.__run_master_timer).start()
+        except:
+            LOGGER.error("Got error while setting the time on the master.")
+            traceback.print_exc()
+        finally:
+            Timer(120, self.__run_master_timer).start()
 
     def sync_master_time(self):
         """ Set the time on the master. """
         LOGGER.info("Setting the time on the master.")
         now = datetime.datetime.now()
-        try:
-            self.__master_communicator.do_command(master_api.set_time(),
-                      {'sec': now.second, 'min': now.minute, 'hours': now.hour,
-                       'weekday': now.isoweekday(), 'day': now.day, 'month': now.month,
-                       'year': now.year % 100 })
-        except:
-            LOGGER.error("Got error while setting the time on the master.")
-            traceback.print_exc()
+        self.__master_communicator.do_command(master_api.set_time(),
+                  {'sec': now.second, 'min': now.minute, 'hours': now.hour,
+                   'weekday': now.isoweekday(), 'day': now.day, 'month': now.month,
+                   'year': now.year % 100 })
 
     ###### Maintenance functions
 

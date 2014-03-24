@@ -355,9 +355,9 @@ class WebInterface:
     def get_thermostat_status(self, token):
         """ Get the status of the thermostats.
 
-        :returns: global status information about the thermostats: 'thermostats_on',
-        'automatic' and 'setpoint' and 'status': a list with status information for all
-        thermostats, each element in the list is a dict with the following keys:
+        :returns: global status information about the thermostats: 'thermostats_on', \
+        'automatic' and 'setpoint' and 'status': a list with status information for all \
+        thermostats, each element in the list is a dict with the following keys: \
         'id', 'act', 'csetp', 'output0', 'output1', 'outside', 'mode'.
         """
         self.check_token(token)
@@ -1314,7 +1314,7 @@ class WebInterface:
     def get_plugins(self, token):
         """ Get the installed plugins.
         
-        :returns: 'plugins': dict with name, version and interfaces where name and version
+        :returns: 'plugins': dict with name, version and interfaces where name and version \
         are strings and interfaces is a list of tuples (interface, version) which are both strings.
         """
         self.check_token(token)
@@ -1327,7 +1327,7 @@ class WebInterface:
     def get_plugin_logs(self, token):
         """ Get the logs for all plugins.
         
-        :returns: 'logs': dict with the names of the plugins as keys and the logs (String) as
+        :returns: 'logs': dict with the names of the plugins as keys and the logs (String) as \
         value.
         """
         self.check_token(token)
