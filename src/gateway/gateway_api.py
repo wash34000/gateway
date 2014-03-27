@@ -105,7 +105,7 @@ class GatewayApi:
         
         try:
             status = self.__master_communicator.do_command(master_api.status())
-            date = "%d.%d.%d %d:%d:%d" % (status['day'], status['month'], status['year'],
+            date = "%02d.%02d.%02d %02d:%02d:%02d" % (status['day'], status['month'], status['year'],
                                           status['hours'], status['minutes'], status['seconds'])
 
             epoch_master = pytime.mktime(pytime.strptime(date, "%d.%m.%y %H:%M:%S"))
