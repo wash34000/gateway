@@ -334,34 +334,29 @@ def module_initialize():
 ### Below are the function to update the firmware of the modules (input/output/dimmer/thermostat)
 
 def modules_goto_bootloader():
-    """ Reset the modules to go to the bootloader. """
+    """ Reset the module to go to the bootloader. """
     return MasterCommandSpec("FR",
-        [ Field.byte("id0"), Field.byte("id1"), Field.byte("id2"), Field.byte("id3"),
-          Field.byte('sec'), Field.lit('C'), Field.byte('crc0'), Field.byte('crc1'),
-          Field.padding(5) ],
-        [ Field.byte("id0"), Field.byte("id1"), Field.byte("id2"), Field.byte("id3"),
-          Field.byte("error_code"), Field.lit('C'), Field.byte('crc0'), Field.byte('crc1'),
-          Field.padding(5), Field.lit("\r\n") ])
+        [ Field.str('addr', 4), Field.byte('sec'), Field.lit('C'), Field.byte('crc0'),
+          Field.byte('crc1'), Field.padding(5) ],
+        [ Field.str('addr', 4), Field.byte("error_code"), Field.lit('C'), Field.byte('crc0'),
+          Field.byte('crc1'), Field.padding(5), Field.lit("\r\n") ])
 
 def modules_new_firmware_version():
-    """ Preprare the slave modules for a new version. """
+    """ Preprare the slave module for a new version. """
     return MasterCommandSpec("FN",
-        [ Field.byte("id0"), Field.byte("id1"), Field.byte("id2"), Field.byte("id3"),
-          Field.byte("f1n"), Field.byte("f2n"), Field.byte("f3n"), Field.lit('C'),
-          Field.byte('crc0'), Field.byte('crc1'),Field.padding(3) ],
-        [ Field.byte("id0"), Field.byte("id1"), Field.byte("id2"), Field.byte("id3"),
-          Field.byte("error_code"), Field.lit('C'), Field.byte('crc0'), Field.byte('crc1'),
-          Field.padding(5), Field.lit("\r\n") ])
+        [ Field.str('addr', 4), Field.byte("f1n"), Field.byte("f2n"), Field.byte("f3n"),
+          Field.lit('C'), Field.byte('crc0'), Field.byte('crc1'),Field.padding(3) ],
+        [ Field.str('addr', 4), Field.byte("error_code"), Field.lit('C'), Field.byte('crc0'),
+          Field.byte('crc1'), Field.padding(5), Field.lit("\r\n") ])
 
 def modules_new_crc():
-    """ Write the new crc code to the bootloaded modules. """
+    """ Write the new crc code to the bootloaded module. """
     return MasterCommandSpec("FC",
-        [ Field.byte("id0"), Field.byte("id1"), Field.byte("id2"), Field.byte("id3"),
-          Field.byte("ccrc0"), Field.byte("ccrc1"), Field.byte("ccrc2"), Field.byte("ccrc3"),
-          Field.lit('C'), Field.byte('crc0'), Field.byte('crc1'),Field.padding(2) ],
-        [ Field.byte("id0"), Field.byte("id1"), Field.byte("id2"), Field.byte("id3"),
-          Field.byte("error_code"), Field.lit('C'), Field.byte('crc0'), Field.byte('crc1'),
-          Field.padding(5), Field.lit("\r\n") ])
+        [ Field.str('addr', 4), Field.byte("ccrc0"), Field.byte("ccrc1"), Field.byte("ccrc2"),
+          Field.byte("ccrc3"), Field.lit('C'), Field.byte('crc0'), Field.byte('crc1'),
+          Field.padding(2) ],
+        [ Field.str('addr', 4), Field.byte("error_code"), Field.lit('C'), Field.byte('crc0'),
+          Field.byte('crc1'), Field.padding(5), Field.lit("\r\n") ])
 
 def change_communication_mode_to_long():
     """ Change the number of bytes used to communicate with the master to 75. """
@@ -376,39 +371,29 @@ def change_communication_mode_to_short():
         [ Field.lit('\x12'), Field.padding(12), Field.lit("\r\n") ])
 
 def modules_update_firmware_block():
-    """ Upload 1 block of 64 bytes to the modules. """
+    """ Upload 1 block of 64 bytes to the module. """
     return MasterCommandSpec("FD",
-        [ Field.byte("id0"), Field.byte("id1"), Field.byte("id2"), Field.byte("id3"),
-          Field.byte("addr0"), Field.byte("addr1"), Field.str("bytes", 64), Field.lit('C'),
-          Field.byte('crc0'), Field.byte('crc1') ],
-        [ Field.byte("id0"), Field.byte("id1"), Field.byte("id2"), Field.byte("id3"),
-          Field.byte("error_code"), Field.lit('C'), Field.byte('crc0'), Field.byte('crc1'),
-          Field.lit("\r\n") ])
-
-def modules_end_firmware_update():
-    """ Let the master know that the firmware update is done. """
-    return MasterCommandSpec("FE",
-        [ Field.str("module_type", 1), Field.padding(12) ],
-        [ Field.str("resp", 2), Field.padding(11), Field.lit("\r\n") ])
+        [ Field.str('addr', 4), Field.int("block"), Field.str("bytes", 64),
+          Field.lit('C'), Field.byte('crc0'), Field.byte('crc1') ],
+        [ Field.str('addr', 4), Field.byte("error_code"), Field.lit('C'), Field.byte('crc0'),
+          Field.byte('crc1'), Field.lit("\r\n") ])
 
 def modules_verify_firmware():
     """ Tell the master to verify the update firmware. """
     return MasterCommandSpec("FV",
-        [ Field.byte("id0"), Field.byte("id1"), Field.byte("id2"), Field.byte("id3"),
-          Field.lit('C'), Field.byte('crc0'), Field.byte('crc1'), Field.padding(6) ],
-        [ Field.byte("id0"), Field.byte("id1"), Field.byte("id2"), Field.byte("id3"),
-          Field.byte("error_code"), Field.byte("hw_version"), Field.byte("f1"),
-          Field.byte("f2"), Field.byte("f3"), Field.byte("status"), Field.lit('C'),
-          Field.byte('crc0'), Field.byte('crc1'), Field.lit("\r\n") ])
+        [ Field.str('addr', 4), Field.lit('C'), Field.byte('crc0'), Field.byte('crc1'),
+          Field.padding(6) ],
+        [ Field.str('addr', 4), Field.byte("error_code"), Field.byte("hw_version"),
+          Field.byte("f1"), Field.byte("f2"), Field.byte("f3"), Field.byte("status"),
+          Field.lit('C'), Field.byte('crc0'), Field.byte('crc1'), Field.lit("\r\n") ])
 
 def modules_goto_application():
     """ Let the module go to application. """
     return MasterCommandSpec("FG",
-        [ Field.byte("id0"), Field.byte("id1"), Field.byte("id2"), Field.byte("id3"),
-          Field.lit('C'), Field.byte('crc0'), Field.byte('crc1'), Field.padding(6) ],
-        [ Field.byte("id0"), Field.byte("id1"), Field.byte("id2"), Field.byte("id3"),
-          Field.byte("error_code"), Field.lit('C'), Field.byte('crc0'), Field.byte('crc1'),
-          Field.padding(5), Field.lit("\r\n") ])
+        [ Field.str('addr', 4), Field.lit('C'), Field.byte('crc0'), Field.byte('crc1'),
+          Field.padding(6) ],
+        [ Field.str('addr', 4), Field.byte("error_code"), Field.lit('C'), Field.byte('crc0'),
+          Field.byte('crc1'), Field.padding(5), Field.lit("\r\n") ])
 
 
 ### Below are helpers for the Svt (System value type).

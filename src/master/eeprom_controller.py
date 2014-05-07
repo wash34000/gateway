@@ -8,7 +8,7 @@ Created on Sep 2, 2013
 import inspect
 import types
 
-from master_api import eeprom_list, write_eeprom, activate_eeprom
+from master_api import eeprom_list, read_eeprom, write_eeprom, activate_eeprom
 
 
 class EepromController:
@@ -138,14 +138,75 @@ class EepromFile:
         :type addresses: list of EepromAddress instances.
         :returns: a list of EepromData instances (in the same order as the provided addresses).
         """
-        bank_data = self.__read_banks(set([ a.bank for a in addresses ]))
+        ## Group the addresses per bank
+        per_bank = dict()
+        for addr in addresses:
+            if addr.bank not in per_bank:
+                per_bank[addr.bank] = []
+            per_bank[addr.bank].append(addr)
 
+        ## Read the bank data
+        bank_data = dict()
+        for bank in per_bank:
+            bank_data[bank] = self.__read_bank(bank, per_bank[bank])
+
+        ## Extract the required bytes from the bank data
         return [ EepromData(a, bank_data[a.bank][a.offset : a.offset + a.length])
                  for a in addresses ]
 
+    def __read_bank(self, bank, addresses):
+        """ Read a list of addresses from a bank, this returns a list of 256 bytes. Only the bytes
+        described in the addresses are valid, the other bytes might be dummies. The master_api
+        provides two function for reading from the eeprom: master_api.eeprom_list() and
+        master_api.read_eeprom(). The list reads a full bank (256 bytes), while the read can only
+        read 10 bytes at once. Due to communciation overhead the read function is about half the
+        speed (per byte) of the list function. If more than 13 reads are required for 1 bank,
+        the list function is used to read the bank at once.
+        
+        :param bank: the number of the bank
+        :type bank: Integer
+        :param addresses: the addresses in the bank to read
+        :type addresses: a list of EepromAddress instances
+        :returns: list of 256 bytes.
+        """
+        ## Mark the bytes that should be read
+        read_map = [ False ] * 256
+        for addr in addresses:
+            for i in range(addr.offset, addr.offset + addr.length):
+                read_map[i] = True
+
+        ## Find the start addresses of the reads
+        start_addresses = []
+        i = 0
+        while i < 256:
+            if read_map[i] is True:
+                if i > 256 - EepromFile.BATCH_SIZE:
+                    ## This is the last possible start address
+                    i = 256 - EepromFile.BATCH_SIZE
+                start_addresses.append(i)
+                i += EepromFile.BATCH_SIZE
+            else:
+                i += 1
+
+        ## Read from the start addresses
+        if len(start_addresses) > 13:
+            ## Too many reads, better read the whole bank at once using eeprom_list.
+            return self.__master_communicator.do_command(eeprom_list(), { "bank" : bank })['data']
+        else:
+            ## Fill the bytes with dummies and only read the required bytes from eeprom.
+            bytes = [ "\xff" ] * 256
+
+            for addr in start_addresses:
+                read = self.__master_communicator.do_command(
+                    read_eeprom(), { "bank" : bank, "addr" : addr, "num" : EepromFile.BATCH_SIZE })
+
+                bytes[addr : addr + EepromFile.BATCH_SIZE] = read["data"]
+
+            return ''.join(bytes)
+
     def __read_banks(self, banks):
         """ Read a number of banks from the Eeprom.
-
+        
         :param banks: a list of banks (integers).
         :returns: a dict mapping the bank to the data.
         """
@@ -156,7 +217,6 @@ class EepromFile:
             ret[bank] = output['data']
 
         return ret
-
 
     def write(self, data):
         """ Write data to the Eeprom.

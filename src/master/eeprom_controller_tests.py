@@ -278,6 +278,9 @@ class MasterCommunicatorDummy:
     def do_command(self, cmd, data):
         if cmd == master_api.eeprom_list():
             return self.__list_function(data)
+        elif cmd == master_api.read_eeprom():
+            bank = self.__list_function(data)["data"]
+            return { "data" : bank[data["addr"] : data["addr"] + data["num"]] }
         elif cmd == master_api.write_eeprom():
             return self.__write_function(data)
         elif cmd == master_api.activate_eeprom():
