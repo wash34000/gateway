@@ -1,7 +1,6 @@
 '''
-The physical frontend modules communicates over dbus with the leds service,
-the PhysicalFrontend class can be used to set the status of the leds or read
-the authorized mode.
+The LedService class communicates over dbus with the led service
+and can be used to set the status of the leds or read the authorized mode.
 
 Created on Sep 23, 2012
 
@@ -24,13 +23,13 @@ def check_for_errors(default_ret):
                 try:
                     return func(self, *args, **kwargs)
                 except:
-                    sys.stderr.write("Failed to communicate with physical_frontend_service\n")
+                    sys.stderr.write("Failed to communicate with led_service\n")
                     self.bus = None
             return default_ret
         return new_func
     return wrapped
 
-class PhysicalFrontend:
+class LedService:
     """ Communicates with the leds service using dbus. """
     
     LEDS = [ 'uart4', 'uart5', 'vpn', 'stat1', 'stat2', 'alive', 'cloud' ]
@@ -47,7 +46,7 @@ class PhysicalFrontend:
             system_bus = dbus.SystemBus()
             return system_bus.get_object('com.openmotics.status', '/com/openmotics/status')
         except:
-            sys.stderr.write("Could not initialize dbus to physical_frontend_service\n")
+            sys.stderr.write("Could not initialize dbus to led_service\n")
             return None
         
     @check_for_errors(None)

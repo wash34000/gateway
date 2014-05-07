@@ -140,6 +140,13 @@ class WebInterface:
         if cherrypy.request.remote.ip == '127.0.0.1' or token is self.dummy_token:
             # Don't check tokens for localhost
             return
+        
+        if token is None or token is "None":
+            # Get the token from the session if no token is provided.
+            print "Token not found, getting token from session:"
+            token = cherrypy.session.get("token", None)
+            print "Token = %s" % token
+        
         if not self.__user_controller.check_token(token):
             raise cherrypy.HTTPError(401, "Unauthorized")
 
@@ -157,6 +164,7 @@ class WebInterface:
 
         :returns: msg (String)
         """
+        
         return serve_file('/opt/openmotics/static/index.html', content_type='text/html')
 
     @cherrypy.expose
@@ -173,6 +181,9 @@ class WebInterface:
         if token == None:
             raise cherrypy.HTTPError(401, "Unauthorized")
         else:
+            # Store the token in the session
+            cherrypy.session.regenerate()
+            cherrypy.session['token'] = token
             return self.__success(token=token)
 
     @cherrypy.expose
@@ -1375,9 +1386,13 @@ class WebService:
     def run(self):
         """ Run the web service: start cherrypy. """
         cherrypy.tree.mount(self.__webinterface,
-                            config={'/static' : {'tools.staticdir.on' : True,
-                                                 'tools.staticdir.dir' : '/opt/openmotics/static'},
-                                    '/' : { 'tools.timestampFilter.on' : True }
+                            config={'/static' : { 'tools.staticdir.on' : True,
+                                                  'tools.staticdir.dir' : '/opt/openmotics/static' },
+                                    '/' : { 'tools.timestampFilter.on' : True,
+                                            'tools.sessions.on' : True,
+                                            'tools.sessions.storage_type' : 'ram',
+                                            'tools.sessions.timeout' : 60
+                                          }
                                     }
                             )
 

@@ -19,7 +19,7 @@ except ImportError:
 
 import constants
 
-from frontend.physical_frontend import PhysicalFrontend
+from bus.led_service import LedService
 
 REBOOT_TIMEOUT = 900
 
@@ -57,9 +57,9 @@ class Cloud:
 
     DEFAULT_SLEEP_TIME = 30
 
-    def __init__(self, url, physical_frontend, action_executor, sleep_time=DEFAULT_SLEEP_TIME):
+    def __init__(self, url, led_service, action_executor, sleep_time=DEFAULT_SLEEP_TIME):
         self.__url = url
-        self.__physical_frontend = physical_frontend
+        self.__led_service = led_service
         self.__action_executor = action_executor
         self.__last_connect = time.time()
         self.__sleep_time = sleep_time
@@ -84,15 +84,15 @@ class Cloud:
             else:
                 self.__modes = None
 
-            self.__physical_frontend.set_led('cloud', True)
-            self.__physical_frontend.toggle_led('alive')
+            self.__led_service.set_led('cloud', True)
+            self.__led_service.toggle_led('alive')
             self.__last_connect = time.time()
 
             return data['open_vpn']
         except Exception as exception:
             print "Exception occured during check: ", exception
-            self.__physical_frontend.set_led('cloud', False)
-            self.__physical_frontend.set_led('alive', False)
+            self.__led_service.set_led('cloud', False)
+            self.__led_service.set_led('alive', False)
 
             return True
 
@@ -400,7 +400,7 @@ def main():
     """ The main function contains the loop that check if the vpn should be opened every 2 seconds.
     Status data is sent when the vpn is checked. """
 
-    physical_frontend = PhysicalFrontend()
+    led_service = LedService()
 
     # Get the configuration
     config = ConfigParser()
@@ -409,10 +409,9 @@ def main():
     check_url = config.get('OpenMotics', 'vpn_check_url') % config.get('OpenMotics', 'uuid')
 
     vpn = VpnController()
-    physical_frontend.set_led('vpn', vpn.check_vpn())
 
     gateway = Gateway()
-    cloud = Cloud(check_url, physical_frontend, ActionExecutor(gateway))
+    cloud = Cloud(check_url, led_service, ActionExecutor(gateway))
 
     collectors = { 'energy' : DataCollector(gateway.get_total_energy, 300),
                    'thermostats' : DataCollector(gateway.get_thermostats, 60),
@@ -447,13 +446,12 @@ def main():
             reboot_gateway()
 
         is_open = vpn.check_vpn()
+        led_service.set_led('vpn', is_open)
 
         if should_open and not is_open:
-            physical_frontend.set_led('vpn', True)
             print str(datetime.now()) + ": opening vpn"
             vpn.start_vpn()
         elif not should_open and is_open:
-            physical_frontend.set_led('vpn', False)
             print str(datetime.now()) + ": closing vpn"
             vpn.stop_vpn()
 

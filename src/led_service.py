@@ -1,4 +1,4 @@
-""" The physical frontend are the leds and switch on the front panel of the gateway.
+""" Service that drives the leds and checks the switch on the front panel of the gateway.
 This service allows other services to set the leds over dbus and check whether the
 gateway is in authorized mode.
 """
@@ -281,7 +281,7 @@ def main():
     gobject.timeout_add(100, status.serial)
     gobject.timeout_add(100, status.input)
     
-    print "Running physical frontend service."
+    print "Running led service."
     mainloop.run()
 
 

@@ -70,8 +70,8 @@ priority=1
 EOF
 
 ## Install VPN service
-cat << EOF > /etc/supervisor/conf.d/vpn_keepalive.conf 
-[program:vpn_keepalive]
+cat << EOF > /etc/supervisor/conf.d/vpn_service.conf 
+[program:vpn_service]
 command=python vpn_service.py
 autostart=true
 autorestart=true
@@ -108,7 +108,7 @@ EOF
 ## Install LED service
 cat << EOF > /etc/supervisor/conf.d/led_service.conf 
 [program:led_service]
-command=python physical_frontend_service.py
+command=python led_service.py
 autostart=true
 autorestart=true
 directory=/opt/openmotics/python

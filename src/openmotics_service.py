@@ -22,7 +22,7 @@ from gateway.webservice import WebInterface, WebService
 from gateway.gateway_api import GatewayApi
 from gateway.users import UserController
 
-from frontend.physical_frontend import PhysicalFrontend
+from bus.led_service import LedService
 
 from master.maintenance import MaintenanceService
 from master.master_communicator import MasterCommunicator
@@ -43,7 +43,7 @@ def setup_logger():
     handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
     logger.addHandler(handler)
 
-def led_driver(physical_frontend, master_communicator, power_communicator):
+def led_driver(led_service, master_communicator, power_communicator):
     """ Blink the serial leds if necessary. """
     master = (0, 0)
     power = (0, 0)
@@ -51,11 +51,11 @@ def led_driver(physical_frontend, master_communicator, power_communicator):
     while True:
         if master[0] != master_communicator.get_bytes_read() \
                 or master[1] != master_communicator.get_bytes_written():
-            physical_frontend.serial_activity(5)
+            led_service.serial_activity(5)
         
         if power[0] != power_communicator.get_bytes_read() \
                 or power[1] != power_communicator.get_bytes_written():
-            physical_frontend.serial_activity(4)
+            led_service.serial_activity(4)
         
         master = (master_communicator.get_bytes_read(), master_communicator.get_bytes_written())
         power = (power_communicator.get_bytes_read(), power_communicator.get_bytes_written())
@@ -71,7 +71,7 @@ def main():
     
     user_controller = UserController(constants.get_user_database_file(), defaults, 3600)
     
-    physical_frontend = PhysicalFrontend()
+    led_service = LedService()
     
     controller_serial_port = config.get('OpenMotics', 'controller_serial')
     passthrough_serial_port = config.get('OpenMotics', 'passthrough_serial')
@@ -99,7 +99,7 @@ def main():
     
     web_interface = WebInterface(user_controller, gateway_api,
                                 constants.get_scheduling_database_file(), maintenance_service,
-                                physical_frontend.in_authorized_mode)
+                                led_service.in_authorized_mode)
     
     plugin_controller = PluginController(web_interface)
     plugin_controller.start_plugins()
@@ -110,9 +110,9 @@ def main():
     web_service = WebService(web_interface)
     web_service.start()
     
-    physical_frontend.set_led('stat2', True)
+    led_service.set_led('stat2', True)
     
-    led_thread = threading.Thread(target=led_driver, args=(physical_frontend,
+    led_thread = threading.Thread(target=led_driver, args=(led_service,
                                                            master_communicator, power_communicator))
     led_thread.setName("Serial led driver thread")
     led_thread.daemon = True
@@ -121,7 +121,7 @@ def main():
     def stop(signum, frame):
         """ This function is called on SIGTERM. """
         sys.stderr.write("Shutting down")
-        physical_frontend.set_led('stat2', False)
+        led_service.set_led('stat2', False)
         web_service.stop()
     
     signal(SIGTERM, stop)
