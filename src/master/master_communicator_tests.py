@@ -307,7 +307,7 @@ class MasterCommunicatorTest(unittest.TestCase):
         out_fields = {}
         for i in range(0, 32):
             out_fields['hum%d' % i] = i
-        out_fields['crc'] = [ ord('C'), 1, 240 ]
+        out_fields['crc'] = [ ord('C'), 3, 224 ]
         
         out_fields2 = {}
         for i in range(0, 32):
