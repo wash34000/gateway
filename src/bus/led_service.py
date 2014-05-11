@@ -29,17 +29,17 @@ def check_for_errors(default_ret):
         return new_func
     return wrapped
 
-class LedService:
+class LedService(object):
     """ Communicates with the leds service using dbus. """
-    
-    LEDS = [ 'uart4', 'uart5', 'vpn', 'stat1', 'stat2', 'alive', 'cloud' ]
+
+    LEDS = ['uart4', 'uart5', 'vpn', 'stat1', 'stat2', 'alive', 'cloud']
 
     def __init__(self):
         self.bus = self.get_bus()
-    
+
     def get_bus(self):
-        """" Try to get the dbus interface to the led_service. 
-        
+        """" Try to get the dbus interface to the led_service.
+
         :returns: None on Exception
         """
         try:
@@ -48,22 +48,22 @@ class LedService:
         except:
             sys.stderr.write("Could not initialize dbus to led_service\n")
             return None
-        
+
     @check_for_errors(None)
     def set_led(self, led_name, enabled):
         """ Set the status of a LED. """
         self.bus.set_led(led_name, enabled, dbus_interface='com.openmotics.status')
-            
+
     @check_for_errors(None)
     def toggle_led(self, led_name):
         """ Toggle the status of a LED. """
         self.bus.toggle_led(led_name, dbus_interface='com.openmotics.status')
-    
+
     @check_for_errors(None)
     def serial_activity(self, uart):
         """ Register serial activity on a given UART. """
         self.bus.serial_activity(uart, dbus_interface='com.openmotics.status')
-    
+
     @check_for_errors(False)
     def in_authorized_mode(self):
         """ Check if the gateway is in authorized mode. """

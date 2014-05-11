@@ -47,7 +47,7 @@ def get_update_output_file():
 
 def get_update_cmd(version, md5):
     """ Get the command to execute an update. Returns an array of arguments (string). """
-    return [ "/usr/bin/python", "/opt/openmotics/python/update.py", str(version), str(md5) ]
+    return ["/usr/bin/python", "/opt/openmotics/python/update.py", str(version), str(md5)]
 
 def get_update_script():
     """ Get the bash script that runs the update after the tgz file is extracted. """

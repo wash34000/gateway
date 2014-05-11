@@ -1,6 +1,12 @@
+""" Contains PowerCommandClass that describes a command to the power modules. The PowerCommand
+class is used to create the power_api.
+
+@author: fryckbos
+"""
+
 import struct
 
-crc_table = [ 0, 49, 98, 83, 196, 245, 166, 151, 185, 136, 219, 234, 125, 76, 31, 46, 67, 114, 33,
+CRC_TABLE = [0, 49, 98, 83, 196, 245, 166, 151, 185, 136, 219, 234, 125, 76, 31, 46, 67, 114, 33,
              16, 135, 182, 229, 212, 250, 203, 152, 169, 62, 15, 92, 109, 134, 183, 228, 213, 66,
              115, 32, 17, 63, 14, 93, 108, 251, 202, 153, 168, 197, 244, 167, 150, 1, 48, 99, 82,
              124, 77, 30, 47, 184, 137, 218, 235, 61, 12, 95, 110, 249, 200, 155, 170, 132, 181,
@@ -21,12 +27,12 @@ def crc7(to_send):
     :rtype: integer
     """
     ret = 0
-    for c in to_send:
-        ret = crc_table[ret ^ ord(c)]
+    for part in to_send:
+        ret = CRC_TABLE[ret ^ ord(part)]
     return ret
 
 
-class PowerCommand:
+class PowerCommand(object):
     """ A PowerCommand is an command that can be send to a Power Module over RS485. The commands
     look like this: 'STR' 'E' Address CID Mode(G/S) Type LEN Data CRC7 '\r\n'.
     """
@@ -53,7 +59,7 @@ class PowerCommand:
         :param data: data to send to the power module
         """
         data = struct.pack(self.input_format, *data)
-        
+
         command = "E" + chr(address) + chr(cid) + str(self.mode) + str(self.type)
         command += chr(len(data)) + str(data)
         return "STR" + command + chr(crc7(command)) + "\r\n"
@@ -61,7 +67,7 @@ class PowerCommand:
     def create_output(self, address, cid, *data):
         """ Create an output command from the power module using this command and the provided
         fields. --- Only used for testing !
-        
+
         :param address: 1 byte, the address of the module
         :param cid: dictionary with values for the fields
         :type fields: dict

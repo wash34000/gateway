@@ -6,8 +6,10 @@ Created on Sep 2, 2013
 '''
 import unittest
 
-from eeprom_controller import EepromController, EepromFile, EepromModel, EepromId, EepromString, EepromByte, EepromWord, EepromData, EepromAddress, EepromActions, CompositeDataType, EepromSignedTemp
-import master_api
+from master.eeprom_controller import EepromController, EepromFile, EepromModel, EepromAddress, \
+                                     EepromData, EepromId, EepromString, EepromByte, EepromWord, \
+                                     CompositeDataType, EepromActions, EepromSignedTemp
+import master.master_api as master_api
 
 
 class Model1(EepromModel):
@@ -30,7 +32,7 @@ class Model3(EepromModel):
 
 class Model4(EepromModel):
     """ Dummy model with a dynamic maximum id. """
-    id = EepromId(10, address=EepromAddress(0,0,1), multiplier=2)
+    id = EepromId(10, address=EepromAddress(0, 0, 1), multiplier=2)
     name = EepromString(10, lambda id: (1, 2 + id * 10))
 
 
@@ -47,18 +49,20 @@ class Model6(EepromModel):
     name = EepromString(10, (3, 4))
     status = CompositeDataType([
                             ('link', EepromByte((3, 14))),
-                            ('out', EepromWord((3, 15))) ])
+                            ('out', EepromWord((3, 15)))])
 
 
 def get_eeprom_file_dummy(banks):
-    """ Create an EepromFile when the bank data is provided.
+    """ Create an EepromFile when the data for all banks is provided.
 
     @param banks: list of string of bytes.
     """
     def list(data):
-        return { "data" : banks[data["bank"]] }
+        """ Dummy for listing a bank. """
+        return {"data" : banks[data["bank"]]}
 
     def write(data):
+        """ Dummy for writing bytes to a bank. """
         bank = banks[data["bank"]]
         address = data["address"]
         bytes = data["data"]
@@ -73,37 +77,40 @@ class EepromControllerTest(unittest.TestCase):
 
     def test_read(self):
         """ Test read. """
-        controller = EepromController(get_eeprom_file_dummy([ "\x00" * 256, "\x00" * 2 + "hello" + "\x00" * 249 ]))
+        controller = EepromController(get_eeprom_file_dummy(
+                            ["\x00" * 256, "\x00" * 2 + "hello" + "\x00" * 249]))
         model = controller.read(Model1, 0)
         self.assertEquals(0, model.id)
         self.assertEquals("hello" + "\x00" * 95, model.name)
 
-        controller = EepromController(get_eeprom_file_dummy([ "", "", "", "\x00" * 4 + "hello" + "\x00" * 249 ]))
+        controller = EepromController(get_eeprom_file_dummy(
+                            ["", "", "", "\x00" * 4 + "hello" + "\x00" * 249]))
         model = controller.read(Model2)
         self.assertEquals("hello" + "\x00" * 95, model.name)
 
     def test_read_field(self):
         """ Test read with a field. """
-        controller = EepromController(get_eeprom_file_dummy([ "", "", "", "\x00" * 4 + "helloworld\x01\x02\x00" + "\x00" * 239 ]))
-        model = controller.read(Model5, 0, [ u"name" ])
+        controller = EepromController(get_eeprom_file_dummy(
+                            ["", "", "", "\x00" * 4 + "helloworld\x01\x02\x00" + "\x00" * 239]))
+        model = controller.read(Model5, 0, [u"name"])
         self.assertEquals(0, model.id)
         self.assertEquals("helloworld", model.name)
-        self.assertFalse("link" in model.__dict__ )
-        self.assertFalse("out" in model.__dict__ )
+        self.assertFalse("link" in model.__dict__)
+        self.assertFalse("out" in model.__dict__)
 
-        model = controller.read(Model5, 0, [ "name", "link" ])
+        model = controller.read(Model5, 0, ["name", "link"])
         self.assertEquals(0, model.id)
         self.assertEquals("helloworld", model.name)
-        self.assertEquals(1, model.link )
-        self.assertFalse("out" in model.__dict__ )
+        self.assertEquals(1, model.link)
+        self.assertFalse("out" in model.__dict__)
 
-        model = controller.read(Model5, 0, [ "name", "out" ])
+        model = controller.read(Model5, 0, ["name", "out"])
         self.assertEquals(0, model.id)
         self.assertEquals("helloworld", model.name)
-        self.assertFalse("link" in model.__dict__ )
+        self.assertFalse("link" in model.__dict__)
         self.assertEquals(2, model.out)
 
-        model = controller.read(Model5, 0, [ "name", "out", "link" ])
+        model = controller.read(Model5, 0, ["name", "out", "link"])
         self.assertEquals(0, model.id)
         self.assertEquals("helloworld", model.name)
         self.assertEquals(1, model.link)
@@ -111,9 +118,10 @@ class EepromControllerTest(unittest.TestCase):
 
     def test_read_batch(self):
         """ Test read_batch. """
-        controller = EepromController(get_eeprom_file_dummy([ "\x00" * 256, "\x00" * 2 + "hello" + "\x00" * 249 ]))
+        controller = EepromController(get_eeprom_file_dummy(
+                            ["\x00" * 256, "\x00" * 2 + "hello" + "\x00" * 249]))
 
-        models = controller.read_batch(Model1, [0,3,8])
+        models = controller.read_batch(Model1, [0, 3, 8])
 
         self.assertEquals(3, len(models))
 
@@ -129,37 +137,38 @@ class EepromControllerTest(unittest.TestCase):
     def test_read_batch_field(self):
         """ Test read_batch with a field. """
         controller = EepromController(get_eeprom_file_dummy(
-                        [ "", "", "",
+                        ["", "", "",
                          "\x00" * 4 + "helloworld\x01\x00\x02" + "\x00" * 239,
-                         "\x00" * 4 + "secondpage\x02\x00\x03" + "\x00" * 239 ]))
+                         "\x00" * 4 + "secondpage\x02\x00\x03" + "\x00" * 239]))
 
-        models = controller.read_batch(Model5, [0,1], [ "name" ])
+        models = controller.read_batch(Model5, [0, 1], ["name"])
 
         self.assertEquals(2, len(models))
 
         self.assertEquals(0, models[0].id)
         self.assertEquals("helloworld", models[0].name)
-        self.assertFalse("link" in models[0].__dict__ )
-        self.assertFalse("out" in models[0].__dict__ )
+        self.assertFalse("link" in models[0].__dict__)
+        self.assertFalse("out" in models[0].__dict__)
 
         self.assertEquals(1, models[1].id)
         self.assertEquals("secondpage", models[1].name)
-        self.assertFalse("link" in models[1].__dict__ )
-        self.assertFalse("out" in models[1].__dict__ )
+        self.assertFalse("link" in models[1].__dict__)
+        self.assertFalse("out" in models[1].__dict__)
 
     def test_read_all_without_id(self):
         """ Test read_all for EepromModel without id. """
-        controller = EepromController(get_eeprom_file_dummy([ ]))
+        controller = EepromController(get_eeprom_file_dummy([]))
 
         try:
             controller.read_all(Model2)
             self.fail('Expected TypeError.')
-        except TypeError as e:
-            self.assertTrue('id' in str(e))
+        except TypeError as type_error:
+            self.assertTrue('id' in str(type_error))
 
     def test_read_all(self):
         """ Test read_all. """
-        controller = EepromController(get_eeprom_file_dummy([ "\x00" * 256, "\x00" * 2 + "hello" + "\x00" * 249 ]))
+        controller = EepromController(get_eeprom_file_dummy(
+                            ["\x00" * 256, "\x00" * 2 + "hello" + "\x00" * 249]))
         models = controller.read_all(Model1)
 
         self.assertEquals(10, len(models))
@@ -177,50 +186,51 @@ class EepromControllerTest(unittest.TestCase):
     def test_read_all_fields(self):
         """ Test read_all with a field. """
         controller = EepromController(get_eeprom_file_dummy(
-                        [ "", "", "",
+                        ["", "", "",
                          "\x00" * 4 + "helloworld\x01\x00\x02" + "\x00" * 239,
                          "\x00" * 4 + "secondpage\x02\x00\x03" + "\x00" * 239,
-                         "\x00" * 4 + "anotherone\x04\x00\x05" + "\x00" * 239 ]))
+                         "\x00" * 4 + "anotherone\x04\x00\x05" + "\x00" * 239]))
 
-        models = controller.read_all(Model5, [ "name", "link" ])
+        models = controller.read_all(Model5, ["name", "link"])
 
         self.assertEquals(3, len(models))
 
         self.assertEquals(0, models[0].id)
         self.assertEquals("helloworld", models[0].name)
         self.assertEquals(1, models[0].link)
-        self.assertFalse("out" in models[0].__dict__ )
+        self.assertFalse("out" in models[0].__dict__)
 
         self.assertEquals(1, models[1].id)
         self.assertEquals("secondpage", models[1].name)
         self.assertEquals(2, models[1].link)
-        self.assertFalse("out" in models[1].__dict__ )
+        self.assertFalse("out" in models[1].__dict__)
 
         self.assertEquals(2, models[2].id)
         self.assertEquals("anotherone", models[2].name)
         self.assertEquals(4, models[2].link)
-        self.assertFalse("out" in models[2].__dict__ )
+        self.assertFalse("out" in models[2].__dict__)
 
     def test_get_max_id(self):
         """ Test get_max_id. """
-        controller = EepromController(get_eeprom_file_dummy([ "\x05" + "\x00" * 254 ]))
+        controller = EepromController(get_eeprom_file_dummy(["\x05" + "\x00" * 254]))
         self.assertEquals(10, controller.get_max_id(Model4))
 
-        controller = EepromController(get_eeprom_file_dummy([ "\x10" + "\x00" * 254 ]))
+        controller = EepromController(get_eeprom_file_dummy(["\x10" + "\x00" * 254]))
         self.assertEquals(32, controller.get_max_id(Model4))
 
-        controller = EepromController(get_eeprom_file_dummy([ ]))
+        controller = EepromController(get_eeprom_file_dummy([]))
         self.assertEquals(10, controller.get_max_id(Model1))
 
         try:
             controller.get_max_id(Model2)
             self.fail('Expected TypeError.')
-        except TypeError as e:
-            self.assertTrue('id' in str(e))
+        except TypeError as type_error:
+            self.assertTrue('id' in str(type_error))
 
     def test_write(self):
         """ Test write. """
-        controller = EepromController(get_eeprom_file_dummy([ "\x00" * 256, "\x00" * 256, "\x00" * 256, "\x00" * 256 ]))
+        controller = EepromController(get_eeprom_file_dummy(
+                                ["\x00" * 256, "\x00" * 256, "\x00" * 256, "\x00" * 256]))
         controller.write(Model1(id=1, name="Hello world !" + "\xff" * 10))
 
         model = controller.read(Model1, 1)
@@ -229,7 +239,8 @@ class EepromControllerTest(unittest.TestCase):
 
     def test_write_sparse(self):
         """ Test write when not all fields of the model are provided. """
-        controller = EepromController(get_eeprom_file_dummy([ "\x00" * 256, "\x00" * 256, "\x00" * 256, "\x00" * 256 ]))
+        controller = EepromController(get_eeprom_file_dummy(
+                                ["\x00" * 256, "\x00" * 256, "\x00" * 256, "\x00" * 256]))
         controller.write(Model5(id=0, name="Helloworld"))
 
         model = controller.read(Model5, 0)
@@ -248,8 +259,9 @@ class EepromControllerTest(unittest.TestCase):
 
     def test_write_batch_one(self):
         """ Test write_batch with one model. """
-        controller = EepromController(get_eeprom_file_dummy([ "\x00" * 256, "\x00" * 256, "\x00" * 256, "\x00" * 256 ]))
-        controller.write_batch([ Model1(id=3, name="Hello world !") ])
+        controller = EepromController(get_eeprom_file_dummy(
+                                ["\x00" * 256, "\x00" * 256, "\x00" * 256, "\x00" * 256]))
+        controller.write_batch([Model1(id=3, name="Hello world !")])
 
         model = controller.read(Model1, 3)
         self.assertEquals(3, model.id)
@@ -257,8 +269,10 @@ class EepromControllerTest(unittest.TestCase):
 
     def test_write_batch_multiple(self):
         """ Test write with multiple models. """
-        controller = EepromController(get_eeprom_file_dummy([ "\x00" * 256, "\x00" * 256, "\x00" * 256, "\x00" * 256 ]))
-        controller.write_batch([ Model1(id=3, name="First model"), Model2(name="Second model" + "\x01" * 88) ])
+        controller = EepromController(get_eeprom_file_dummy(
+                                ["\x00" * 256, "\x00" * 256, "\x00" * 256, "\x00" * 256]))
+        controller.write_batch([Model1(id=3, name="First model"),
+                                Model2(name="Second model" + "\x01" * 88)])
 
         model = controller.read(Model1, 3)
         self.assertEquals(3, model.id)
@@ -268,23 +282,25 @@ class EepromControllerTest(unittest.TestCase):
         self.assertEquals("Second model" + "\x01" * 88, model.name)
 
 
-class MasterCommunicatorDummy:
+class MasterCommunicatorDummy(object):
     """ Dummy for the MasterCommunicator. """
 
     def __init__(self, list_function=None, write_function=None):
+        """ Default constructor. """
         self.__list_function = list_function
         self.__write_function = write_function
 
     def do_command(self, cmd, data):
+        """ Execute a command on the master dummy. """
         if cmd == master_api.eeprom_list():
             return self.__list_function(data)
         elif cmd == master_api.read_eeprom():
             bank = self.__list_function(data)["data"]
-            return { "data" : bank[data["addr"] : data["addr"] + data["num"]] }
+            return {"data" : bank[data["addr"] : data["addr"] + data["num"]]}
         elif cmd == master_api.write_eeprom():
             return self.__write_function(data)
         elif cmd == master_api.activate_eeprom():
-            return { "eep" : 0, "resp" : "OK" }
+            return {"eep" : 0, "resp" : "OK"}
         else:
             raise Exception("Command %s not found" % cmd)
 
@@ -295,14 +311,15 @@ class EepromFileTest(unittest.TestCase):
     def test_read_one_bank_one_address(self):
         """ Test read from one bank with one address """
         def read(data):
+            """ Read dummy. """
             if data["bank"] == 1:
-                return { "data" : "abc" + "\xff" * 200 + "def" + "\xff" * 48 }
+                return {"data" : "abc" + "\xff" * 200 + "def" + "\xff" * 48}
             else:
                 raise Exception("Wrong page")
 
-        file = EepromFile(MasterCommunicatorDummy(read))
+        eeprom_file = EepromFile(MasterCommunicatorDummy(read))
         address = EepromAddress(1, 0, 3)
-        data = file.read([ address ])
+        data = eeprom_file.read([address])
 
         self.assertEquals(1, len(data))
         self.assertEquals(address, data[0].address)
@@ -311,16 +328,17 @@ class EepromFileTest(unittest.TestCase):
     def test_read_one_bank_two_addresses(self):
         """ Test read from one bank with two addresses. """
         def read(data):
+            """ Read dummy """
             if data["bank"] == 1:
-                return { "data" : "abc" + "\xff" * 200 + "def" + "\xff" * 48 }
+                return {"data" : "abc" + "\xff" * 200 + "def" + "\xff" * 48}
             else:
                 raise Exception("Wrong page")
 
-        file = EepromFile(MasterCommunicatorDummy(read))
+        eeprom_file = EepromFile(MasterCommunicatorDummy(read))
 
         address1 = EepromAddress(1, 2, 10)
         address2 = EepromAddress(1, 203, 4)
-        data = file.read([ address1, address2 ])
+        data = eeprom_file.read([address1, address2])
 
         self.assertEquals(2, len(data))
 
@@ -333,19 +351,20 @@ class EepromFileTest(unittest.TestCase):
     def test_read_multiple_banks(self):
         """ Test read from multiple banks. """
         def read(data):
+            """ Read dummy. """
             if data["bank"] == 1:
-                return { "data" : "abc" + "\xff" * 200 + "def" + "\xff" * 48 }
+                return {"data" : "abc" + "\xff" * 200 + "def" + "\xff" * 48}
             if data["bank"] == 100:
-                return { "data" : "hello" + "\x00" * 100 + "world" + "\x00" * 146 }
+                return {"data" : "hello" + "\x00" * 100 + "world" + "\x00" * 146}
             else:
                 raise Exception("Wrong page")
 
-        file = EepromFile(MasterCommunicatorDummy(read))
+        eeprom_file = EepromFile(MasterCommunicatorDummy(read))
 
         address1 = EepromAddress(1, 2, 10)
         address2 = EepromAddress(100, 4, 10)
         address3 = EepromAddress(100, 105, 5)
-        data = file.read([ address1, address2, address3 ])
+        data = eeprom_file.read([address1, address2, address3])
 
         self.assertEquals(3, len(data))
 
@@ -363,22 +382,24 @@ class EepromFileTest(unittest.TestCase):
         done = {}
 
         def read(data):
+            """ Read dummy. """
             if data["bank"] == 1:
-                done['read1'] =  True
-                return { "data" : "\xff" * 256 }
+                done['read1'] = True
+                return {"data" : "\xff" * 256}
             else:
                 raise Exception("Wrong page")
 
         def write(data):
+            """ Write dummy. """
             self.assertEquals(1, data["bank"])
             self.assertEquals(2, data["address"])
             self.assertEquals("abc", data["data"])
             done['write'] = True
 
-        mc = MasterCommunicatorDummy(read, write)
+        communicator = MasterCommunicatorDummy(read, write)
 
-        file = EepromFile(mc)
-        file.write([ EepromData(EepromAddress(1, 2, 3), "abc") ])
+        eeprom_file = EepromFile(communicator)
+        eeprom_file.write([EepromData(EepromAddress(1, 2, 3), "abc")])
 
         self.assertTrue('read1' in done)
         self.assertTrue('write' in done)
@@ -388,16 +409,18 @@ class EepromFileTest(unittest.TestCase):
         done = {}
 
         def read(data):
+            """ Read dummy. """
             if data["bank"] == 1:
-                done['read1'] =  True
-                return { "data" : "\xff" * 256 }
+                done['read1'] = True
+                return {"data" : "\xff" * 256}
             elif data["bank"] == 2:
-                done['read2'] =  True
-                return { "data" : "\x00" * 256 }
+                done['read2'] = True
+                return {"data" : "\x00" * 256}
             else:
                 raise Exception("Wrong page")
 
         def write(data):
+            """ Write dummy. """
             if 'write1' not in done:
                 done['write1'] = True
                 self.assertEquals(1, data["bank"])
@@ -416,11 +439,11 @@ class EepromFileTest(unittest.TestCase):
             else:
                 raise Exception("Too many writes")
 
-        mc = MasterCommunicatorDummy(read, write)
+        communicator = MasterCommunicatorDummy(read, write)
 
-        file = EepromFile(mc)
-        file.write([ EepromData(EepromAddress(1, 2, 3), "abc"),
-                     EepromData(EepromAddress(2, 123, 18), "More bytes than 10") ])
+        eeprom_file = EepromFile(communicator)
+        eeprom_file.write([EepromData(EepromAddress(1, 2, 3), "abc"),
+                    EepromData(EepromAddress(2, 123, 18), "More bytes than 10")])
 
         self.assertTrue('read1' in done)
         self.assertTrue('read2' in done)
@@ -433,13 +456,15 @@ class EepromFileTest(unittest.TestCase):
         done = {}
 
         def read(data):
+            """ Read dummy. """
             if data["bank"] == 1:
-                done['read'] =  True
-                return { "data" : "\xff" * 256 }
+                done['read'] = True
+                return {"data" : "\xff" * 256}
             else:
                 raise Exception("Wrong page")
 
         def write(data):
+            """ Write dummy. """
             if 'write1' not in done:
                 done['write1'] = True
                 self.assertEquals(1, data["bank"])
@@ -453,11 +478,11 @@ class EepromFileTest(unittest.TestCase):
             else:
                 raise Exception("Too many writes")
 
-        mc = MasterCommunicatorDummy(read, write)
+        communicator = MasterCommunicatorDummy(read, write)
 
-        file = EepromFile(mc)
-        file.write([ EepromData(EepromAddress(1, 2, 3), "abc"),
-                     EepromData(EepromAddress(1, 8, 11), "defghijklmn") ])
+        eeprom_file = EepromFile(communicator)
+        eeprom_file.write([EepromData(EepromAddress(1, 2, 3), "abc"),
+                           EepromData(EepromAddress(1, 8, 11), "defghijklmn")])
 
         self.assertTrue('read' in done)
         self.assertTrue('write1' in done)
@@ -479,13 +504,13 @@ class EepromModelTest(unittest.TestCase):
         self.assertEquals(2, len(fields))
         self.assertEquals("id", fields[0][0])
         self.assertEquals("name", fields[1][0])
-        
+
         fields = Model6.get_fields()
-        
+
         self.assertEquals(2, len(fields))
         self.assertEquals("name", fields[0][0])
         self.assertEquals("status", fields[1][0])
-        
+
 
     def test_has_id(self):
         """ Test has_id. """
@@ -504,28 +529,28 @@ class EepromModelTest(unittest.TestCase):
         try:
             Model1.check_id(100)
             self.fail("Expected TypeError")
-        except TypeError as e:
-            self.assertTrue("maximum" in str(e))
+        except TypeError as type_error:
+            self.assertTrue("maximum" in str(type_error))
 
         try:
             Model1.check_id(None)
             self.fail("Expected TypeError")
-        except TypeError as e:
-            self.assertTrue("id" in str(e))
+        except TypeError as type_erro:
+            self.assertTrue("id" in str(type_erro))
 
         Model2.check_id(None) ## Should just work
 
         try:
             Model2.check_id(0)
             self.fail("Expected TypeError")
-        except TypeError as e:
-            self.assertTrue("id" in str(e))
+        except TypeError as type_erro:
+            self.assertTrue("id" in str(type_erro))
 
     def test_to_dict(self):
         """ Test to_dict. """
         self.assertEquals({'id':1, 'name':'test'}, Model1(id=1, name="test").to_dict())
         self.assertEquals({'name':'hello world'}, Model2(name="hello world").to_dict())
-        self.assertEquals({'name':'a', 'status':[1,2]}, Model6(name="a", status=[1,2]).to_dict())
+        self.assertEquals({'name':'a', 'status':[1, 2]}, Model6(name="a", status=[1, 2]).to_dict())
 
     def test_from_dict(self):
         """ Test from_dict. """
@@ -535,24 +560,24 @@ class EepromModelTest(unittest.TestCase):
 
         model2 = Model2.from_dict({'name':'test'})
         self.assertEquals('test', model2.name)
-        
-        model6 = Model6.from_dict({'name':u'test', 'status':[1,2]})
+
+        model6 = Model6.from_dict({'name':u'test', 'status':[1, 2]})
         self.assertEquals('test', model6.name)
-        self.assertEquals([1,2], model6.status)
+        self.assertEquals([1, 2], model6.status)
 
     def test_from_dict_error(self):
         """ Test from_dict when the dict does not contain the right keys. """
         try:
             Model1.from_dict({'id':1, 'junk':'test'})
             self.fail("Should have received TypeError")
-        except TypeError as e:
-            self.assertTrue("junk" in str(e))
+        except TypeError as type_error:
+            self.assertTrue("junk" in str(type_error))
 
         try:
             Model1.from_dict({'name':'test'})
             self.fail("Should have received TypeError")
-        except TypeError as e:
-            self.assertTrue("id" in str(e))
+        except TypeError as type_error:
+            self.assertTrue("id" in str(type_error))
 
     def test_to_eeprom_data(self):
         """ Test to_eeprom_data. """
@@ -593,8 +618,8 @@ class EepromModelTest(unittest.TestCase):
         self.assertEquals(15, data[2].address.offset)
         self.assertEquals(2, data[2].address.length)
         self.assertEquals(str(chr(200) + chr(1)), data[2].bytes)
-        
-        model6 = Model6(name=u"test", status=[1,2])
+
+        model6 = Model6(name=u"test", status=[1, 2])
         data = model6.to_eeprom_data()
 
         self.assertEquals(3, len(data))
@@ -602,24 +627,25 @@ class EepromModelTest(unittest.TestCase):
         self.assertEquals(4, data[0].address.offset)
         self.assertEquals(10, data[0].address.length)
         self.assertEquals("test" + "\xff" * 6, data[0].bytes)
-        
+
         self.assertEquals(3, data[1].address.bank)
         self.assertEquals(14, data[1].address.offset)
         self.assertEquals(1, data[1].address.length)
         self.assertEquals(str(chr(1)), data[1].bytes)
-        
+
         self.assertEquals(3, data[2].address.bank)
         self.assertEquals(15, data[2].address.offset)
         self.assertEquals(2, data[2].address.length)
         self.assertEquals("\x02\x00", data[2].bytes)
-        
+
 
     def test_to_eeprom_data_readonly(self):
         """ Test to_eeprom_data with a read only field. """
         class RoModel(EepromModel):
+            """ Dummy model. """
             id = EepromId(10)
             name = EepromString(100, lambda id: (1, 2 + id))
-            other = EepromByte((0,0), read_only=True)
+            other = EepromByte((0, 0), read_only=True)
 
         model = RoModel(id=1, name=u"test", other=4)
         data = model.to_eeprom_data()
@@ -632,52 +658,52 @@ class EepromModelTest(unittest.TestCase):
 
     def test_from_eeprom_data(self):
         """ Test from_eeprom_data. """
-        model1_data = [ EepromData(EepromAddress(1, 3, 100), "test" + "\xff" * 96)]
+        model1_data = [EepromData(EepromAddress(1, 3, 100), "test" + "\xff" * 96)]
         model1 = Model1.from_eeprom_data(model1_data, 1)
         self.assertEquals(1, model1.id)
         self.assertEquals("test", model1.name)
 
-        model2_data = [ EepromData(EepromAddress(3, 4, 100), "hello world" + "\xff" * 89)]
+        model2_data = [EepromData(EepromAddress(3, 4, 100), "hello world" + "\xff" * 89)]
         model2 = Model2.from_eeprom_data(model2_data)
         self.assertEquals("hello world", model2.name)
 
-        model3_data = [ EepromData(EepromAddress(3, 4, 10), "hello worl"),
-                        EepromData(EepromAddress(3, 14, 1), str(chr(123))),
-                        EepromData(EepromAddress(3, 15, 2), str(chr(200) + chr(1))) ]
+        model3_data = [EepromData(EepromAddress(3, 4, 10), "hello worl"),
+                       EepromData(EepromAddress(3, 14, 1), str(chr(123))),
+                       EepromData(EepromAddress(3, 15, 2), str(chr(200) + chr(1)))]
         model3 = Model3.from_eeprom_data(model3_data)
         self.assertEquals("hello worl", model3.name)
         self.assertEquals(123, model3.link)
         self.assertEquals(456, model3.out)
 
-        model6_data = [ EepromData(EepromAddress(3, 4, 10), "test" + "\xff" * 6),
-                        EepromData(EepromAddress(3, 14, 1), str(chr(1))),
-                        EepromData(EepromAddress(3, 15, 2), str(chr(2) + chr(0))) ]
+        model6_data = [EepromData(EepromAddress(3, 4, 10), "test" + "\xff" * 6),
+                       EepromData(EepromAddress(3, 14, 1), str(chr(1))),
+                       EepromData(EepromAddress(3, 15, 2), str(chr(2) + chr(0)))]
         model6 = Model6.from_eeprom_data(model6_data)
-        
+
         self.assertEquals("test", model6.name)
-        self.assertEquals([1,2], model6.status)
+        self.assertEquals([1, 2], model6.status)
 
     def test_from_eeprom_wrong_address(self):
         """ Test from_eeprom_data with wrong address. """
         try:
-            model1_data = [ EepromData(EepromAddress(3, 4, 100), "test" + "\xff" * 96)]
+            model1_data = [EepromData(EepromAddress(3, 4, 100), "test" + "\xff" * 96)]
             Model1.from_eeprom_data(model1_data, 1)
             self.fail("Should have receive KeyError.")
-        except KeyError as e:
-            self.assertTrue("(B1 A3 L100)" in str(e))
+        except KeyError as key_error:
+            self.assertTrue("(B1 A3 L100)" in str(key_error))
 
     def test_from_eeprom_wrong_data(self):
         """ Test from_eeprom_data with wrong data. """
 
         try:
-            model3_data = [ EepromData(EepromAddress(3, 4, 10), "hello worljkfdsjklsadfjklsadf"),
-                            EepromData(EepromAddress(3, 14, 1), str(chr(123))),
-                            EepromData(EepromAddress(3, 15, 2), str(chr(1) + chr(200))) ]
+            model3_data = [EepromData(EepromAddress(3, 4, 10), "hello worljkfdsjklsadfjklsadf"),
+                           EepromData(EepromAddress(3, 14, 1), str(chr(123))),
+                           EepromData(EepromAddress(3, 15, 2), str(chr(1) + chr(200)))]
 
             Model3.from_eeprom_data(model3_data)
             self.fail("Should have receive TypeError.")
-        except TypeError as e:
-            self.assertTrue("Length" in str(e))
+        except TypeError as type_error:
+            self.assertTrue("Length" in str(type_error))
 
     def test_get_addresses(self):
         """ Test get_addresses. """
@@ -731,20 +757,20 @@ class EepromModelTest(unittest.TestCase):
         try:
             Model1.get_addresses(None)
             self.fail("Expected TypeError.")
-        except TypeError as e:
-            self.assertTrue("id" in str(e))
+        except TypeError as type_error:
+            self.assertTrue("id" in str(type_error))
 
 
 class CompositeDataTypeTest(unittest.TestCase):
     """ Tests for CompositeDataType. """
-    
+
     def test_get_addresses(self):
         """ Test get_addresses. """
-        cdt = CompositeDataType([('one', EepromByte((1,2))), ('two', EepromByte((1,3)))])
+        cdt = CompositeDataType([('one', EepromByte((1, 2))), ('two', EepromByte((1, 3)))])
         addresses = cdt.get_addresses()
-        
+
         self.assertEquals(2, len(addresses))
-        
+
         self.assertEquals(1, addresses[0].bank)
         self.assertEquals(2, addresses[0].offset)
         self.assertEquals(1, addresses[0].length)
@@ -752,14 +778,15 @@ class CompositeDataTypeTest(unittest.TestCase):
         self.assertEquals(1, addresses[1].bank)
         self.assertEquals(3, addresses[1].offset)
         self.assertEquals(1, addresses[1].length)
-    
+
     def test_get_addresses_id(self):
         """ Test get_addresses with an id. """
-        cdt = CompositeDataType([('one', EepromByte(lambda id: (1, 10+id))), ('two', EepromByte(lambda id : (1, 20+id)))])
+        cdt = CompositeDataType([('one', EepromByte(lambda id: (1, 10+id))),
+                                 ('two', EepromByte(lambda id: (1, 20+id)))])
         addresses = cdt.get_addresses(id=5)
-        
+
         self.assertEquals(2, len(addresses))
-        
+
         self.assertEquals(1, addresses[0].bank)
         self.assertEquals(15, addresses[0].offset)
         self.assertEquals(1, addresses[0].length)
@@ -770,33 +797,34 @@ class CompositeDataTypeTest(unittest.TestCase):
 
     def test_get_name(self):
         """ Test get_name. """
-        cdt = CompositeDataType([('one', EepromByte((1,2))), ('two', EepromByte((1,3)))])
+        cdt = CompositeDataType([('one', EepromByte((1, 2))), ('two', EepromByte((1, 3)))])
         self.assertEquals("[one(Byte),two(Byte)]", cdt.get_name())
-    
+
     def test_from_data_dict(self):
         """ Test from_data_dict. """
-        cdt = CompositeDataType([('one', EepromByte((1,2))), ('two', EepromByte((1,3)))])
-        
-        a1 = EepromAddress(1,2,1)
-        a2 = EepromAddress(1,3,1)
-        
-        data_dict = { a1 : EepromData(a1, str(chr(12))), a2 : EepromData(a1, str(chr(34))) }
-        self.assertEquals([12,34], cdt.from_data_dict(data_dict))
-    
+        cdt = CompositeDataType([('one', EepromByte((1, 2))), ('two', EepromByte((1, 3)))])
+
+        addr1 = EepromAddress(1, 2, 1)
+        addr2 = EepromAddress(1, 3, 1)
+
+        data_dict = {addr1 : EepromData(addr1, str(chr(12))),
+                     addr2 : EepromData(addr2, str(chr(34)))}
+        self.assertEquals([12, 34], cdt.from_data_dict(data_dict))
+
     def test_to_eeprom_data(self):
         """ Test to_eeprom_data. """
-        cdt = CompositeDataType([('one', EepromByte((1,2))), ('two', EepromByte((1,3)))])
-        
-        data = cdt.to_eeprom_data([34,12])
-        
+        cdt = CompositeDataType([('one', EepromByte((1, 2))), ('two', EepromByte((1, 3)))])
+
+        data = cdt.to_eeprom_data([34, 12])
+
         self.assertEquals(2, len(data))
-        
-        self.assertEquals(EepromAddress(1,2,1), data[0].address)
+
+        self.assertEquals(EepromAddress(1, 2, 1), data[0].address)
         self.assertEquals(str(chr(34)), data[0].bytes)
-        
-        self.assertEquals(EepromAddress(1,3,1), data[1].address)
+
+        self.assertEquals(EepromAddress(1, 3, 1), data[1].address)
         self.assertEquals(str(chr(12)), data[1].bytes)
-    
+
     def test_is_writable(self):
         """ Test is_writable """
         cdt = CompositeDataType([])
@@ -812,66 +840,66 @@ class EepromActionsTest(unittest.TestCase):
 
     def test_from_bytes(self):
         """ Test from_bytes. """
-        ea = EepromActions(1, (0, 0))
-        self.assertEquals("1,2", ea.from_bytes("\x01\x02"))
-        
-        ea = EepromActions(2, (0, 0))
-        self.assertEquals("1,2", ea.from_bytes("\x01\x02\xff\xff"))
-    
+        actions = EepromActions(1, (0, 0))
+        self.assertEquals("1,2", actions.from_bytes("\x01\x02"))
+
+        actions = EepromActions(2, (0, 0))
+        self.assertEquals("1,2", actions.from_bytes("\x01\x02\xff\xff"))
+
     def test_to_bytes(self):
         """ Test to_bytes. """
-        ea = EepromActions(1, (0, 0))
-        self.assertEquals("\x01\x02", ea.to_bytes("1,2"))
-        
-        ea = EepromActions(2, (0, 0))
-        self.assertEquals("\x01\x02\xff\xff", ea.to_bytes("1,2"))
+        actions = EepromActions(1, (0, 0))
+        self.assertEquals("\x01\x02", actions.to_bytes("1,2"))
+
+        actions = EepromActions(2, (0, 0))
+        self.assertEquals("\x01\x02\xff\xff", actions.to_bytes("1,2"))
 
 
 class EepromSignedTempTest(unittest.TestCase):
     """ Tests for EepromSignedTemp. """
-    
+
     def test_from_bytes(self):
         """ Test from_bytes. """
-        st = EepromSignedTemp((0, 0))
-        self.assertEquals(0.0, st.from_bytes("\xff"))
-        self.assertEquals(1.0, st.from_bytes("\x02"))
-        self.assertEquals(-1.0, st.from_bytes("\x82"))
-        self.assertEquals(7.5, st.from_bytes("\x0f"))
-        self.assertEquals(-7.5, st.from_bytes("\x8f"))
-    
+        temp = EepromSignedTemp((0, 0))
+        self.assertEquals(0.0, temp.from_bytes("\xff"))
+        self.assertEquals(1.0, temp.from_bytes("\x02"))
+        self.assertEquals(-1.0, temp.from_bytes("\x82"))
+        self.assertEquals(7.5, temp.from_bytes("\x0f"))
+        self.assertEquals(-7.5, temp.from_bytes("\x8f"))
+
     def test_to_bytes(self):
         """ Test to_bytes. """
-        st = EepromSignedTemp((0, 0))
-        self.assertEquals("\xff", st.to_bytes(0.0))
-        self.assertEquals("\x02", st.to_bytes(1.0))
-        self.assertEquals("\x82", st.to_bytes(-1.0))
-        self.assertEquals("\x0f", st.to_bytes(7.5))
-        self.assertEquals("\x8f", st.to_bytes(-7.5))
-    
+        temp = EepromSignedTemp((0, 0))
+        self.assertEquals("\xff", temp.to_bytes(0.0))
+        self.assertEquals("\x02", temp.to_bytes(1.0))
+        self.assertEquals("\x82", temp.to_bytes(-1.0))
+        self.assertEquals("\x0f", temp.to_bytes(7.5))
+        self.assertEquals("\x8f", temp.to_bytes(-7.5))
+
     def test_to_bytes_out_of_range(self):
         """ Test to_bytes with out of range values. """
-        st = EepromSignedTemp((0, 0))
-        
+        temp = EepromSignedTemp((0, 0))
+
         try:
-            st.to_bytes(8)
+            temp.to_bytes(8)
             self.fail("Expected ValueError.")
         except ValueError:
             pass
-        
+
         try:
-            st.to_bytes(45)
+            temp.to_bytes(45)
             self.fail("Expected ValueError.")
         except ValueError:
             pass
-        
+
         try:
-            st.to_bytes(-8)
+            temp.to_bytes(-8)
             self.fail("Expected ValueError.")
         except ValueError:
             pass
-        
+
         try:
-            st.to_bytes(-89)
+            temp.to_bytes(-89)
             self.fail("Expected ValueError.")
         except ValueError:
             pass

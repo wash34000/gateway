@@ -1,4 +1,10 @@
-from power_command import PowerCommand
+'''
+Contains the definition of the power modules Api.
+
+@author: fryckbos
+'''
+
+from power.power_command import PowerCommand
 
 BROADCAST_ADDRESS = 255
 

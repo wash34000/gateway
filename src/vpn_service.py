@@ -28,7 +28,7 @@ def reboot_gateway():
     subprocess.call('reboot', shell=True)
 
 
-class VpnController:
+class VpnController(object):
     """ Contains methods to check the vpn status, start and stop the vpn. """
 
     vpnService = "openvpn.service"
@@ -52,7 +52,7 @@ class VpnController:
         return subprocess.call(VpnController.checkCmd, shell=True) == 0
 
 
-class Cloud:
+class Cloud(object):
     """ Connects to the OpenMotics cloud to check if the vpn should be opened. """
 
     DEFAULT_SLEEP_TIME = 30
@@ -68,17 +68,18 @@ class Cloud:
     def should_open_vpn(self, extra_data):
         """ Check with the OpenMotics could if we should open a VPN """
         try:
-            r = requests.post(self.__url, data={'extra_data' : json.dumps(extra_data)}, timeout=10.0, verify=True)
-            data = json.loads(r.text)
+            request = requests.post(self.__url, data={'extra_data' : json.dumps(extra_data)},
+                                    timeout=10.0, verify=True)
+            data = json.loads(request.text)
 
             if 'sleep_time' in data:
                 self.__sleep_time = data['sleep_time']
             else:
-                self.__sleep_time = DEFAULT_SLEEP_TIME
+                self.__sleep_time = Cloud.DEFAULT_SLEEP_TIME
 
             if 'actions' in data:
                 self.__action_executor.execute_actions_in_background(data['actions'])
-            
+
             if 'modes' in data:
                 self.__modes = data['modes']
             else:
@@ -108,7 +109,7 @@ class Cloud:
         """ Get the timestamp of the last connection with the cloud. """
         return self.__last_connect
 
-class Gateway:
+class Gateway(object):
     """ Class to get the current status of the gateway. """
 
     def __init__(self, host="127.0.0.1"):
@@ -119,8 +120,8 @@ class Gateway:
         """ Do a call to the webservice, returns a dict parsed from the json returned by the
         webserver. """
         try:
-            r = requests.get("http://" + self.__host + "/" + uri, timeout=15.0)
-            return json.loads(r.text)
+            request = requests.get("http://" + self.__host + "/" + uri, timeout=15.0)
+            return json.loads(request.text)
         except Exception as exception:
             print "Exception during getting output status: ", exception
             return None
@@ -151,12 +152,11 @@ class Gateway:
         if data == None or data['success'] == False:
             return None
         else:
-            ret = { 'thermostats_on' : data['thermostats_on'], 'automatic' : data['automatic'] }
+            ret = {'thermostats_on' : data['thermostats_on'], 'automatic' : data['automatic']}
             thermostats = []
             for thermostat in data['status']:
                 to_add = {}
-                for field in [ 'id', 'act', 'csetp', 'mode', 'output0', 'output1',
-                               'outside' ]:
+                for field in ['id', 'act', 'csetp', 'mode', 'output0', 'output1', 'outside']:
                     to_add[field] = thermostat[field]
                 thermostats.append(to_add)
             ret['status'] = thermostats
@@ -164,12 +164,12 @@ class Gateway:
 
     def get_update_status(self):
         """ Get the status of an executing update. """
-        update_status_file = '/opt/openmotics/update_status'
-        if os.path.exists(update_status_file):
-            f = open(update_status_file, 'r')
-            status = f.read()
-            f.close()
-            os.remove(update_status_file)
+        filename = '/opt/openmotics/update_status'
+        if os.path.exists(filename):
+            update_status_file = open(filename, 'r')
+            status = update_status_file.read()
+            update_status_file.close()
+            os.remove(filename)
             return status
         else:
             return None
@@ -201,10 +201,10 @@ class Gateway:
             counters = data['counters']
 
             if self.__last_pulse_counters == None:
-                ret = [ 0 for i in range(0, 8) ]
+                ret = [0 for i in range(0, 8)]
             else:
-                ret = [ self.__counter_diff(counters[i], self.__last_pulse_counters[i])
-                         for i in range(0, 8) ]
+                ret = [self.__counter_diff(counters[i], self.__last_pulse_counters[i])
+                       for i in range(0, 8)]
 
             self.__last_pulse_counters = counters
             return ret
@@ -221,13 +221,13 @@ class Gateway:
             return None
         else:
             if data['errors'] != None:
-                master_errors = sum(map(lambda x: x[1], data['errors']))
+                master_errors = sum([error[1] for error in data['errors']])
             else:
                 master_errors = 0
 
-            return { 'master_errors': master_errors,
-                     'master_last_success': data['master_last_success'],
-                     'power_last_success': data['power_last_success'] }
+            return {'master_errors': master_errors,
+                    'master_last_success': data['master_last_success'],
+                    'power_last_success': data['power_last_success']}
 
     def get_local_ip_address(self):
         """ Get the local ip address. """
@@ -239,32 +239,42 @@ class Gateway:
 
     def get_modules(self):
         """ Get the modules known by the master.
-        :returns: a list of characters. The master module (M), the output modules (O, D or R), 
-        the input modules (I or T), followed by the power modules (P). 
+        :returns: a list of characters. The master module (M), the output modules (O, D or R),
+        the input modules (I or T), followed by the power modules (P).
         """
         data = self.do_call("get_modules?token=None")
         power_data = self.do_call("get_power_modules?token=None")
-        
+
         data_failed = data == None or data['success'] == False
         power_failed = power_data == None or power_data['success'] == False
-        
+
         if data_failed and power_failed:
             return None
         else:
             ret = []
-            
+
             if not data_failed:
                 ret.append('M')
                 for mod in data['outputs']:
                     ret.append(str(mod))
                 for mod in data['inputs']:
                     ret.append(str(mod))
-            
+
             if not power_failed:
-                for i in range(len(power_data['modules'])):
+                for _ in range(len(power_data['modules'])):
                     ret.append('P')
-            
+
             return ret
+
+    def get_module_log(self):
+        """ Get the module log.
+        :returns: a list of tuples (log_level, message).
+        """
+        data = self.do_call("get_module_log?token=None")
+        if data == None or data['success'] == False:
+            return None
+        else:
+            return data['log']
 
     def get_last_inputs(self):
         """ Get the last pressed inputs.
@@ -274,8 +284,8 @@ class Gateway:
         if data == None or data['success'] == False:
             return None
         else:
-            return [ t[0] for t in data['inputs'] ]
-    
+            return [t[0] for t in data['inputs']]
+
     def get_sensor_temperature_status(self):
         """ Get the temperature measured of the sensors.
         :returns: a list of temperatures.
@@ -285,7 +295,7 @@ class Gateway:
             return None
         else:
             return data['status']
-    
+
     def get_sensor_humidity_status(self):
         """ Get the humidity measured by the sensors.
         :returns: a list of humidity values.
@@ -295,7 +305,7 @@ class Gateway:
             return None
         else:
             return data['status']
-    
+
     def get_sensor_brightness_status(self):
         """ Get the brightness measured by the sensors.
         :returns: a list of brightness values.
@@ -307,7 +317,10 @@ class Gateway:
             return data['status']
 
 
-class DataCollector:
+class DataCollector(object):
+    """ Defines a function to retrieve data, the period between two collections. If a mode is
+    specified, the collector will only collect data if the mode is enabled.
+    """
 
     def __init__(self, function, period=0, mode=None):
         """
@@ -337,12 +350,12 @@ class DataCollector:
                 return self.__function()
             else:
                 return None
-        except Exception as e:
-            print "Exception while collecting data"
+        except Exception as exception:
+            print "Exception while collecting data: ", exception
             traceback.print_exc()
 
 
-class ActionExecutor:
+class ActionExecutor(object):
     """ Executes actions received from the cloud. """
 
     def __init__(self, gateway):
@@ -352,11 +365,12 @@ class ActionExecutor:
     def execute_actions_in_background(self, actions):
         """ Execute a list of actions in the background. """
         def run():
+            """ Function that executes a list of actions. """
             for action in actions:
                 try:
                     self.execute(action)
-                except Exception as e:
-                    print "Error wile executing action '" + str(action) + "': " + str(e)
+                except Exception as exception:
+                    print "Error wile executing action '" + str(action) + "': " + str(exception)
 
         thread = Thread(name="Action Executor", target=run)
         thread.daemon = True
@@ -381,8 +395,9 @@ class ActionExecutor:
             self.__gateway.do_call("set_all_lights_floor_on?floor=%s&token=None" % args['floor'])
 
         elif name == 'set_current_setpoint':
-            self.__gateway.do_call("set_current_setpoint?thermostat=%s&temperature=%s&token=None" % \
-                                   (args['thermostat'], args['temperature']))
+            self.__gateway.do_call(
+                    "set_current_setpoint?thermostat=%s&temperature=%s&token=None" % \
+                    (args['thermostat'], args['temperature']))
 
         elif name == 'set_mode':
             self.__gateway.do_call("set_mode?on=%s&automatic=%s&setpoint=%s&token=None" % \
@@ -413,19 +428,23 @@ def main():
     gateway = Gateway()
     cloud = Cloud(check_url, led_service, ActionExecutor(gateway))
 
-    collectors = { 'energy' : DataCollector(gateway.get_total_energy, 300),
-                   'thermostats' : DataCollector(gateway.get_thermostats, 60),
-                   'pulses' : DataCollector(gateway.get_pulse_counter_status, 60),
-                   'outputs' : DataCollector(gateway.get_enabled_outputs, mode='rt'),
-                   'power' : DataCollector(gateway.get_real_time_power, mode='rt'),
-                   'update' : DataCollector(gateway.get_update_status),
-                   'errors': DataCollector(gateway.get_errors, 600),
-                   'local_ip' : DataCollector(gateway.get_local_ip_address, 1800),
-                   'modules' : DataCollector(gateway.get_modules, 10, mode='init'),
-                   'last_inputs' : DataCollector(gateway.get_last_inputs, 10, mode='init'),
-                   'sensor_tmp' : DataCollector(gateway.get_sensor_temperature_status, 30, mode='init'),
-                   'sensor_hum' : DataCollector(gateway.get_sensor_humidity_status, 30, mode='init'),
-                   'sensor_bri' : DataCollector(gateway.get_sensor_brightness_status, 30, mode='init') }
+    collectors = {'energy' : DataCollector(gateway.get_total_energy, 300),
+                  'thermostats' : DataCollector(gateway.get_thermostats, 60),
+                  'pulses' : DataCollector(gateway.get_pulse_counter_status, 60),
+                  'outputs' : DataCollector(gateway.get_enabled_outputs, mode='rt'),
+                  'power' : DataCollector(gateway.get_real_time_power, mode='rt'),
+                  'update' : DataCollector(gateway.get_update_status),
+                  'errors': DataCollector(gateway.get_errors, 600),
+                  'local_ip' : DataCollector(gateway.get_local_ip_address, 1800),
+                  'modules' : DataCollector(gateway.get_modules, mode='init'),
+                  'module_log' : DataCollector(gateway.get_module_log, mode='init'),
+                  'last_inputs' : DataCollector(gateway.get_last_inputs, mode='init'),
+                  'sensor_tmp' : DataCollector(gateway.get_sensor_temperature_status, 10,
+                                               mode='init'),
+                  'sensor_hum' : DataCollector(gateway.get_sensor_humidity_status, 10,
+                                               mode='init'),
+                  'sensor_bri' : DataCollector(gateway.get_sensor_brightness_status, 10,
+                                               mode='init')}
 
     iterations = 0
 
@@ -441,8 +460,8 @@ def main():
         should_open = cloud.should_open_vpn(vpn_data)
 
         if iterations > 20 and cloud.get_last_connect() < time.time() - REBOOT_TIMEOUT:
-            ''' The cloud is not responding for a while, perhaps the BeagleBone network stack is
-            hanging, reboot the gateway to reset the BeagleBone. '''
+            # The cloud is not responding for a while, perhaps the BeagleBone network stack is
+            # hanging, reboot the gateway to reset the BeagleBone.
             reboot_gateway()
 
         is_open = vpn.check_vpn()

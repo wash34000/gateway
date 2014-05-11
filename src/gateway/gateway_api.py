@@ -24,15 +24,18 @@ from master.thermostats import ThermostatStatus
 from master.master_communicator import BackgroundConsumer
 
 from master.eeprom_controller import EepromController, EepromFile
-from master.eeprom_models import OutputConfiguration, InputConfiguration, ThermostatConfiguration, SensorConfiguration, PumpGroupConfiguration, GroupActionConfiguration, ScheduledActionConfiguration, PulseCounterConfiguration, StartupActionConfiguration, DimmerConfiguration, GlobalThermostatConfiguration
+from master.eeprom_models import OutputConfiguration, InputConfiguration, ThermostatConfiguration,\
+              SensorConfiguration, PumpGroupConfiguration, GroupActionConfiguration, \
+              ScheduledActionConfiguration, PulseCounterConfiguration, StartupActionConfiguration,\
+              DimmerConfiguration, GlobalThermostatConfiguration
 
 import power.power_api as power_api
 
-def checkNaN(number):
-    """ Convert NaN to 0. """
+def convert_nan(number):
+    """ Convert nan to 0. """
     return 0.0 if math.isnan(number) else number
 
-class GatewayApi:
+class GatewayApi(object):
     """ The GatewayApi combines master_api functions into high level functions. """
 
     def __init__(self, master_communicator, power_communicator, power_controller):
@@ -50,6 +53,10 @@ class GatewayApi:
         self.__input_status = InputStatus()
         self.__master_communicator.register_consumer(
                     BackgroundConsumer(master_api.input_list(), 0, self.__update_inputs))
+
+        self.__module_log = []
+        self.__master_communicator.register_consumer(
+                    BackgroundConsumer(master_api.module_initialize(), 0, self.__update_modules))
 
         self.__thermostat_status = None
 
@@ -71,42 +78,42 @@ class GatewayApi:
         """ Initialize the master: disable the async RO messages, enable async OL messages. """
         try:
             eeprom_data = self.__master_communicator.do_command(master_api.eeprom_list(),
-                { "bank" : 0 })['data']
+                {"bank" : 0})['data']
 
             write = False
 
             if eeprom_data[11] != chr(255):
                 LOGGER.info("Disabling async RO messages.")
                 self.__master_communicator.do_command(master_api.write_eeprom(),
-                    { "bank" : 0, "address": 11, "data": chr(255) })
+                    {"bank" : 0, "address": 11, "data": chr(255)})
                 write = True
 
             if eeprom_data[18] != chr(0):
                 LOGGER.info("Enabling async OL messages.")
                 self.__master_communicator.do_command(master_api.write_eeprom(),
-                    { "bank" : 0, "address": 18, "data": chr(0) })
+                    {"bank" : 0, "address": 18, "data": chr(0)})
                 write = True
 
             if eeprom_data[20] != chr(0):
                 LOGGER.info("Enabling async IL messages.")
                 self.__master_communicator.do_command(master_api.write_eeprom(),
-                    { "bank" : 0, "address": 20, "data": chr(0) })
+                    {"bank" : 0, "address": 20, "data": chr(0)})
                 write = True
 
             if write:
-                self.__master_communicator.do_command(master_api.activate_eeprom(), { 'eep' : 0 })
+                self.__master_communicator.do_command(master_api.activate_eeprom(), {'eep' : 0})
 
         except CommunicationTimedOutException:
             LOGGER.error("Got CommunicationTimedOutException during gateway_api initialization.")
 
     def __run_master_timer(self):
-        """ Run the master timer, this sets the masters clock if it differs more than 3 minutes from the
-        gateway clock. """
-        
+        """ Run the master timer, this sets the masters clock if it differs more than 3 minutes
+        from the gateway clock. """
+
         try:
             status = self.__master_communicator.do_command(master_api.status())
-            date = "%02d.%02d.%02d %02d:%02d:%02d" % (status['day'], status['month'], status['year'],
-                                          status['hours'], status['minutes'], status['seconds'])
+            date = "%02d.%02d.%02d %02d:%02d:%02d" % (status['day'], status['month'],
+                        status['year'], status['hours'], status['minutes'], status['seconds'])
 
             epoch_master = pytime.mktime(pytime.strptime(date, "%d.%m.%y %H:%M:%S"))
             epoch_gateway = pytime.time()
@@ -127,7 +134,7 @@ class GatewayApi:
         self.__master_communicator.do_command(master_api.set_time(),
                   {'sec': now.second, 'min': now.minute, 'hours': now.hour,
                    'weekday': now.isoweekday(), 'day': now.day, 'month': now.month,
-                   'year': now.year % 100 })
+                   'year': now.year % 100})
 
     ###### Maintenance functions
 
@@ -201,35 +208,50 @@ class GatewayApi:
                   and 'hw_version' (hardware version)
         """
         out_dict = self.__master_communicator.do_command(master_api.status())
-        return { 'time' : '%02d:%02d' % (out_dict['hours'], out_dict['minutes']),
-                 'date' : '%02d/%02d/%d' % (out_dict['day'], out_dict['month'], out_dict['year']),
-                 'mode' : out_dict['mode'],
-                 'version' : "%d.%d.%d" % (out_dict['f1'], out_dict['f2'], out_dict['f3']),
-                 'hw_version' : out_dict['h']
-               }
+        return {'time' : '%02d:%02d' % (out_dict['hours'], out_dict['minutes']),
+                'date' : '%02d/%02d/%d' % (out_dict['day'], out_dict['month'], out_dict['year']),
+                'mode' : out_dict['mode'],
+                'version' : "%d.%d.%d" % (out_dict['f1'], out_dict['f2'], out_dict['f3']),
+                'hw_version' : out_dict['h']}
 
     def reset_master(self):
         """ Perform a cold reset on the master. Turns the power off, waits 5 seconds and
         turns the power back on.
-        
+
         :returns: 'status': 'OK'.
         """
         gpio_direction = open('/sys/class/gpio/gpio44/direction', 'w')
         gpio_direction.write('out')
         gpio_direction.close()
-        
-        def power(on):
+
+        def power(master_on):
+            """ Set the power on the master. """
             gpio_file = open('/sys/class/gpio/gpio44/value', 'w')
-            gpio_file.write('1' if on else '0')
+            gpio_file.write('1' if master_on else '0')
             gpio_file.close()
-        
+
         power(False)
         pytime.sleep(5)
         power(True)
-        
-        return { 'status' : 'OK' }
+
+        return {'status' : 'OK'}
 
     ###### Master module functions
+
+    def __update_modules(self, api_data):
+        """ Create a log entry when the MI message is received. """
+        module_map = {'O' : 'output', 'I' : 'input', 'T' : 'temperature', 'D' : 'dimmer'}
+        message_map = {'N' : 'New %s module found.',
+                       'E' : 'Existing %s module found.',
+                       'D' : 'The %s module tried to register but the registration failed, '
+                             'please presse the init button again.'}
+        log_level_map = {'N' : 'INFO', 'E' : 'WARN', 'D' : 'ERROR'}
+
+        module_type = module_map.get(api_data['id'][0])
+        message = message_map.get(api_data['instr']) % module_type
+        log_level = log_level_map.get(api_data['instr'])
+
+        self.__module_log.append((log_level, message))
 
     def module_discover_start(self, timeout=900):
         """ Start the module discover mode on the master.
@@ -244,7 +266,9 @@ class GatewayApi:
         self.__discover_mode_timer = Timer(timeout, self.module_discover_stop)
         self.__discover_mode_timer.start()
 
-        return { 'status' : ret['resp'] }
+        self.__module_log = []
+
+        return {'status' : ret['resp']}
 
     def module_discover_stop(self):
         """ Stop the module discover mode on the master.
@@ -257,12 +281,24 @@ class GatewayApi:
             self.__discover_mode_timer.cancel()
             self.__discover_mode_timer = None
 
-        return { 'status' : ret['resp'] }
+        self.__module_log = []
+
+        return {'status' : ret['resp']}
+
+    def get_module_log(self):
+        """ Get the log messages from the module discovery mode. This returns the current log
+        messages and clear the log messages.
+        
+        :returns: dict with 'log' (list of tuples (log_level, message)).
+        """
+        (module_log, self.__module_log) = (self.__module_log, [])
+        return {'log' : module_log}
 
     def get_modules(self):
         """ Get a list of all modules attached and registered with the master.
 
-        :returns: dict with 'output' (list of module types: O,R,D) and 'input' (list of input module types: I,T,L).
+        :returns: dict with 'output' (list of module types: O,R,D) and 'input' \
+        (list of input module types: I,T,L).
         """
         mods = self.__master_communicator.do_command(master_api.number_of_io_modules())
 
@@ -272,30 +308,31 @@ class GatewayApi:
         for i in range(mods['in']):
             ret = self.__master_communicator.do_command(
                             master_api.read_eeprom(),
-                            { 'bank' : 2 + i, 'addr' : 0, 'num' : 1 })
+                            {'bank' : 2 + i, 'addr' : 0, 'num' : 1})
 
             inputs.append(ret['data'][0])
 
         for i in range(mods['out']):
             ret = self.__master_communicator.do_command(
                             master_api.read_eeprom(),
-                            { 'bank' : 33 + i, 'addr' : 0, 'num' : 1 })
+                            {'bank' : 33 + i, 'addr' : 0, 'num' : 1})
 
             outputs.append(ret['data'][0])
 
-        return { 'outputs' : outputs, 'inputs' : inputs }
+        return {'outputs' : outputs, 'inputs' : inputs}
 
     def flash_leds(self, type, id):
         """ Flash the leds on the module for an output/input/sensor.
-        
+
         :type type: byte
         :param type: The module type: output/dimmer (0), input (1), sensor/temperatur (2).
         :type id: bytes
         :param id: The id of the output/input/sensor.
         :returns: dict with 'status' ('OK').
         """
-        ret = self.__master_communicator.do_command(master_api.indicate(), { 'type' : type, 'id' : id })
-        return { 'status' : ret['resp'] }
+        ret = self.__master_communicator.do_command(master_api.indicate(),
+                                                    {'type' : type, 'id' : id})
+        return {'status' : ret['resp']}
 
 
     ###### Output functions
@@ -311,7 +348,7 @@ class GatewayApi:
         outputs = []
         for i in range(0, num_outputs):
             outputs.append(self.__master_communicator.do_command(master_api.read_output(),
-                                                                 { 'id' : i }))
+                                                                 {'id' : i}))
         return outputs
 
     def __update_outputs(self, ol_output):
@@ -337,9 +374,9 @@ class GatewayApi:
             self.__output_status.full_update(self.__read_outputs())
 
         outputs = self.__output_status.get_outputs()
-        return [ { 'id':output['id'], 'status':output['status'],
-                   'ctimer':output['ctimer'], 'dimmer':output['dimmer'] }
-                  for output in outputs ]
+        return [{'id':output['id'], 'status':output['status'],
+                 'ctimer':output['ctimer'], 'dimmer':output['dimmer']}
+                 for output in outputs]
 
     def set_output(self, id, is_on, dimmer=None, timer=None):
         """ Set the status, dimmer and timer of an output.
@@ -384,10 +421,10 @@ class GatewayApi:
 
         if is_on:
             self.__master_communicator.do_command(master_api.basic_action(),
-                    { "action_type" : master_api.BA_LIGHT_ON, "action_number" : id })
+                    {"action_type" : master_api.BA_LIGHT_ON, "action_number" : id})
         else:
             self.__master_communicator.do_command(master_api.basic_action(),
-                    { "action_type" : master_api.BA_LIGHT_OFF, "action_number" : id })
+                    {"action_type" : master_api.BA_LIGHT_OFF, "action_number" : id})
 
         return dict()
 
@@ -416,7 +453,7 @@ class GatewayApi:
             dimmer_action = master_api.__dict__['BA_LIGHT_ON_DIMMER_' + str(dimmer)]
 
         self.__master_communicator.do_command(master_api.basic_action(),
-                    { "action_type" : dimmer_action, "action_number" : id })
+                    {"action_type" : dimmer_action, "action_number" : id})
 
         return dict()
 
@@ -438,7 +475,7 @@ class GatewayApi:
         timer_action = master_api.__dict__['BA_LIGHT_ON_TIMER_'+str(timer)+'_OVERRULE']
 
         self.__master_communicator.do_command(master_api.basic_action(),
-                    { "action_type" : timer_action, "action_number" : id })
+                    {"action_type" : timer_action, "action_number" : id})
 
         return dict()
 
@@ -448,7 +485,7 @@ class GatewayApi:
         :returns: empty dict.
         """
         self.__master_communicator.do_command(master_api.basic_action(),
-                    { "action_type" : master_api.BA_ALL_LIGHTS_OFF, "action_number" : 0 })
+                    {"action_type" : master_api.BA_ALL_LIGHTS_OFF, "action_number" : 0})
 
         return dict()
 
@@ -458,7 +495,7 @@ class GatewayApi:
         :returns: empty dict.
         """
         self.__master_communicator.do_command(master_api.basic_action(),
-                    { "action_type" : master_api.BA_LIGHTS_OFF_FLOOR, "action_number" : floor })
+                    {"action_type" : master_api.BA_LIGHTS_OFF_FLOOR, "action_number" : floor})
 
         return dict()
 
@@ -468,7 +505,7 @@ class GatewayApi:
         :returns: empty dict.
         """
         self.__master_communicator.do_command(master_api.basic_action(),
-                    { "action_type" : master_api.BA_LIGHTS_ON_FLOOR, "action_number" : floor })
+                    {"action_type" : master_api.BA_LIGHTS_ON_FLOOR, "action_number" : floor})
 
         return dict()
 
@@ -499,9 +536,10 @@ class GatewayApi:
         thermostats = []
         for thermostat_id in range(0, 24):
             thermostat = self.__master_communicator.do_command(master_api.read_setpoint(),
-                                                               { 'thermostat' :  thermostat_id })
+                                                               {'thermostat' :  thermostat_id})
             info = {}
-            info['active'] = (thermostat['sensor_nr'] < 30 or thermostat['sensor_nr'] == 240) and thermostat['output0_nr'] < 240
+            info['active'] = (thermostat['sensor_nr'] < 30 or  thermostat['sensor_nr'] == 240) \
+                             and thermostat['output0_nr'] < 240
             info['sensor_nr'] = thermostat['sensor_nr']
             info['output0_nr'] = thermostat['output0_nr']
             info['output1_nr'] = thermostat['output1_nr']
@@ -532,13 +570,13 @@ class GatewayApi:
         thermostats_on = (mode & 128 == 128)
         automatic = (mode & 8 == 8)
         setpoint = 0 if automatic else (mode & 7)
-        
+
         thermostats = []
         outputs = self.get_output_status()
 
         for thermostat_id in range(0, 24):
             if cached_thermostats[thermostat_id]['active'] == True:
-                thermostat = { 'id' : thermostat_id }
+                thermostat = {'id' : thermostat_id}
                 thermostat['act'] = thermostat_info['tmp' + str(thermostat_id)].get_temperature()
                 thermostat['csetp'] = thermostat_info['setp' + str(thermostat_id)].get_temperature()
                 thermostat['outside'] = thermostat_info['outside'].get_temperature()
@@ -561,8 +599,8 @@ class GatewayApi:
 
                 thermostats.append(thermostat)
 
-        return { 'thermostats_on' : thermostats_on, 'automatic' : automatic,
-                 'setpoint' : setpoint, 'status' : thermostats }
+        return {'thermostats_on' : thermostats_on, 'automatic' : automatic,
+                'setpoint' : setpoint, 'status' : thermostats}
 
     def __check_thermostat(self, thermostat):
         """ :raises ValueError if thermostat not in range [0, 24]. """
@@ -580,10 +618,10 @@ class GatewayApi:
         """
         self.__check_thermostat(thermostat)
 
-        ret = self.__master_communicator.do_command(master_api.write_setpoint(),
-            { 'thermostat' : thermostat, 'config' : 0, 'temp' : master_api.Svt.temp(temperature) })
+        _ = self.__master_communicator.do_command(master_api.write_setpoint(),
+            {'thermostat' : thermostat, 'config' : 0, 'temp' : master_api.Svt.temp(temperature)})
 
-        return { 'status': 'OK' }
+        return {'status': 'OK'}
 
     def set_thermostat_mode(self, thermostat_on, automatic, setpoint):
         """ Set the mode of the thermostats. Thermostats can be on or off, automatic or manual
@@ -598,7 +636,8 @@ class GatewayApi:
 
         :returns: dict with 'status'
         """
-        def checked(ret_dict):
+        def check_resp(ret_dict):
+            """ Checks if the response is 'OK', throws a ValueError otherwise. """
             if ret_dict['resp'] != 'OK':
                 raise ValueError("Setting thermostat mode did not return OK !")
 
@@ -606,17 +645,17 @@ class GatewayApi:
             raise ValueError("Setpoint not in [0,5]: " + str(setpoint))
 
         if automatic:
-            checked(self.__master_communicator.do_command(master_api.basic_action(),
-                    { 'action_type' : master_api.BA_THERMOSTAT_AUTOMATIC, 'action_number' : 255 }))
+            check_resp(self.__master_communicator.do_command(master_api.basic_action(),
+                    {'action_type' : master_api.BA_THERMOSTAT_AUTOMATIC, 'action_number' : 255}))
         else:
-            checked(self.__master_communicator.do_command(master_api.basic_action(),
-                { 'action_type' : master_api.BA_THERMOSTAT_AUTOMATIC, 'action_number' : 0 }))
+            check_resp(self.__master_communicator.do_command(master_api.basic_action(),
+                {'action_type' : master_api.BA_THERMOSTAT_AUTOMATIC, 'action_number' : 0}))
 
-            checked(self.__master_communicator.do_command(master_api.basic_action(),
-                { 'action_type' : master_api.__dict__['BA_ALL_SETPOINT_' + str(setpoint)],
-                  'action_number' : 0 }))
+            check_resp(self.__master_communicator.do_command(master_api.basic_action(),
+                {'action_type' : master_api.__dict__['BA_ALL_SETPOINT_' + str(setpoint)],
+                 'action_number' : 0}))
 
-        return { 'status': 'OK' }
+        return {'status': 'OK'}
 
     ###### Sensor status
 
@@ -675,8 +714,8 @@ class GatewayApi:
             raise ValueError("group_action_id not in [0, 160]: %d" % group_action_id)
 
         self.__master_communicator.do_command(master_api.basic_action(),
-                    { "action_type" : master_api.BA_GROUP_ACTION,
-                      "action_number" : group_action_id })
+                    {"action_type" : master_api.BA_GROUP_ACTION,
+                     "action_number" : group_action_id})
 
         return dict()
 
@@ -690,7 +729,7 @@ class GatewayApi:
         output = ""
         for bank in range(0, 256):
             output += self.__master_communicator.do_command(master_api.eeprom_list(),
-                { 'bank' : bank })['data']
+                {'bank' : bank})['data']
         return output
 
     def master_restore(self, data):
@@ -705,7 +744,7 @@ class GatewayApi:
 
         for bank in range(0, num_banks):
             read = self.__master_communicator.do_command(master_api.eeprom_list(),
-                                                         { 'bank' : bank })['data']
+                                                         {'bank' : bank})['data']
             for addr in range(0, bank_size, write_size):
                 orig = read[addr:addr + write_size]
                 new = data[bank * bank_size + addr : bank * bank_size + addr + len(orig)]
@@ -713,12 +752,12 @@ class GatewayApi:
                     ret.append("B" + str(bank) + "A" + str(addr))
 
                     self.__master_communicator.do_command(master_api.write_eeprom(),
-                        { 'bank': bank, 'address': addr, 'data': new })
+                        {'bank': bank, 'address': addr, 'data': new})
 
-        self.__master_communicator.do_command(master_api.activate_eeprom(), { 'eep' : 0 })
+        self.__master_communicator.do_command(master_api.activate_eeprom(), {'eep' : 0})
         ret.append("Activated eeprom")
 
-        return { 'output' : ret }
+        return {'output' : ret}
 
     def master_reset(self):
         """ Reset the master.
@@ -740,11 +779,14 @@ class GatewayApi:
         return list["errors"]
 
     def master_last_success(self):
-        """ Get the number of seconds since the last successful communication with the master. """
+        """ Get the number of seconds since the last successful communication with the master.
+        """
         return self.__master_communicator.get_seconds_since_last_success()
 
     def power_last_success(self):
-        """ Get the number of seconds since the last successful communication with the power modules. """
+        """ Get the number of seconds since the last successful communication with the power
+        modules.
+        """
         return self.__power_communicator.get_seconds_since_last_success()
 
     def master_clear_error_list(self):
@@ -766,7 +808,7 @@ class GatewayApi:
         """
         on = 1 if status == True else 0
         self.__master_communicator.do_command(master_api.basic_action(),
-                    { "action_type" : master_api.BA_STATUS_LEDS, "action_number" : on })
+                    {"action_type" : master_api.BA_STATUS_LEDS, "action_number" : on})
         return dict()
 
     ###### Pulse counter functions
@@ -777,174 +819,260 @@ class GatewayApi:
         :returns: array with the 8 pulse counter values.
         """
         out_dict = self.__master_communicator.do_command(master_api.pulse_list())
-        return [ out_dict['pv0'], out_dict['pv1'], out_dict['pv2'], out_dict['pv3'],
-                 out_dict['pv4'], out_dict['pv5'], out_dict['pv6'], out_dict['pv7'] ]
+        return [out_dict['pv0'], out_dict['pv1'], out_dict['pv2'], out_dict['pv3'],
+                out_dict['pv4'], out_dict['pv5'], out_dict['pv6'], out_dict['pv7']]
 
     ###### Below are the auto generated master configuration functions
     def get_output_configuration(self, id, fields=None):
         """
         Get a specific output_configuration defined by its id.
-    
+
         :param id: The id of the output_configuration
         :type id: Id
         :param fields: The field of the output_configuration to get. (None gets all fields)
         :type fields: List of strings
-        :returns: output_configuration dict: contains 'id' (Id), 'floor' (Byte), 'module_type' (String[1]), 'name' (String[16]), 'timer' (Word), 'type' (Byte)
+        :returns: output_configuration dict: contains 'id' (Id), 'floor' (Byte), \
+        'module_type' (String[1]), 'name' (String[16]), 'timer' (Word), 'type' (Byte)
         """
         return self.__eeprom_controller.read(OutputConfiguration, id, fields).to_dict()
-    
+
     def get_output_configurations(self, fields=None):
         """
         Get all output_configurations.
-    
+
         :param fields: The field of the output_configuration to get. (None gets all fields)
         :type fields: List of strings
-        :returns: list of output_configuration dict: contains 'id' (Id), 'floor' (Byte), 'module_type' (String[1]), 'name' (String[16]), 'timer' (Word), 'type' (Byte)
+        :returns: list of output_configuration dict: contains 'id' (Id), 'floor' (Byte), \
+        'module_type' (String[1]), 'name' (String[16]), 'timer' (Word), 'type' (Byte)
         """
-        return [ o.to_dict() for o in self.__eeprom_controller.read_all(OutputConfiguration, fields) ]
-    
+        return [o.to_dict()
+                for o in self.__eeprom_controller.read_all(OutputConfiguration, fields)]
+
     def set_output_configuration(self, config):
         """
         Set one output_configuration.
-    
+
         :param config: The output_configuration to set
-        :type config: output_configuration dict: contains 'id' (Id), 'floor' (Byte), 'name' (String[16]), 'timer' (Word), 'type' (Byte)
+        :type config: output_configuration dict: contains 'id' (Id), 'floor' (Byte), \
+        'name' (String[16]), 'timer' (Word), 'type' (Byte)
         """
         self.__eeprom_controller.write(OutputConfiguration.from_dict(config))
-    
+
     def set_output_configurations(self, config):
         """
         Set multiple output_configurations.
-    
+
         :param config: The list of output_configurations to set
-        :type config: list of output_configuration dict: contains 'id' (Id), 'floor' (Byte), 'name' (String[16]), 'timer' (Word), 'type' (Byte)
+        :type config: list of output_configuration dict: contains 'id' (Id), 'floor' (Byte), \
+        'name' (String[16]), 'timer' (Word), 'type' (Byte)
         """
-        self.__eeprom_controller.write_batch([ OutputConfiguration.from_dict(o) for o in config ] )
-    
+        self.__eeprom_controller.write_batch([OutputConfiguration.from_dict(o) for o in config])
+
     def get_input_configuration(self, id, fields=None):
         """
         Get a specific input_configuration defined by its id.
-    
+
         :param id: The id of the input_configuration
         :type id: Id
         :param fields: The field of the input_configuration to get. (None gets all fields)
         :type fields: List of strings
-        :returns: input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'module_type' (String[1]), 'name' (String[8])
+        :returns: input_configuration dict: contains 'id' (Id), 'action' (Byte), \
+        'basic_actions' (Actions[15]), 'invert' (Byte), 'module_type' (String[1]), \
+        'name' (String[8])
         """
         return self.__eeprom_controller.read(InputConfiguration, id, fields).to_dict()
-    
+
     def get_input_configurations(self, fields=None):
         """
         Get all input_configurations.
-    
+
         :param fields: The field of the input_configuration to get. (None gets all fields)
         :type fields: List of strings
-        :returns: list of input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'module_type' (String[1]), 'name' (String[8])
+        :returns: list of input_configuration dict: contains 'id' (Id), 'action' (Byte), \
+        'basic_actions' (Actions[15]), 'invert' (Byte), 'module_type' (String[1]), \
+        'name' (String[8])
         """
-        return [ o.to_dict() for o in self.__eeprom_controller.read_all(InputConfiguration, fields) ]
-    
+        return [o.to_dict() for o in self.__eeprom_controller.read_all(InputConfiguration, fields)]
+
     def set_input_configuration(self, config):
         """
         Set one input_configuration.
-    
+
         :param config: The input_configuration to set
-        :type config: input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'name' (String[8])
+        :type config: input_configuration dict: contains 'id' (Id), 'action' (Byte), \
+        'basic_actions' (Actions[15]), 'invert' (Byte), 'name' (String[8])
         """
         self.__eeprom_controller.write(InputConfiguration.from_dict(config))
-    
+
     def set_input_configurations(self, config):
         """
         Set multiple input_configurations.
-    
+
         :param config: The list of input_configurations to set
-        :type config: list of input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'name' (String[8])
+        :type config: list of input_configuration dict: contains 'id' (Id), 'action' (Byte), \
+        'basic_actions' (Actions[15]), 'invert' (Byte), 'name' (String[8])
         """
-        self.__eeprom_controller.write_batch([ InputConfiguration.from_dict(o) for o in config ] )
-    
+        self.__eeprom_controller.write_batch([InputConfiguration.from_dict(o) for o in config])
+
     def get_thermostat_configuration(self, id, fields=None):
         """
         Get a specific thermostat_configuration defined by its id.
-    
+
         :param id: The id of the thermostat_configuration
         :type id: Id
         :param fields: The field of the thermostat_configuration to get. (None gets all fields)
         :type fields: List of strings
-        :returns: thermostat_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
+        :returns: thermostat_configuration dict: contains 'id' (Id), \
+        'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
+        stop_d2(Time),temp_d2(Temp)]), \
+        'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
+        stop_d2(Time),temp_d2(Temp)]), \
+        'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
+        stop_d2(Time),temp_d2(Temp)]), \
+        'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
+        stop_d2(Time),temp_d2(Temp)]), \
+        'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
+        stop_d2(Time),temp_d2(Temp)]), \
+        'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
+        stop_d2(Time),temp_d2(Temp)]), \
+        'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
+        stop_d2(Time),temp_d2(Temp)]), \
+        'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'pid_d' (Byte), 'pid_i' (Byte), \
+        'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), \
+        'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
         """
         return self.__eeprom_controller.read(ThermostatConfiguration, id, fields).to_dict()
-    
+
     def get_thermostat_configurations(self, fields=None):
         """
         Get all thermostat_configurations.
-    
+
         :param fields: The field of the thermostat_configuration to get. (None gets all fields)
         :type fields: List of strings
-        :returns: list of thermostat_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
+        :returns: list of thermostat_configuration dict: contains 'id' (Id), \
+        'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
+        stop_d2(Time),temp_d2(Temp)]), \
+        'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
+        stop_d2(Time),temp_d2(Temp)]), \
+        'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
+        stop_d2(Time),temp_d2(Temp)]), \
+        'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
+        stop_d2(Time),temp_d2(Temp)]), \
+        'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
+        stop_d2(Time),temp_d2(Temp)]), \
+        'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
+        stop_d2(Time),temp_d2(Temp)]), \
+        'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
+        stop_d2(Time),temp_d2(Temp)]), \
+        'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'pid_d' (Byte), 'pid_i' (Byte), \
+        'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), \
+        'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
         """
-        return [ o.to_dict() for o in self.__eeprom_controller.read_all(ThermostatConfiguration, fields) ]
-    
+        return [o.to_dict()
+                for o in self.__eeprom_controller.read_all(ThermostatConfiguration, fields)]
+
     def set_thermostat_configuration(self, config):
         """
         Set one thermostat_configuration.
-    
+
         :param config: The thermostat_configuration to set
-        :type config: thermostat_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
+        :type config: thermostat_configuration dict: contains 'id' (Id), \
+        'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
+        stop_d2(Time),temp_d2(Temp)]), \
+        'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
+        stop_d2(Time),temp_d2(Temp)]), \
+        'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
+        stop_d2(Time),temp_d2(Temp)]), \
+        'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
+        stop_d2(Time),temp_d2(Temp)]), \
+        'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
+        stop_d2(Time),temp_d2(Temp)]), \
+        'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
+        stop_d2(Time),temp_d2(Temp)]), \
+        'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
+        stop_d2(Time),temp_d2(Temp)]), \
+        'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'pid_d' (Byte), 'pid_i' (Byte), \
+        'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), \
+        'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
         """
         self.__eeprom_controller.write(ThermostatConfiguration.from_dict(config))
-    
+
     def set_thermostat_configurations(self, config):
         """
         Set multiple thermostat_configurations.
-    
+
         :param config: The list of thermostat_configurations to set
-        :type config: list of thermostat_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
+        :type config: list of thermostat_configuration dict: contains 'id' (Id), \
+        'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
+        stop_d2(Time),temp_d2(Temp)]), \
+        'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
+        stop_d2(Time),temp_d2(Temp)]), \
+        'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
+        stop_d2(Time),temp_d2(Temp)]), \
+        'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
+        stop_d2(Time),temp_d2(Temp)]), \
+        'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
+        stop_d2(Time),temp_d2(Temp)]), \
+        'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
+        stop_d2(Time),temp_d2(Temp)]), \
+        'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
+        stop_d2(Time),temp_d2(Temp)]), \
+        'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'pid_d' (Byte), 'pid_i' (Byte), \
+        'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), \
+        'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
         """
-        self.__eeprom_controller.write_batch([ ThermostatConfiguration.from_dict(o) for o in config ] )
-    
+        self.__eeprom_controller.write_batch(
+                [ThermostatConfiguration.from_dict(o) for o in config])
+
     def get_sensor_configuration(self, id, fields=None):
         """
         Get a specific sensor_configuration defined by its id.
-    
+
         :param id: The id of the sensor_configuration
         :type id: Id
         :param fields: The field of the sensor_configuration to get. (None gets all fields)
         :type fields: List of strings
-        :returns: sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees))
+        :returns: sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), \
+        'offset' (SignedTemp(-7.5 to 7.5 degrees))
         """
         return self.__eeprom_controller.read(SensorConfiguration, id, fields).to_dict()
-    
+
     def get_sensor_configurations(self, fields=None):
         """
         Get all sensor_configurations.
-    
+
         :param fields: The field of the sensor_configuration to get. (None gets all fields)
         :type fields: List of strings
-        :returns: list of sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees))
+        :returns: list of sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), \
+        'offset' (SignedTemp(-7.5 to 7.5 degrees))
         """
-        return [ o.to_dict() for o in self.__eeprom_controller.read_all(SensorConfiguration, fields) ]
-    
+        return [o.to_dict()
+                for o in self.__eeprom_controller.read_all(SensorConfiguration, fields)]
+
     def set_sensor_configuration(self, config):
         """
         Set one sensor_configuration.
-    
+
         :param config: The sensor_configuration to set
-        :type config: sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees))
+        :type config: sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), \
+        'offset' (SignedTemp(-7.5 to 7.5 degrees))
         """
         self.__eeprom_controller.write(SensorConfiguration.from_dict(config))
-    
+
     def set_sensor_configurations(self, config):
         """
         Set multiple sensor_configurations.
-    
+
         :param config: The list of sensor_configurations to set
-        :type config: list of sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees))
+        :type config: list of sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), \
+        'offset' (SignedTemp(-7.5 to 7.5 degrees))
         """
-        self.__eeprom_controller.write_batch([ SensorConfiguration.from_dict(o) for o in config ] )
-    
+        self.__eeprom_controller.write_batch([SensorConfiguration.from_dict(o) for o in config])
+
     def get_pump_group_configuration(self, id, fields=None):
         """
         Get a specific pump_group_configuration defined by its id.
-    
+
         :param id: The id of the pump_group_configuration
         :type id: Id
         :param fields: The field of the pump_group_configuration to get. (None gets all fields)
@@ -952,212 +1080,239 @@ class GatewayApi:
         :returns: pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32])
         """
         return self.__eeprom_controller.read(PumpGroupConfiguration, id, fields).to_dict()
-    
+
     def get_pump_group_configurations(self, fields=None):
         """
         Get all pump_group_configurations.
-    
+
         :param fields: The field of the pump_group_configuration to get. (None gets all fields)
         :type fields: List of strings
         :returns: list of pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32])
         """
-        return [ o.to_dict() for o in self.__eeprom_controller.read_all(PumpGroupConfiguration, fields) ]
-    
+        return [o.to_dict()
+                for o in self.__eeprom_controller.read_all(PumpGroupConfiguration, fields)]
+
     def set_pump_group_configuration(self, config):
         """
         Set one pump_group_configuration.
-    
+
         :param config: The pump_group_configuration to set
         :type config: pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32])
         """
         self.__eeprom_controller.write(PumpGroupConfiguration.from_dict(config))
-    
+
     def set_pump_group_configurations(self, config):
         """
         Set multiple pump_group_configurations.
-    
+
         :param config: The list of pump_group_configurations to set
-        :type config: list of pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32])
+        :type config: list of pump_group_configuration dict: contains 'id' (Id), \
+        'outputs' (CSV[32])
         """
-        self.__eeprom_controller.write_batch([ PumpGroupConfiguration.from_dict(o) for o in config ] )
-    
+        self.__eeprom_controller.write_batch([PumpGroupConfiguration.from_dict(o) for o in config])
+
     def get_group_action_configuration(self, id, fields=None):
         """
         Get a specific group_action_configuration defined by its id.
-    
+
         :param id: The id of the group_action_configuration
         :type id: Id
         :param fields: The field of the group_action_configuration to get. (None gets all fields)
         :type fields: List of strings
-        :returns: group_action_configuration dict: contains 'id' (Id), 'actions' (Actions[16]), 'name' (String[16])
+        :returns: group_action_configuration dict: contains 'id' (Id), 'actions' (Actions[16]), \
+        'name' (String[16])
         """
         return self.__eeprom_controller.read(GroupActionConfiguration, id, fields).to_dict()
-    
+
     def get_group_action_configurations(self, fields=None):
         """
         Get all group_action_configurations.
-    
+
         :param fields: The field of the group_action_configuration to get. (None gets all fields)
         :type fields: List of strings
-        :returns: list of group_action_configuration dict: contains 'id' (Id), 'actions' (Actions[16]), 'name' (String[16])
+        :returns: list of group_action_configuration dict: contains 'id' (Id), \
+        'actions' (Actions[16]), 'name' (String[16])
         """
-        return [ o.to_dict() for o in self.__eeprom_controller.read_all(GroupActionConfiguration, fields) ]
-    
+        return [o.to_dict()
+                for o in self.__eeprom_controller.read_all(GroupActionConfiguration, fields)]
+
     def set_group_action_configuration(self, config):
         """
         Set one group_action_configuration.
-    
+
         :param config: The group_action_configuration to set
-        :type config: group_action_configuration dict: contains 'id' (Id), 'actions' (Actions[16]), 'name' (String[16])
+        :type config: group_action_configuration dict: contains 'id' (Id), \
+        'actions' (Actions[16]), 'name' (String[16])
         """
         self.__eeprom_controller.write(GroupActionConfiguration.from_dict(config))
-    
+
     def set_group_action_configurations(self, config):
         """
         Set multiple group_action_configurations.
-    
+
         :param config: The list of group_action_configurations to set
-        :type config: list of group_action_configuration dict: contains 'id' (Id), 'actions' (Actions[16]), 'name' (String[16])
+        :type config: list of group_action_configuration dict: contains 'id' (Id), \
+        'actions' (Actions[16]), 'name' (String[16])
         """
-        self.__eeprom_controller.write_batch([ GroupActionConfiguration.from_dict(o) for o in config ] )
-    
+        self.__eeprom_controller.write_batch(
+                [GroupActionConfiguration.from_dict(o) for o in config])
+
     def get_scheduled_action_configuration(self, id, fields=None):
         """
         Get a specific scheduled_action_configuration defined by its id.
-    
+
         :param id: The id of the scheduled_action_configuration
         :type id: Id
-        :param fields: The field of the scheduled_action_configuration to get. (None gets all fields)
+        :param fields: The field of the scheduled_action_configuration to get. \
+        (None gets all fields)
         :type fields: List of strings
-        :returns: scheduled_action_configuration dict: contains 'id' (Id), 'action' (Actions[1]), 'day' (Byte), 'hour' (Byte), 'minute' (Byte)
+        :returns: scheduled_action_configuration dict: contains 'id' (Id), 'action' (Actions[1]), \
+        'day' (Byte), 'hour' (Byte), 'minute' (Byte)
         """
         return self.__eeprom_controller.read(ScheduledActionConfiguration, id, fields).to_dict()
-    
+
     def get_scheduled_action_configurations(self, fields=None):
         """
         Get all scheduled_action_configurations.
-    
-        :param fields: The field of the scheduled_action_configuration to get. (None gets all fields)
+
+        :param fields: The field of the scheduled_action_configuration to get. \
+        (None gets all fields)
         :type fields: List of strings
-        :returns: list of scheduled_action_configuration dict: contains 'id' (Id), 'action' (Actions[1]), 'day' (Byte), 'hour' (Byte), 'minute' (Byte)
+        :returns: list of scheduled_action_configuration dict: contains 'id' (Id), \
+        'action' (Actions[1]), 'day' (Byte), 'hour' (Byte), 'minute' (Byte)
         """
-        return [ o.to_dict() for o in self.__eeprom_controller.read_all(ScheduledActionConfiguration, fields) ]
-    
+        return [o.to_dict()
+                for o in self.__eeprom_controller.read_all(ScheduledActionConfiguration, fields)]
+
     def set_scheduled_action_configuration(self, config):
         """
         Set one scheduled_action_configuration.
-    
+
         :param config: The scheduled_action_configuration to set
-        :type config: scheduled_action_configuration dict: contains 'id' (Id), 'action' (Actions[1]), 'day' (Byte), 'hour' (Byte), 'minute' (Byte)
+        :type config: scheduled_action_configuration dict: contains 'id' (Id), \
+        'action' (Actions[1]), 'day' (Byte), 'hour' (Byte), 'minute' (Byte)
         """
         self.__eeprom_controller.write(ScheduledActionConfiguration.from_dict(config))
-    
+
     def set_scheduled_action_configurations(self, config):
         """
         Set multiple scheduled_action_configurations.
-    
+
         :param config: The list of scheduled_action_configurations to set
-        :type config: list of scheduled_action_configuration dict: contains 'id' (Id), 'action' (Actions[1]), 'day' (Byte), 'hour' (Byte), 'minute' (Byte)
+        :type config: list of scheduled_action_configuration dict: contains 'id' (Id), \
+        'action' (Actions[1]), 'day' (Byte), 'hour' (Byte), 'minute' (Byte)
         """
-        self.__eeprom_controller.write_batch([ ScheduledActionConfiguration.from_dict(o) for o in config ] )
-    
+        self.__eeprom_controller.write_batch(
+                [ScheduledActionConfiguration.from_dict(o) for o in config])
+
     def get_pulse_counter_configuration(self, id, fields=None):
         """
         Get a specific pulse_counter_configuration defined by its id.
-    
+
         :param id: The id of the pulse_counter_configuration
         :type id: Id
         :param fields: The field of the pulse_counter_configuration to get. (None gets all fields)
         :type fields: List of strings
-        :returns: pulse_counter_configuration dict: contains 'id' (Id), 'input' (Byte), 'name' (String[16])
+        :returns: pulse_counter_configuration dict: contains 'id' (Id), 'input' (Byte), \
+        'name' (String[16])
         """
         return self.__eeprom_controller.read(PulseCounterConfiguration, id, fields).to_dict()
-    
+
     def get_pulse_counter_configurations(self, fields=None):
         """
         Get all pulse_counter_configurations.
-    
+
         :param fields: The field of the pulse_counter_configuration to get. (None gets all fields)
         :type fields: List of strings
-        :returns: list of pulse_counter_configuration dict: contains 'id' (Id), 'input' (Byte), 'name' (String[16])
+        :returns: list of pulse_counter_configuration dict: contains 'id' (Id), 'input' (Byte), \
+        'name' (String[16])
         """
-        return [ o.to_dict() for o in self.__eeprom_controller.read_all(PulseCounterConfiguration, fields) ]
-    
+        return [o.to_dict()
+                for o in self.__eeprom_controller.read_all(PulseCounterConfiguration, fields)]
+
     def set_pulse_counter_configuration(self, config):
         """
         Set one pulse_counter_configuration.
-    
+
         :param config: The pulse_counter_configuration to set
-        :type config: pulse_counter_configuration dict: contains 'id' (Id), 'input' (Byte), 'name' (String[16])
+        :type config: pulse_counter_configuration dict: contains 'id' (Id), 'input' (Byte), \
+        'name' (String[16])
         """
         self.__eeprom_controller.write(PulseCounterConfiguration.from_dict(config))
-    
+
     def set_pulse_counter_configurations(self, config):
         """
         Set multiple pulse_counter_configurations.
-    
+
         :param config: The list of pulse_counter_configurations to set
-        :type config: list of pulse_counter_configuration dict: contains 'id' (Id), 'input' (Byte), 'name' (String[16])
+        :type config: list of pulse_counter_configuration dict: contains 'id' (Id), \
+        'input' (Byte), 'name' (String[16])
         """
-        self.__eeprom_controller.write_batch([ PulseCounterConfiguration.from_dict(o) for o in config ] )
-    
+        self.__eeprom_controller.write_batch(
+                [PulseCounterConfiguration.from_dict(o) for o in config])
+
     def get_startup_action_configuration(self, fields=None):
         """
         Get the startup_action_configuration.
-    
+
         :param fields: The field of the startup_action_configuration to get. (None gets all fields)
         :type fields: List of strings
         :returns: startup_action_configuration dict: contains 'actions' (Actions[100])
         """
         return self.__eeprom_controller.read(StartupActionConfiguration, fields).to_dict()
-    
+
     def set_startup_action_configuration(self, config):
         """
         Set the startup_action_configuration.
-    
+
         :param config: The startup_action_configuration to set
         :type config: startup_action_configuration dict: contains 'actions' (Actions[100])
         """
         self.__eeprom_controller.write(StartupActionConfiguration.from_dict(config))
-    
+
     def get_dimmer_configuration(self, fields=None):
         """
         Get the dimmer_configuration.
-    
+
         :param fields: The field of the dimmer_configuration to get. (None gets all fields)
         :type fields: List of strings
-        :returns: dimmer_configuration dict: contains 'dim_memory' (Byte), 'dim_step' (Byte), 'dim_wait_cycle' (Byte), 'min_dim_level' (Byte)
+        :returns: dimmer_configuration dict: contains 'dim_memory' (Byte), 'dim_step' (Byte), \
+        'dim_wait_cycle' (Byte), 'min_dim_level' (Byte)
         """
         return self.__eeprom_controller.read(DimmerConfiguration, fields).to_dict()
-    
+
     def set_dimmer_configuration(self, config):
         """
         Set the dimmer_configuration.
-    
+
         :param config: The dimmer_configuration to set
-        :type config: dimmer_configuration dict: contains 'dim_memory' (Byte), 'dim_step' (Byte), 'dim_wait_cycle' (Byte), 'min_dim_level' (Byte)
+        :type config: dimmer_configuration dict: contains 'dim_memory' (Byte), 'dim_step' (Byte), \
+        'dim_wait_cycle' (Byte), 'min_dim_level' (Byte)
         """
         self.__eeprom_controller.write(DimmerConfiguration.from_dict(config))
-    
+
     def get_global_thermostat_configuration(self, fields=None):
         """
         Get the global_thermostat_configuration.
-    
-        :param fields: The field of the global_thermostat_configuration to get. (None gets all fields)
+
+        :param fields: The field of the global_thermostat_configuration to get. \
+        (None gets all fields)
         :type fields: List of strings
-        :returns: global_thermostat_configuration dict: contains 'outside_sensor' (Byte), 'pump_delay' (Byte), 'threshold_temp' (Temp)
+        :returns: global_thermostat_configuration dict: contains 'outside_sensor' (Byte), \
+        'pump_delay' (Byte), 'threshold_temp' (Temp)
         """
         return self.__eeprom_controller.read(GlobalThermostatConfiguration, fields).to_dict()
-    
+
     def set_global_thermostat_configuration(self, config):
         """
         Set the global_thermostat_configuration.
-    
+
         :param config: The global_thermostat_configuration to set
-        :type config: global_thermostat_configuration dict: contains 'outside_sensor' (Byte), 'pump_delay' (Byte), 'threshold_temp' (Temp)
+        :type config: global_thermostat_configuration dict: contains 'outside_sensor' (Byte), \
+        'pump_delay' (Byte), 'threshold_temp' (Temp)
         """
         self.__eeprom_controller.write(GlobalThermostatConfiguration.from_dict(config))
-    
+
 
 
     ###### End of auto generated functions
@@ -1168,15 +1323,16 @@ class GatewayApi:
         """ Get information on the power modules.
 
         :returns: List of dictionaries with the following keys: 'id', 'name', 'address', \
-        'input0', 'input1', 'input2', 'input3', 'input4', 'input5', 'input6', 'input7', 'sensor0', \
-        'sensor1', 'sensor2', 'sensor3', 'sensor4', 'sensor5', 'sensor6', 'sensor7', 'times0', \
-        'times1', 'times2', 'times3', 'times4', 'times5', 'times6', 'times7'.
+        'input0', 'input1', 'input2', 'input3', 'input4', 'input5', 'input6', 'input7', \
+        'sensor0', 'sensor1', 'sensor2', 'sensor3', 'sensor4', 'sensor5', 'sensor6', 'sensor7', \
+        'times0', 'times1', 'times2', 'times3', 'times4', 'times5', 'times6', 'times7'.
         """
-        modules = self.__power_controller.get_power_modules().values();
+        modules = self.__power_controller.get_power_modules().values()
         def translate_address(module):
+            """ Translate the address from an integer to the external address format (eg. E1). """
             module['address'] = "E" + str(module['address'])
             return module
-        return map(translate_address, modules)
+        return [translate_address(module) for module in modules]
 
     def set_power_modules(self, modules):
         """ Set information for the power modules.
@@ -1209,20 +1365,20 @@ class GatewayApi:
         for id in sorted(modules.keys()):
             try:
                 addr = modules[id]['address']
-    
+
                 volt = self.__power_communicator.do_command(addr, power_api.get_voltage())[0]
                 freq = self.__power_communicator.do_command(addr, power_api.get_frequency())[0]
                 current = self.__power_communicator.do_command(addr, power_api.get_current())
                 power = self.__power_communicator.do_command(addr, power_api.get_power())
-    
+
                 out = []
                 for i in range(0, 8):
-                    out.append([ checkNaN(volt), checkNaN(freq), checkNaN(current[i]),
-                                 checkNaN(power[i]) ])
-    
+                    out.append([convert_nan(volt), convert_nan(freq), convert_nan(current[i]),
+                                convert_nan(power[i])])
+
                 output[str(id)] = out
-            except Exception as e:
-                LOGGER.exception("Got Exception for power module %s" % id)
+            except Exception as exception:
+                LOGGER.exception("Got Exception for power module %s: %s", id, exception)
 
         return output
 
@@ -1237,17 +1393,17 @@ class GatewayApi:
         for id in sorted(modules.keys()):
             try:
                 addr = modules[id]['address']
-    
+
                 day = self.__power_communicator.do_command(addr, power_api.get_day_energy())
                 night = self.__power_communicator.do_command(addr, power_api.get_night_energy())
-    
+
                 out = []
                 for i in range(0, 8):
-                    out.append([ checkNaN(day[i]), checkNaN(night[i]) ])
-    
+                    out.append([convert_nan(day[i]), convert_nan(night[i])])
+
                 output[str(id)] = out
             except Exception:
-                LOGGER.error("Got Exception for power module %s" % id)
+                LOGGER.error("Got Exception for power module %s", id)
 
         return output
 
@@ -1272,7 +1428,7 @@ class GatewayApi:
 
         :returns: dict with key 'address_mode' and value True or False.
         """
-        return { 'address_mode' : self.__power_communicator.in_address_mode() }
+        return {'address_mode' : self.__power_communicator.in_address_mode()}
 
     def set_power_voltage(self, module_id, voltage):
         """ Set the voltage for a given module.

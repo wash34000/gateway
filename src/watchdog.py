@@ -8,12 +8,13 @@ Created on Oct 24, 2012
 import time
 
 def main():
+    """ The main function. """
     watchdog = open('/dev/watchdog', 'w')
 
     while True:
         watchdog.write("O")
         watchdog.flush()
-        
+
         time.sleep(10)
 
 if __name__ == '__main__':

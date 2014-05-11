@@ -11,7 +11,7 @@ import types
 from master_api import eeprom_list, read_eeprom, write_eeprom, activate_eeprom
 
 
-class EepromController:
+class EepromController(object):
     """ The controller takes EepromModels and reads or writes them from and to an EepromFile. """
 
     def __init__(self, eeprom_file):
@@ -104,15 +104,16 @@ class EepromController:
             else:
                 address = eeprom_id.get_address()
                 if address.length != 1:
-                    raise TypeError("Length of max id address in EepromModel %s is not 1" % eeprom_model.get_name())
+                    raise TypeError("Length of max id address in EepromModel %s is not 1" %
+                                    eeprom_model.get_name())
 
-                eeprom_data = self.__eeprom_file.read([ address ])
+                eeprom_data = self.__eeprom_file.read([address])
                 max_id = ord(eeprom_data[0].bytes[0])
 
                 return max_id * eeprom_id.get_multiplier()
 
 
-class EepromFile:
+class EepromFile(object):
     """ Reads from and writes to the Master EEPROM. """
 
     BATCH_SIZE = 10
@@ -129,7 +130,7 @@ class EepromFile:
         """ Activate a change in the Eeprom. The master will read the eeprom
         and adjust the current settings.
         """
-        self.__master_communicator.do_command(activate_eeprom(), { 'eep' : 0 })
+        self.__master_communicator.do_command(activate_eeprom(), {'eep' : 0})
 
     def read(self, addresses):
         """ Read data from the Eeprom.
@@ -151,8 +152,8 @@ class EepromFile:
             bank_data[bank] = self.__read_bank(bank, per_bank[bank])
 
         ## Extract the required bytes from the bank data
-        return [ EepromData(a, bank_data[a.bank][a.offset : a.offset + a.length])
-                 for a in addresses ]
+        return [EepromData(a, bank_data[a.bank][a.offset : a.offset + a.length])
+                for a in addresses]
 
     def __read_bank(self, bank, addresses):
         """ Read a list of addresses from a bank, this returns a list of 256 bytes. Only the bytes
@@ -162,7 +163,7 @@ class EepromFile:
         read 10 bytes at once. Due to communciation overhead the read function is about half the
         speed (per byte) of the list function. If more than 13 reads are required for 1 bank,
         the list function is used to read the bank at once.
-        
+
         :param bank: the number of the bank
         :type bank: Integer
         :param addresses: the addresses in the bank to read
@@ -170,7 +171,7 @@ class EepromFile:
         :returns: list of 256 bytes.
         """
         ## Mark the bytes that should be read
-        read_map = [ False ] * 256
+        read_map = [False] * 256
         for addr in addresses:
             for i in range(addr.offset, addr.offset + addr.length):
                 read_map[i] = True
@@ -191,14 +192,14 @@ class EepromFile:
         ## Read from the start addresses
         if len(start_addresses) > 13:
             ## Too many reads, better read the whole bank at once using eeprom_list.
-            return self.__master_communicator.do_command(eeprom_list(), { "bank" : bank })['data']
+            return self.__master_communicator.do_command(eeprom_list(), {"bank" : bank})['data']
         else:
             ## Fill the bytes with dummies and only read the required bytes from eeprom.
-            bytes = [ "\xff" ] * 256
+            bytes = ["\xff"] * 256
 
             for addr in start_addresses:
                 read = self.__master_communicator.do_command(
-                    read_eeprom(), { "bank" : bank, "addr" : addr, "num" : EepromFile.BATCH_SIZE })
+                    read_eeprom(), {"bank" : bank, "addr" : addr, "num" : EepromFile.BATCH_SIZE})
 
                 bytes[addr : addr + EepromFile.BATCH_SIZE] = read["data"]
 
@@ -206,14 +207,14 @@ class EepromFile:
 
     def __read_banks(self, banks):
         """ Read a number of banks from the Eeprom.
-        
+
         :param banks: a list of banks (integers).
         :returns: a dict mapping the bank to the data.
         """
         ret = dict()
 
         for bank in banks:
-            output = self.__master_communicator.do_command(eeprom_list(), { "bank" : bank })
+            output = self.__master_communicator.do_command(eeprom_list(), {"bank" : bank})
             ret[bank] = output['data']
 
         return ret
@@ -225,11 +226,11 @@ class EepromFile:
         :type data: list of EepromData instances.
         """
         # Read the data in the banks that we are trying to write
-        bank_data = self.__read_banks(set([ d.address.bank for d in data ]))
+        bank_data = self.__read_banks(set([d.address.bank for d in data]))
         new_bank_data = bank_data.copy()
 
-        for d in data:
-            self.__patch(new_bank_data, d)
+        for data_piece in data:
+            self.__patch(new_bank_data, data_piece)
 
         # Check what changed and write changes in batch
         for bank in bank_data.keys():
@@ -257,17 +258,19 @@ class EepromFile:
         :param bank_data: dict with bank data, key = bank, data = bytes in the bank.
         :param eeprom_data: instance of EepromData.
         """
-        a = eeprom_data.address
-        d = bank_data[a.bank]
-        bank_data[a.bank] = d[0:a.offset] + eeprom_data.bytes + d[a.offset + a.length:]
+        address = eeprom_data.address
+        data = bank_data[address.bank]
+        bank_data[address.bank] = data[0:address.offset] \
+                                  + eeprom_data.bytes \
+                                  + data[address.offset + address.length:]
 
     def __write(self, bank, offset, to_write):
         """ Write a byte array to a specific location defined by the bank and the offset. """
         self.__master_communicator.do_command(
-                write_eeprom(), { "bank" : bank, "address": offset, "data": to_write })
+                write_eeprom(), {"bank" : bank, "address": offset, "data": to_write})
 
 
-class EepromAddress:
+class EepromAddress(object):
     """ Represents an address in the Eeprom, has a bank, an offset and a length. """
 
     def __init__(self, bank, offset, length):
@@ -276,7 +279,9 @@ class EepromAddress:
         self.length = length
 
     def __eq__(self, other):
-        return self.bank == other.bank and self.offset == other.offset and self.length == other.length
+        return self.bank == other.bank \
+               and self.offset == other.offset \
+               and self.length == other.length
 
     def __hash__(self):
         return self.bank + self.offset * 256 + self.length * 256 * 256
@@ -288,12 +293,12 @@ class EepromAddress:
         return self.__str__()
 
 
-class EepromData:
+class EepromData(object):
     """ A piece of Eeprom data, has an address and the actual data. """
 
     def __init__(self, address, bytes):
         if address.length != len(bytes):
-            raise TypeError("Length in the address (%d) does not match the number of bytes (%d)" % 
+            raise TypeError("Length in the address (%d) does not match the number of bytes (%d)" %
                             (address.length, len(bytes)))
 
         self.address = address
@@ -308,14 +313,14 @@ class EepromData:
         return self.__str__()
 
 
-class EepromModel:
+class EepromModel(object):
     """ The EepromModel provides a generic way to model data in the eeprom by creating a child
     class of EepromModel with an optional EepromId and EepromDataTypes as class fields.
     """
 
     def __init__(self, **kwargs):
         """ The arguments to the constructor are defined by the EepromDataType class fields. """
-        fields = map(lambda x: x[0], self.__class__.get_fields(include_id=True))
+        fields = [x[0] for x in self.__class__.get_fields(include_id=True)]
 
         for (field, value) in kwargs.items():
             if field in fields:
@@ -337,7 +342,9 @@ class EepromModel:
 
     @classmethod
     def get_field_dict(cls, include_id=False):
-        """ Get a dict from the field name to the field type for each field defined by the EepromModel child. """
+        """ Get a dict from the field name to the field type for each field defined by the
+        EepromModel child.
+        """
         class_field_dict = {}
         for (name, type) in cls.get_fields(include_id):
             class_field_dict[name] = type
@@ -383,7 +390,8 @@ class EepromModel:
             max_id = id_type[0][1].get_max_id()
 
             if id > max_id:
-                raise TypeError("The maximum id for %s is %d, %d was provided." % (cls.__name__, max_id, id))
+                raise TypeError("The maximum id for %s is %d, %d was provided." %
+                                (cls.__name__, max_id, id))
 
     def to_dict(self):
         """ Create a model dict from the EepromModel. """
@@ -444,7 +452,7 @@ class EepromModel:
             class_field_dict = cls.get_field_dict()
             for field_name in fields:
                 if field_name not in class_field_dict:
-                    raise TypeError("Field %s is unknown for %s" % (field, self.__class__.__name__))
+                    raise TypeError("Field %s is unknown for %s" % (field_name, cls.__name__))
                 else:
                     field_type = class_field_dict[field_name]
                     if isinstance(field_type, CompositeDataType):
@@ -479,7 +487,7 @@ class EepromModel:
 
             for field in fields:
                 if field not in class_field_dict:
-                    raise TypeError("Field %s is unknown for %s" % (field, self.__class__.__name__))
+                    raise TypeError("Field %s is unknown for %s" % (field, cls.__name__))
                 else:
                     field_type = class_field_dict[field]
                     if isinstance(field_type, CompositeDataType):
@@ -490,7 +498,7 @@ class EepromModel:
         return addresses
 
 
-class EepromId:
+class EepromId(object):
     """ Represents an id in an EepromModel. """
 
     def __init__(self, max_id, address=None, multiplier=None):
@@ -528,7 +536,7 @@ class EepromId:
         return self.__multiplier
 
 
-class CompositeDataType:
+class CompositeDataType(object):
     """ Defines a composite data type in an EepromModel, the composite structure contains multiple
     EepromDataTypes and defines a name for each child data type.
     """
@@ -537,24 +545,25 @@ class CompositeDataType:
         """Create a new composite data type using a list of tuples (name, EepromDataType). """
         self.__eeprom_data_types = eeprom_data_types
         self.__read_only = read_only
-    
+
     def get_addresses(self, id=None):
         """ Get all EepromDataType addresses in the composite data type. """
-        return [ t[1].get_address(id) for t in self.__eeprom_data_types ]
-    
+        return [t[1].get_address(id) for t in self.__eeprom_data_types]
+
     def get_name(self):
         """ Get the name of the EepromDataType. To be implemented in the subclass. """
-        return "[%s]" % (",".join([ "%s(%s)" % (t[0], t[1].get_name()) for t in self.__eeprom_data_types ]))
+        return "[%s]" % (",".join(["%s(%s)" % (t[0], t[1].get_name())
+                                   for t in self.__eeprom_data_types]))
 
     def from_data_dict(self, data_dict, id=None):
         """ Convert a data_dict (mapping from EepromAddress to EepromData) to a list of fields. """
         out = []
-        
+
         for (_, field_type) in self.__eeprom_data_types:
             address = field_type.get_address(id)
             bytes = data_dict[address].bytes
             out.append(field_type.from_bytes(bytes))
-        
+
         return out
 
     def to_eeprom_data(self, fields, id=None):
@@ -562,23 +571,23 @@ class CompositeDataType:
         if len(fields) != len(self.__eeprom_data_types):
             raise TypeError("The length of the composite data does not match the type:"
                             "got %s for %s." % (fields, self.get_name()))
-        
+
         out = []
-        
+
         for i in range(len(fields)):
             field_type = self.__eeprom_data_types[i][1]
             address = field_type.get_address(id)
             bytes = field_type.to_bytes(fields[i])
             out.append(EepromData(address, bytes))
-        
+
         return out
-    
+
     def is_writable(self):
         """ Returns whether the CompositeDataType is writable. """
         return not self.__read_only
 
 
-class EepromDataType:
+class EepromDataType(object):
     """ Defines a data type in an EepromModel, and provides functions to_bytes and from_bytes to
     convert this data type from and to a string of bytes.  Besides these functions, the data type
     also contains the address, or the address generator (in case the model has an id).
@@ -600,9 +609,11 @@ class EepromDataType:
             if len(args) == 1:
                 self.__addr_func = addr_gen
             else:
-                raise TypeError("addr_gen should be a function that takes an id and returns the same tuple.")
+                raise TypeError("addr_gen should be a function that takes an id and returns the "
+                                " same tuple.")
         else:
-            raise TypeError("addr_gen should be a tuple (bank, address) or a function that takes an id and returns the same tuple.")
+            raise TypeError("addr_gen should be a tuple (bank, address) or a function that takes "
+                            "an id and returns the same tuple.")
 
     def is_writable(self):
         """ Returns whether the EepromDataType is writable. """
@@ -647,7 +658,10 @@ class EepromDataType:
         raise NotImplementedError()
 
 
-def removeTail(byte_str, delimiter='\xff'):
+def remove_tail(byte_str, delimiter='\xff'):
+    """ Returns a new string where all instance of the delimiter at the end of the string are
+    removed.
+    """
     index = byte_str.rfind(delimiter)
     while index > 0:
         byte_str = byte_str[:index]
@@ -659,7 +673,10 @@ def removeTail(byte_str, delimiter='\xff'):
         return byte_str[:index]
 
 
-def appendTail(byte_str, length, delimiter='\xff'):
+def append_tail(byte_str, length, delimiter='\xff'):
+    """ Returns a new string with the given length by adding instances of the delimiter at the end
+    of the string.
+    """
     if len(byte_str) < length:
         return str(byte_str) + delimiter * ((length - len(byte_str)) / len(delimiter))
     else:
@@ -677,11 +694,11 @@ class EepromString(EepromDataType):
         return "String[%d]" % self.__length
 
     def from_bytes(self, bytes):
-        return str(removeTail(bytes))
+        return str(remove_tail(bytes))
 
     def to_bytes(self, field):
         self.check_writable()
-        return appendTail(field, self.__length)
+        return append_tail(field, self.__length)
 
     def get_length(self):
         return self.__length
@@ -768,7 +785,7 @@ class EepromSignedTemp(EepromDataType):
         self.check_writable()
         if field <= -8.0 or field >= 8.0:
             raise ValueError("SignedTemp should be in [-7.5, 7.5], was %f" % field)
-        
+
         if field == 0.0:
             return str(chr(255))
         else:
@@ -797,7 +814,7 @@ class EepromTime(EepromDataType):
 
     def to_bytes(self, field):
         self.check_writable()
-        split = [ int(x) for x in field.split(":") ]
+        split = [int(x) for x in field.split(":")]
         if len(split) != 2:
             raise ValueError("Time is not in HH:MM format: %s" % field)
         field = (split[0] * 6) + (split[1] / 10)
@@ -819,12 +836,12 @@ class EepromCSV(EepromDataType):
         return "CSV[%d]" % self.__length
 
     def from_bytes(self, bytes):
-        return ",".join(map(lambda b: str(ord(b)), removeTail(bytes, '\xff')))
+        return ",".join([str(ord(b)) for b in remove_tail(bytes, '\xff')])
 
     def to_bytes(self, field):
         self.check_writable()
-        actions = "" if len(field) == 0 else "".join(map(lambda x: chr(int(x)), field.split(",")))
-        return appendTail(actions, self.__length, '\xff')
+        actions = "" if len(field) == 0 else "".join([chr(int(x)) for x in field.split(",")])
+        return append_tail(actions, self.__length, '\xff')
 
     def get_length(self):
         return self.__length
@@ -843,12 +860,12 @@ class EepromActions(EepromDataType):
         return "Actions[%d]" % self.__length
 
     def from_bytes(self, bytes):
-        return ",".join(map(lambda b: str(ord(b)), removeTail(bytes, '\xff\xff')))
+        return ",".join([str(ord(b)) for b in remove_tail(bytes, '\xff\xff')])
 
     def to_bytes(self, field):
         self.check_writable()
-        actions = "" if len(field) == 0 else "".join(map(lambda x: chr(int(x)), field.split(",")))
-        return appendTail(actions, 2 * self.__length, '\xff\xff')
+        actions = "" if len(field) == 0 else "".join([chr(int(x)) for x in field.split(",")])
+        return append_tail(actions, 2 * self.__length, '\xff\xff')
 
     def get_length(self):
         return 2 * self.__length

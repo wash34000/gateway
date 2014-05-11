@@ -6,8 +6,6 @@ Created on Apr 2, 2014
 @author: fryckbos
 '''
 import argparse
-import sys
-import time
 from ConfigParser import ConfigParser
 
 from serial import Serial
@@ -18,15 +16,13 @@ import master.master_api as master_api
 from master.master_communicator import MasterCommunicator
 from master.eeprom_controller import EepromFile, EepromAddress
 
-from serial_utils import CommunicationTimedOutException
-
 import intelhex
 
 
 def create_bl_action(cmd, input):
     """ Create a bootload action, this uses the command and the inputs
     to calculate the crc for the action, the crc is added to input.
-    
+
     :param cmd: The bootload action (from master_api).
     :type cmd: MasterCommandSpec
     :param input: dict with the inputs for the action.
@@ -53,7 +49,7 @@ def create_bl_action(cmd, input):
 
 def check_bl_crc(cmd, output):
     """ Check the crc in the response from the master.
-    
+
     :param cmd: The bootload action (from master_api).
     :type cmd: MasterCommandSpec
     :param output: dict containing the values for the output field.
@@ -75,9 +71,9 @@ def check_bl_crc(cmd, output):
     return output['crc0'] == (crc / 256) and output['crc1'] == (crc % 256)
 
 
-def get_modules_addresses(master_communicator, type):
+def get_module_addresses(master_communicator, type):
     """ Get the addresses for the modules of the given type.
-    
+
     :param master_communicator: used to read the addresses from the master eeprom.
     :type master_communicator: MasterCommunicator
     :param type: the type of the module (o, d, i, t)
@@ -85,23 +81,23 @@ def get_modules_addresses(master_communicator, type):
     :returns: A list containing the addresses of the modules (strings of length 4).
     """
     eeprom_file = EepromFile(master_communicator)
-    no_modules = eeprom_file.read([ EepromAddress(0, 1, 2) ])
+    no_modules = eeprom_file.read([EepromAddress(0, 1, 2)])
     modules = []
 
     no_input_modules = ord(no_modules[0].bytes[0])
     for i in range(no_input_modules):
-        modules.append(eeprom_file.read([ EepromAddress(2 + i, 0, 4) ])[0].bytes)
+        modules.append(eeprom_file.read([EepromAddress(2 + i, 0, 4)])[0].bytes)
 
     no_output_modules = ord(no_modules[0].bytes[1])
     for i in range(no_output_modules):
-        modules.append(eeprom_file.read([ EepromAddress(33 + i, 0, 4) ])[0].bytes)
-    
-    return [ module for module in modules if module[0].lower == type ]
+        modules.append(eeprom_file.read([EepromAddress(33 + i, 0, 4)])[0].bytes)
+
+    return [module for module in modules if module[0].lower == type]
 
 
 def pretty_address(address):
     """ Create a pretty printed version of an address.
-    
+
     :param address: address string
     :type address: string
     :returns: string with format 'M.x.y.z' where M is in {o, d, i, t} and x,y,z are integers.
@@ -109,16 +105,16 @@ def pretty_address(address):
     return "%s.%d.%d.%d" % (address[0], ord(address[1]), ord(address[2]), ord(address[3]))
 
 
-def calc_crc(hex):
+def calc_crc(ihex):
     """ Calculate the crc for a hex file.
-    
-    :param hex: intelhex file.
-    :type hex: IntelHex
+
+    :param ihex: intelhex file.
+    :type ihex: IntelHex
     :returns: tuple containing 4 crc bytes.
     """
     sum = 0
     for i in range(64 * 384):
-       sum += ih[i]
+        sum += ihex[i]
 
     crc0 = (sum & (255 << 24)) >> 24
     crc1 = (sum & (255 << 16)) >> 16
@@ -128,15 +124,17 @@ def calc_crc(hex):
     return (crc0, crc1, crc2, crc3)
 
 
-def bootload(address, version, hex, crc):
+def bootload(master_communicator, address, version, ihex, crc):
     """ Bootload 1 module.
-    
+
+    :param master_communicator: Used to communicate with the master communicator
+    :type master_communicator: MasterCommunicator
     :param address: Address for the module to bootload
     :type address: string of length 4
     :param version: The new version
     :type version: tuple of 3 integers
-    :param hex: The hex file
-    :type hex: IntelHex
+    :param ihex: The hex file
+    :type ihex: IntelHex
     :param crc: The crc for the hex file
     :type crc: tuple of 4 bytes
     """
@@ -153,23 +151,23 @@ def bootload(address, version, hex, crc):
     print "Going to bootloader"
     result = master_communicator.do_command(
             create_bl_action(master_api.modules_goto_bootloader(),
-                             { "addr" : address, "sec" : 5 }))
+                             {"addr" : address, "sec" : 5}))
 
     check_result(master_api.modules_goto_bootloader(), result)
 
     print "Setting new firmware version"
     result = master_communicator.do_command(
             create_bl_action(master_api.modules_new_firmware_version(),
-                             { "addr" : address, "f1n": version[0],
-                               "f2n": version[1], "f3n": version[2] }))
+                             {"addr" : address, "f1n": version[0],
+                              "f2n": version[1], "f3n": version[2]}))
 
     check_result(master_api.modules_new_firmware_version(), result)
 
     print "Setting the firmware crc"
     result = master_communicator.do_command(
             create_bl_action(master_api.modules_new_crc(),
-                             { "addr" : address, "ccrc0": crc[0], "ccrc1": crc[1],
-                               "ccrc2": crc[2], "ccrc3": crc[3] }))
+                             {"addr" : address, "ccrc0": crc[0], "ccrc1": crc[1],
+                              "ccrc2": crc[2], "ccrc3": crc[3]}))
 
     check_result(master_api.modules_new_crc(), result)
 
@@ -181,21 +179,21 @@ def bootload(address, version, hex, crc):
         for i in range(384):
             bytes = ""
             for j in range(64):
-                bytes += chr(ih[i*64 + j])
+                bytes += chr(ihex[i*64 + j])
 
             update = master_api.modules_update_firmware_block()
-            cmd = create_bl_action(update, { "addr" : addr, "block" : i, "bytes": bytes })
+            cmd = create_bl_action(update, {"addr" : address, "block" : i, "bytes": bytes})
 
             try:
                 check_result(cmd, master_communicator.do_command(cmd))
-            except Exception as e:
-                print "Got exception while writing firmware: %s. Retrying..." % e
+            except Exception as exception:
+                print "Got exception while writing firmware: %s. Retrying..." % exception
                 check_result(cmd, master_communicator.do_command(cmd))
 
         print "Verifying firmware"
         result = master_communicator.do_command(
                 create_bl_action(master_api.modules_verify_firmware(),
-                                 { "addr": address }))
+                                 {"addr": address}))
 
         check_result(master_api.modules_verify_firmware(), result)
 
@@ -206,18 +204,18 @@ def bootload(address, version, hex, crc):
     print "Going to application"
     result = master_communicator.do_command(
             create_bl_action(master_api.modules_goto_application(),
-                             { "addr" : address }))
-    
+                             {"addr" : address}))
+
     check_result(master_api.modules_goto_application(), result)
 
 
-def main(type, file, version, verbose=False):
-    """ The main function.
-    
+def bootload_modules(type, filename, version, verbose=False):
+    """ Bootload all modules of the given type with the firmware in the given filename.
+
     :param type: Type of the modules (o, d, i, t)
     :type type: chr
-    :param file: The filename for the hex file to load
-    :type file: string
+    :param filename: The filename for the hex file to load
+    :type filename: string
     :param version: The new version that is loaded
     :type version: tuple of 3 integers
     :param verbose: If true the serial communication is printed.
@@ -234,30 +232,35 @@ def main(type, file, version, verbose=False):
 
     addresses = get_module_addresses(master_communicator, type)
 
-    hex = intelhex.IntelHex(file)
-    crc = calc_crc(hex)
+    ihex = intelhex.IntelHex(filename)
+    crc = calc_crc(ihex)
 
     for address in addresses:
         print "Bootloading module %s" % pretty_address(address)
-        bootload(address, version, hex, crc)
+        bootload(master_communicator, address, version, ihex, crc)
 
 
-if __name__ == '__main__':
+def main():
+    """ The main function. """
     parser = argparse.ArgumentParser(description='Tool to bootload the slave modules '
                                                  '(output, dimmer, input and temperature).')
 
-    parser.add_argument('-t', '--type', dest='type', choices=[ 'o', 'd', 'i', 't' ],
+    parser.add_argument('-t', '--type', dest='type', choices=['o', 'd', 'i', 't'],
                         required=True, help='the type of module to bootload (choices: o, d, i, t)')
     parser.add_argument('-f', '--file', dest='file', required=True,
                         help='the filename of the hex file to bootload')
     parser.add_argument('-v', '--version', dest='version', required=True,
                         help='the version number for the new firmware (format: x.y.z)')
-    
+
     parser.add_argument('-V', '--verbose', dest='verbose', action='store_true',
                         help='show the serial output')
 
     args = parser.parse_args()
 
-    version = [ int(x) for x in args.version.split(".") ]
+    version = [int(x) for x in args.version.split(".")]
 
-    main(args.type, args.file, version, args.verbose)
+    bootload_modules(args.type, args.file, version, args.verbose)
+
+
+if __name__ == '__main__':
+    main()

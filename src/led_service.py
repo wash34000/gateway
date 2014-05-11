@@ -21,8 +21,7 @@ I2C_DEVICE_BB = '/dev/i2c-2'  # Beaglebone
 I2C_DEVICE_BBB = '/dev/i2c-1' #Beaglebone black
 
 IOCTL_I2C_SLAVE = 0x0703
-I2C_SLAVE_ADDRESS = None # Read from config file
-CODES = { 'uart4':64, 'uart5':128, 'vpn':16, 'stat1':0, 'stat2':0, 'alive':1, 'cloud':4 }
+CODES = {'uart4':64, 'uart5':128, 'vpn':16, 'stat1':0, 'stat2':0, 'alive':1, 'cloud':4}
 AUTH_CODE = 1 + 4 + 16 + 64 + 128
 
 HOME = 75
@@ -30,31 +29,32 @@ HOME = 75
 ETH_LEFT = 60
 ETH_RIGHT = 49
 
-AUTH_LOOP = [ '1', '0', '1', '0', '0', '0', '0', '0' ]
+AUTH_LOOP = ['1', '0', '1', '0', '0', '0', '0', '0']
 
 
 def is_beagle_bone_black():
     """ Use the total memory size to determine whether the code runs on a Beaglebone
     or on a Beaglebone Black. """
     meminfo = open('/proc/meminfo', 'r')
-    memTotal = meminfo.readline()
+    mem_total = meminfo.readline()
     meminfo.close()
-    return "510716 kB" in memTotal
+    return "510716 kB" in mem_total
 
 
 class StatusObject(dbus.service.Object):
     """ The StatusObject contains the methods exposed over dbus, the serial and network activity
     checkers and the 'authorized' button checker. """
 
-    def __init__(self, bus, path, i2c_device):
+    def __init__(self, bus, path, i2c_device, i2c_address):
         dbus.service.Object.__init__(self, bus, path)
         self.__i2c_device = i2c_device
+        self.__i2c_address = i2c_address
 
         self.__network_enabled = False
         self.__network_activity = False
         self.__network_bytes = 0
-        
-        self.__serial_activity = { 4: False, 5: False }
+
+        self.__serial_activity = {4: False, 5: False}
         self.__enabled_leds = {}
         self.__last_code = 0
 
@@ -63,16 +63,16 @@ class StatusObject(dbus.service.Object):
         self.__master_leds_turn_on = True
         self.__master_leds_on = False
         self.__master_leds_timeout = 0
-        
+
         self.__authorized_mode = False
         self.__authorized_timeout = 0
         self.__authorized_index = 0
-        
+
         self.clear_leds()
 
     def start(self):
         """ Start the master LEDs thread. """
-        self.__master_leds_thread = Thread(target = self.__drive_master_leds)
+        self.__master_leds_thread = Thread(target=self.__drive_master_leds)
         self.__master_leds_thread.daemon = True
         self.__master_leds_thread.start()
 
@@ -88,7 +88,7 @@ class StatusObject(dbus.service.Object):
         """ Set the state of a LED, enabled means LED on in this context. """
         self.__enabled_leds[led_name] = enable
         self.__set_output()
-    
+
     @dbus.service.method("com.openmotics.status", in_signature='s', out_signature='')
     def toggle_led(self, led_name):
         """ Toggle the state of a LED. """
@@ -112,10 +112,10 @@ class StatusObject(dbus.service.Object):
         for led in CODES:
             if self.__enabled_leds[led] == True:
                 code |= CODES[led]
-        
+
         if self.__authorized_mode: # Light all leds in authorized mode
             code |= AUTH_CODE
-        
+
         return (~ code) & 255
 
     def __set_output(self):
@@ -125,15 +125,15 @@ class StatusObject(dbus.service.Object):
             if new_code != self.__last_code:
                 self.__last_code = new_code
                 i2c = open(self.__i2c_device, 'r+', 1)
-                fcntl.ioctl(i2c, IOCTL_I2C_SLAVE, I2C_SLAVE_ADDRESS)
+                fcntl.ioctl(i2c, IOCTL_I2C_SLAVE, self.__i2c_address)
                 i2c.write(chr(self.__get_i2c_code()))
                 i2c.close()
         except Exception as exception:
             print "Error while writing to i2c: ", exception
 
     def serial(self):
-        """ Function that toggles the UART LEDs in case there was activity on the port. 
-        This function registers itself with the gobject creating a loop that runs every 100 ms. 
+        """ Function that toggles the UART LEDs in case there was activity on the port.
+        This function registers itself with the gobject creating a loop that runs every 100 ms.
         """
         for uart in [4, 5]:
             if self.__serial_activity[uart]:
@@ -144,14 +144,14 @@ class StatusObject(dbus.service.Object):
         gobject.timeout_add(100, self.serial)
 
     def network(self):
-        """ Function that set the LEDs on the ethernet port using the statistics from /proc/net. 
-        This function registers itself with the gobject creating a loop that runs every 100 ms. 
+        """ Function that set the LEDs on the ethernet port using the statistics from /proc/net.
+        This function registers itself with the gobject creating a loop that runs every 100 ms.
         """
         fh_up = open('/sys/class/net/eth0/carrier', 'r')
         line = fh_up.read()
         fh_up.close()
         self.__network_enabled = int(line) == 1
-        
+
         fh_stat = open('/proc/net/dev', 'r')
         for line in fh_stat.readlines():
             if 'eth0' in line:
@@ -169,7 +169,7 @@ class StatusObject(dbus.service.Object):
                 else:
                     self.__network_activity = False
         fh_stat.close()
-        
+
         self.__set_network()
         gobject.timeout_add(100, self.network)
 
@@ -178,13 +178,13 @@ class StatusObject(dbus.service.Object):
         fh_r = open("/sys/class/gpio/gpio%i/value" % ETH_LEFT, 'w')
         fh_r.write('1' if self.__network_enabled else '0')
         fh_r.close()
-        
+
         fh_l = open("/sys/class/gpio/gpio%i/value" % ETH_RIGHT, 'w')
         fh_l.write('1' if self.__network_activity else '0')
         fh_l.close()
-    
+
     def input(self):
-        """ Read the input button on the top panel. Enables the master LEDs when pressed shortly,  
+        """ Read the input button on the top panel. Enables the master LEDs when pressed shortly,
         enables authorized mode for 60 seconds when the button is pushed for 5 seconds.
         This function registers itself with the gobject creating a loop that runs every 100 ms.
         While the gateway is in authorized mode, the input button is not checked.
@@ -196,7 +196,7 @@ class StatusObject(dbus.service.Object):
         if button_pressed:
             if not self.__master_leds_on:
                 self.__master_leds_turn_on = True
-            
+
             self.__times_pressed += 1
             if self.__times_pressed == 50:
                 self.__authorized_mode = True
@@ -207,7 +207,7 @@ class StatusObject(dbus.service.Object):
         else:
             self.__times_pressed = 0
             gobject.timeout_add(100, self.input)
-    
+
     def __authorized(self):
         """ The authorized loop runs when the gateway is in authorized mode: it makes the LED in the
         OpenMotics logo flash and checks whether the timeout for the authorized mode is reached.
@@ -221,13 +221,13 @@ class StatusObject(dbus.service.Object):
             self.__set_home(AUTH_LOOP[self.__authorized_index])
             self.__authorized_index = (self.__authorized_index + 1) % len(AUTH_LOOP)
             gobject.timeout_add(100, self.__authorized)
-    
+
     def __set_home(self, value):
         """ Set the status of the LED in the OpenMotics logo. """
         fh_home = open("/sys/class/gpio/gpio%i/value" % HOME, 'w')
         fh_home.write(value)
         fh_home.close()
-        
+
     def __drive_master_leds(self):
         """ Turns the master LEDs on or off if required. """
         while True:
@@ -237,9 +237,9 @@ class StatusObject(dbus.service.Object):
             else:
                 if self.__master_leds_on == True and time.time() > self.__master_leds_timeout:
                     self.__master_set_leds(False)
-            
+
             time.sleep(0.2)
-    
+
     def __master_set_leds(self, status):
         """ Set the status of the leds on the master. """
         try:
@@ -247,12 +247,12 @@ class StatusObject(dbus.service.Object):
             handler = urllib2.urlopen(uri, timeout=60.0)
             _ = handler.read()
             handler.close()
-            
+
             self.__master_leds_on = status
             if status == True:
                 self.__master_leds_turn_on = False
                 self.__master_leds_timeout = time.time() + 120
-            
+
         except Exception as exception:
             print "Exception during setting leds : ", exception
 
@@ -262,25 +262,23 @@ def main():
     switch. """
     config = ConfigParser()
     config.read(constants.get_config_file())
-    
-    global I2C_SLAVE_ADDRESS
-    I2C_SLAVE_ADDRESS = int(config.get('OpenMotics', 'leds_i2c_address'), 16)
-    
+
     dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
 
     system_bus = dbus.SystemBus()
-    name = dbus.service.BusName("com.openmotics.status", system_bus)
-    
+    _ = dbus.service.BusName("com.openmotics.status", system_bus) # Initializes the bus.
+
     i2c_device = I2C_DEVICE_BBB if is_beagle_bone_black() else I2C_DEVICE_BB
-    
-    status = StatusObject(system_bus, '/com/openmotics/status', i2c_device)
+    i2c_address = int(config.get('OpenMotics', 'leds_i2c_address'), 16)
+
+    status = StatusObject(system_bus, '/com/openmotics/status', i2c_device, i2c_address)
     status.start()
 
     mainloop = gobject.MainLoop()
     gobject.timeout_add(100, status.network)
     gobject.timeout_add(100, status.serial)
     gobject.timeout_add(100, status.input)
-    
+
     print "Running led service."
     mainloop.run()
 

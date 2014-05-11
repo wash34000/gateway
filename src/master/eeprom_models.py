@@ -5,9 +5,9 @@ Created on Sep 4, 2013
 
 @author: fryckbos
 '''
-from eeprom_controller import EepromModel, EepromAddress, EepromId, EepromString, EepromWord, \
-                              EepromByte, EepromActions, EepromTemp, EepromTime, EepromCSV, \
-                              CompositeDataType, EepromSignedTemp
+from eeprom_controller import EepromModel, EepromAddress, EepromId, EepromString, \
+                              EepromWord, EepromByte, EepromActions, EepromTemp, EepromTime, \
+                              EepromCSV, CompositeDataType, EepromSignedTemp
 
 
 def page_per_module(module_size, start_bank, start_offset, field_size):
@@ -70,67 +70,67 @@ class ThermostatConfiguration(EepromModel):
     pid_d = EepromByte(lambda id: (141, (4*id)+2))
     pid_int = EepromByte(lambda id: (141, (4*id)+3))
     auto_mon = CompositeDataType(
-        [ ('temp_n', EepromTemp(lambda id: (198, id + 0))),
-          ('start_d1', EepromTime(lambda id: (189, (4*id)+0))),
-          ('stop_d1', EepromTime(lambda id: (189, (4*id)+1))),
-          ('temp_d1', EepromTemp(lambda id: (196, id + 0))),
-          ('start_d2', EepromTime(lambda id: (189, (4*id)+2))),
-          ('stop_d2', EepromTime(lambda id: (189, (4*id)+3))),
-          ('temp_d2', EepromTemp(lambda id: (197, id + 0)))
+        [('temp_n', EepromTemp(lambda id: (198, id + 0))),
+         ('start_d1', EepromTime(lambda id: (189, (4*id)+0))),
+         ('stop_d1', EepromTime(lambda id: (189, (4*id)+1))),
+         ('temp_d1', EepromTemp(lambda id: (196, id + 0))),
+         ('start_d2', EepromTime(lambda id: (189, (4*id)+2))),
+         ('stop_d2', EepromTime(lambda id: (189, (4*id)+3))),
+         ('temp_d2', EepromTemp(lambda id: (197, id + 0)))
         ])
     auto_tue = CompositeDataType(
-        [ ('temp_n', EepromTemp(lambda id: (198, id + 32))),
-          ('start_d1', EepromTime(lambda id: (189, (4*id)+128))),
-          ('stop_d1', EepromTime(lambda id: (189, (4*id)+129))),
-          ('temp_d1', EepromTemp(lambda id: (196, id + 32))),
-          ('start_d2', EepromTime(lambda id: (189, (4*id)+130))),
-          ('stop_d2', EepromTime(lambda id: (189, (4*id)+131))),
-          ('temp_d2', EepromTemp(lambda id: (197, id + 32)))
+        [('temp_n', EepromTemp(lambda id: (198, id + 32))),
+         ('start_d1', EepromTime(lambda id: (189, (4*id)+128))),
+         ('stop_d1', EepromTime(lambda id: (189, (4*id)+129))),
+         ('temp_d1', EepromTemp(lambda id: (196, id + 32))),
+         ('start_d2', EepromTime(lambda id: (189, (4*id)+130))),
+         ('stop_d2', EepromTime(lambda id: (189, (4*id)+131))),
+         ('temp_d2', EepromTemp(lambda id: (197, id + 32)))
         ])
     auto_wed = CompositeDataType(
-        [ ('temp_n', EepromTemp(lambda id: (198, id + 64))),
-          ('start_d1', EepromTime(lambda id: (190, (4*id)+0))),
-          ('stop_d1', EepromTime(lambda id: (190, (4*id)+1))),
-          ('temp_d1', EepromTemp(lambda id: (196, id + 64))),
-          ('start_d2', EepromTime(lambda id: (190, (4*id)+2))),
-          ('stop_d2', EepromTime(lambda id: (190, (4*id)+3))),
-          ('temp_d2', EepromTemp(lambda id: (197, id + 64)))
+        [('temp_n', EepromTemp(lambda id: (198, id + 64))),
+         ('start_d1', EepromTime(lambda id: (190, (4*id)+0))),
+         ('stop_d1', EepromTime(lambda id: (190, (4*id)+1))),
+         ('temp_d1', EepromTemp(lambda id: (196, id + 64))),
+         ('start_d2', EepromTime(lambda id: (190, (4*id)+2))),
+         ('stop_d2', EepromTime(lambda id: (190, (4*id)+3))),
+         ('temp_d2', EepromTemp(lambda id: (197, id + 64)))
         ])
     auto_thu = CompositeDataType(
-        [ ('temp_n', EepromTemp(lambda id: (198, id + 96))),
-          ('start_d1', EepromTime(lambda id: (190, (4*id)+128))),
-          ('stop_d1', EepromTime(lambda id: (190, (4*id)+129))),
-          ('temp_d1', EepromTemp(lambda id: (196, id + 96))),
-          ('start_d2', EepromTime(lambda id: (190, (4*id)+130))),
-          ('stop_d2', EepromTime(lambda id: (190, (4*id)+131))),
-          ('temp_d2', EepromTemp(lambda id: (197, id + 96)))
+        [('temp_n', EepromTemp(lambda id: (198, id + 96))),
+         ('start_d1', EepromTime(lambda id: (190, (4*id)+128))),
+         ('stop_d1', EepromTime(lambda id: (190, (4*id)+129))),
+         ('temp_d1', EepromTemp(lambda id: (196, id + 96))),
+         ('start_d2', EepromTime(lambda id: (190, (4*id)+130))),
+         ('stop_d2', EepromTime(lambda id: (190, (4*id)+131))),
+         ('temp_d2', EepromTemp(lambda id: (197, id + 96)))
         ])
     auto_fri = CompositeDataType(
-        [ ('temp_n', EepromTemp(lambda id: (198, id + 128))),
-          ('start_d1', EepromTime(lambda id: (191, (4*id)+0))),
-          ('stop_d1', EepromTime(lambda id: (191, (4*id)+1))),
-          ('temp_d1', EepromTemp(lambda id: (196, id + 128))),
-          ('start_d2', EepromTime(lambda id: (191, (4*id)+2))),
-          ('stop_d2', EepromTime(lambda id: (191, (4*id)+3))),
-          ('temp_d2', EepromTemp(lambda id: (197, id + 128)))
+        [('temp_n', EepromTemp(lambda id: (198, id + 128))),
+         ('start_d1', EepromTime(lambda id: (191, (4*id)+0))),
+         ('stop_d1', EepromTime(lambda id: (191, (4*id)+1))),
+         ('temp_d1', EepromTemp(lambda id: (196, id + 128))),
+         ('start_d2', EepromTime(lambda id: (191, (4*id)+2))),
+         ('stop_d2', EepromTime(lambda id: (191, (4*id)+3))),
+         ('temp_d2', EepromTemp(lambda id: (197, id + 128)))
         ])
     auto_sat = CompositeDataType(
-        [ ('temp_n', EepromTemp(lambda id: (198, id + 160))),
-          ('start_d1', EepromTime(lambda id: (191, (4*id)+128))),
-          ('stop_d1', EepromTime(lambda id: (191, (4*id)+129))),
-          ('temp_d1', EepromTemp(lambda id: (196, id + 160))),
-          ('start_d2', EepromTime(lambda id: (191, (4*id)+130))),
-          ('stop_d2', EepromTime(lambda id: (191, (4*id)+131))),
-          ('temp_d2', EepromTemp(lambda id: (197, id + 160)))
+        [('temp_n', EepromTemp(lambda id: (198, id + 160))),
+         ('start_d1', EepromTime(lambda id: (191, (4*id)+128))),
+         ('stop_d1', EepromTime(lambda id: (191, (4*id)+129))),
+         ('temp_d1', EepromTemp(lambda id: (196, id + 160))),
+         ('start_d2', EepromTime(lambda id: (191, (4*id)+130))),
+         ('stop_d2', EepromTime(lambda id: (191, (4*id)+131))),
+         ('temp_d2', EepromTemp(lambda id: (197, id + 160)))
         ])
     auto_sun = CompositeDataType(
-        [ ('temp_n', EepromTemp(lambda id: (198, id + 192))),
-          ('start_d1', EepromTime(lambda id: (192, (4*id)+0))),
-          ('stop_d1', EepromTime(lambda id: (192, (4*id)+1))),
-          ('temp_d1', EepromTemp(lambda id: (196, id + 192))),
-          ('start_d2', EepromTime(lambda id: (192, (4*id)+2))),
-          ('stop_d2', EepromTime(lambda id: (192, (4*id)+3))),
-          ('temp_d2', EepromTemp(lambda id: (197, id + 192)))
+        [('temp_n', EepromTemp(lambda id: (198, id + 192))),
+         ('start_d1', EepromTime(lambda id: (192, (4*id)+0))),
+         ('stop_d1', EepromTime(lambda id: (192, (4*id)+1))),
+         ('temp_d1', EepromTemp(lambda id: (196, id + 192))),
+         ('start_d2', EepromTime(lambda id: (192, (4*id)+2))),
+         ('stop_d2', EepromTime(lambda id: (192, (4*id)+3))),
+         ('temp_d2', EepromTemp(lambda id: (197, id + 192)))
         ])
 
 
@@ -159,7 +159,8 @@ class ScheduledActionConfiguration(EepromModel):
     id = EepromId(102)
     hour = EepromByte(lambda id: (113 + (id / 51), 5 * (id % 51) + 0))
     minute = EepromByte(lambda id: (113 + (id / 51), 5 * (id % 51) + 1))
-    day = EepromByte(lambda id: (113 + (id / 51), 5 * (id % 51) + 2)) ## 8th byte -> one time or reschedule !
+    day = EepromByte(lambda id: (113 + (id / 51), 5 * (id % 51) + 2))
+    ## day's 8th byte -> one time or reschedule
     action = EepromActions(1, lambda id: (113 + (id / 51), 5 * (id % 51) + 3))
     ## 24:00 -> execute every minute, 24:05 -> execute every 5 minutes
 
@@ -168,7 +169,7 @@ class PulseCounterConfiguration(EepromModel):
     """ Models a pulse counter. The maximum number of pulse counters is 8. """
     id = EepromId(8)
     name = EepromString(16, lambda id: (195, 16*id))
-    input = EepromByte(lambda id: (0, 160+id))
+    input = EepromByte(lambda id: (0, 120+id))
 
 
 class StartupActionConfiguration(EepromModel):
