@@ -190,16 +190,16 @@ def bootload(master_communicator, address, version, ihex, crc):
                 print "Got exception while writing firmware: %s. Retrying..." % exception
                 check_result(cmd, master_communicator.do_command(cmd))
 
-        print "Verifying firmware"
-        result = master_communicator.do_command(
-                create_bl_action(master_api.modules_verify_firmware(),
-                                 {"addr": address}))
-
-        check_result(master_api.modules_verify_firmware(), result)
-
     finally:
         print "Going to short mode"
         master_communicator.do_command(master_api.change_communication_mode_to_short())
+
+    print "Verifying firmware"
+    result = master_communicator.do_command(
+            create_bl_action(master_api.modules_verify_firmware(),
+                             {"addr": address}))
+
+    check_result(master_api.modules_verify_firmware(), result)
 
     print "Going to application"
     result = master_communicator.do_command(
