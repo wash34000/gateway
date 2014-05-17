@@ -13,7 +13,7 @@ import power.power_api as power_api
 from power.power_controller import PowerController
 from power.power_communicator import PowerCommunicator, InAddressModeException
 
-from serial_test import SerialMock, sin, sout
+from serial_tests import SerialMock, sin, sout
 from serial_utils import CommunicationTimedOutException
 
 class PowerCommunicatorTest(unittest.TestCase):

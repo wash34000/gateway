@@ -13,7 +13,7 @@ from master.master_communicator import MasterCommunicator, InMaintenanceModeExce
                                        BackgroundConsumer, CrcCheckFailedException
 import master.master_api as master_api
 
-from serial_test import SerialMock, sin, sout
+from serial_tests import SerialMock, sin, sout
 from serial_utils import CommunicationTimedOutException
 
 class MasterCommunicatorTest(unittest.TestCase):

@@ -11,7 +11,7 @@ import time
 from master.master_communicator import MasterCommunicator
 from master.passthrough import PassthroughService
 
-from serial_test import SerialMock, sout, sin
+from serial_tests import SerialMock, sout, sin
 
 class PassthroughServiceTest(unittest.TestCase):
     """ Tests for :class`PassthroughService`. """
