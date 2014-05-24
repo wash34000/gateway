@@ -11,7 +11,7 @@ import time
 class InputStatus(object):
     """ Contains the last x inputs pressed the last y minutes. """
 
-    def __init__(self, num_inputs=5, seconds=300):
+    def __init__(self, num_inputs=5, seconds=10):
         """ Create an InputStatus, specifying the number of inputs to track and
         the number of seconds to keep the data. """
         self.__num_inputs = num_inputs

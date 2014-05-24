@@ -20,6 +20,9 @@ import constants
 I2C_DEVICE_BB = '/dev/i2c-2'  # Beaglebone
 I2C_DEVICE_BBB = '/dev/i2c-1' #Beaglebone black
 
+GPIO_INPUT_BUTTON_GW = 38   # Pin for the input button on the separate gateway module (deprecated)
+GPIO_INPUT_BUTTON_GW_M = 26 # Pin for the input button on the gateway/master module (current) 
+
 IOCTL_I2C_SLAVE = 0x0703
 CODES = {'uart4':64, 'uart5':128, 'vpn':16, 'stat1':0, 'stat2':0, 'alive':1, 'cloud':4}
 AUTH_CODE = 1 + 4 + 16 + 64 + 128
@@ -41,14 +44,39 @@ def is_beagle_bone_black():
     return "510716 kB" in mem_total
 
 
+def is_button_pressed(gpio_pin):
+    """ Read the input button: returns True if the button is pressed, False if not. """
+    fh_inp = open('/sys/class/gpio/gpio%d/value' % gpio_pin, 'r')
+    line = fh_inp.read()
+    fh_inp.close()
+    return (int(line) == 0)
+
+
+def detect_button(gpio_1, gpio_2):
+    """ Detect which gpio pin is connected the input button. If the button is not connected, the
+    pin will look as if the button is pressed. So if there is one input that is not pressed, it
+    must be connected to the button. If both pins look pressed, it defaults to the first given
+    gpio. """
+    first_pressed = is_button_pressed(gpio_1)
+    second_pressed = is_button_pressed(gpio_2)
+
+    if not first_pressed:
+        return gpio_1
+    elif not second_pressed:
+        return gpio_2
+    else:
+        return gpio_1
+
+
 class StatusObject(dbus.service.Object):
     """ The StatusObject contains the methods exposed over dbus, the serial and network activity
     checkers and the 'authorized' button checker. """
 
-    def __init__(self, bus, path, i2c_device, i2c_address):
+    def __init__(self, bus, path, i2c_device, i2c_address, input_button):
         dbus.service.Object.__init__(self, bus, path)
         self.__i2c_device = i2c_device
         self.__i2c_address = i2c_address
+        self.__input_button = input_button
 
         self.__network_enabled = False
         self.__network_activity = False
@@ -189,11 +217,7 @@ class StatusObject(dbus.service.Object):
         This function registers itself with the gobject creating a loop that runs every 100 ms.
         While the gateway is in authorized mode, the input button is not checked.
         """
-        fh_inp = open('/sys/class/gpio/gpio38/value', 'r')
-        line = fh_inp.read()
-        fh_inp.close()
-        button_pressed = (int(line) == 0)
-        if button_pressed:
+        if is_button_pressed(self.__input_button):
             if not self.__master_leds_on:
                 self.__master_leds_turn_on = True
 
@@ -271,7 +295,9 @@ def main():
     i2c_device = I2C_DEVICE_BBB if is_beagle_bone_black() else I2C_DEVICE_BB
     i2c_address = int(config.get('OpenMotics', 'leds_i2c_address'), 16)
 
-    status = StatusObject(system_bus, '/com/openmotics/status', i2c_device, i2c_address)
+    gpio_input = detect_button(GPIO_INPUT_BUTTON_GW_M, GPIO_INPUT_BUTTON_GW)
+
+    status = StatusObject(system_bus, '/com/openmotics/status', i2c_device, i2c_address, gpio_input)
     status.start()
 
     mainloop = gobject.MainLoop()
