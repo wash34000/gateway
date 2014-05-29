@@ -140,11 +140,9 @@ class WebInterface(object):
             # Don't check tokens for localhost
             return
 
-        if token is None or token is "None":
+        if token is None or token == "None":
             # Get the token from the session if no token is provided.
-            print "Token not found, getting token from session:"
             token = cherrypy.session.get("token", None)
-            print "Token = %s" % token
 
         if not self.__user_controller.check_token(token):
             raise cherrypy.HTTPError(401, "Unauthorized")
@@ -163,8 +161,10 @@ class WebInterface(object):
 
         :returns: msg (String)
         """
-
-        return serve_file('/opt/openmotics/static/index.html', content_type='text/html')
+        if cherrypy.session.get("token", None) is None:
+            return serve_file('/opt/openmotics/static/login.html', content_type='text/html')
+        else:
+            return serve_file('/opt/openmotics/static/index.html', content_type='text/html')
 
     @cherrypy.expose
     def login(self, username, password):
@@ -185,6 +185,16 @@ class WebInterface(object):
             cherrypy.session.regenerate()
             cherrypy.session['token'] = token
             return self.__success(token=token)
+
+    @cherrypy.expose
+    def logout(self, token):
+        """ Logout from the web service.
+
+        :returns: 'status': 'OK'
+        """
+        self.__user_controller.logout(token)
+        cherrypy.session.clear()
+        return self.__success(status='OK')
 
     @cherrypy.expose
     def create_user(self, username, password):

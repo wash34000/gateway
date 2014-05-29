@@ -76,6 +76,18 @@ class UserControllerTest(unittest.TestCase):
         self.assertNotEquals(None, token)
         self.assertTrue(user_controller.check_token(token))
 
+    def test_timeout(self):
+        """ Test logout. """
+        user_controller = UserController(UserControllerTest.FILE,
+                              {'username' : 'om', 'password' : 'pass'}, 3)
+
+        token = user_controller.login("om", "pass")
+        self.assertNotEquals(None, token)
+        self.assertTrue(user_controller.check_token(token))
+
+        user_controller.logout(token)
+        self.assertFalse(user_controller.check_token(token))       
+
     def test_get_usernames(self):
         """ Test getting all usernames. """
         user_controller = self.__get_controller()

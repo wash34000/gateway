@@ -117,6 +117,10 @@ class UserController(object):
 
         return None
 
+    def logout(self, token):
+        """ Removes the token from the controller. """
+        self.__tokens.pop(token, None)
+
     def get_role(self, username):
         """ Get the role for a certain user. Returns None is user was not found. """
         username = username.lower()

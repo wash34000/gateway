@@ -1,3 +1,5 @@
+<!-- TODO Load the tabs separately for faster startup ! -->
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -14,8 +16,6 @@
     <script type="text/javascript" src="/static/js/bootstrap.js"></script>
     <script type="text/javascript" src="/static/js/om_config.js"></script>
     <script type="text/javascript">
-        var loggedIn = false;
-        var token = null;
         var messageActive = false;
 
         // Configuration
@@ -41,7 +41,7 @@
         }
         function set_output(output_nr) {
             var on = output_states[output_nr];
-            var data = {  token: token, output_nr: output_nr, is_on: on == 1, fe_time: gettimestamp() };
+            var data = {  token: "None", output_nr: output_nr, is_on: on == 1, fe_time: gettimestamp() };
 
             if ($('#dimmer_' + output_nr).length != 0) {
                 var dimmer = parseInt($("#dimmer_" + output_nr).val(), 10);
@@ -192,7 +192,7 @@
                             url: "/do_group_action",
                             type: 'POST',
                             dataType: 'json',
-                            data: { token : token, group_action_id : e.data.id, fe_time: gettimestamp() }
+                            data: { token : "None", group_action_id : e.data.id, fe_time: gettimestamp() }
                         })
                         .fail(function (xhr) {
                             if (xhr.status === 401) {
@@ -223,7 +223,7 @@
                 url: "/set_thermostat_mode",
                 type: 'POST',
                 dataType: 'json',
-                data: { token : token, thermostat_on : on, automatic : automatic, setpoint : setpoint, fe_time: gettimestamp() }
+                data: { token : "None", thermostat_on : on, automatic : automatic, setpoint : setpoint, fe_time: gettimestamp() }
             })
             .done(refresh_thermostats)
             .fail(function(xhr) {
@@ -244,7 +244,7 @@
                 url: "/set_current_setpoint",
                 type: 'POST',
                 dataType: 'json',
-                data: { token : token, thermostat : thermostat, temperature : temperature, fe_time : gettimestamp() }
+                data: { token : "None", thermostat : thermostat, temperature : temperature, fe_time : gettimestamp() }
             })
             .done(refresh_thermostats)
             .fail(function(xhr) {
@@ -427,10 +427,10 @@
             var url, callback;
 
             if (name == "outputs") {
-                url = "/get_output_status?token=" + token;
+                url = "/get_output_status?token=None";
                 callback = show_outputs;
             } else if (name == "thermostats") {
-                url = "/get_thermostat_status?token=" + token;
+                url = "/get_thermostat_status?token=None";
                 callback = show_thermostats;
             }
             url += "&fe_time=" + gettimestamp();
@@ -497,7 +497,7 @@
                             url: '/plugins/' + plugin_name + '/set_config',
                             type: 'POST',
                             dataType: 'json',
-                            data: { token : token, config : JSON.stringify(config) }
+                            data: { token : "None", config : JSON.stringify(config) }
                         })
                         .done(function(data) {
                             show_message("Info", "Successfully set the config for plugin " + plugin_name + ".");
@@ -513,7 +513,7 @@
             }
 
             $.ajax({
-                url: '/plugins/' + plugin_name + '/get_config_description?token=' + token,
+                url: '/plugins/' + plugin_name + '/get_config_description?token=None',
                 type: 'GET',
                 dataType: 'json'
             })
@@ -526,7 +526,7 @@
             });
 
             $.ajax({
-                url: '/plugins/' + plugin_name + '/get_config?token=' + token,
+                url: '/plugins/' + plugin_name + '/get_config?token=None',
                 type: 'GET',
                 dataType: 'json'
             })
@@ -539,15 +539,12 @@
             });
         }
 
-        function logged_in_callback() {
-            $('#login_form').hide();
-            $(".loading").show();
-            
+        function init() {
             /* Load the configuration */
             $.ajax({
                 url: '/get_output_configurations',
                 type: 'POST',
-                data: { 'token' : token, 'fields' : JSON.stringify([ 'name', 'type' ]) },
+                data: { 'token' : "None", 'fields' : JSON.stringify([ 'name', 'type' ]) },
                 dataType: 'json'
             })
             .done(create_config_loaded("outputs", function(element) { return element['type'] == 255 }))
@@ -556,7 +553,7 @@
             $.ajax({
                 url: '/get_thermostat_configurations',
                 type: 'POST',
-                data: { 'token' : token, 'fields' : JSON.stringify([ 'name' ]) },
+                data: { 'token' : "None", 'fields' : JSON.stringify([ 'name' ]) },
                 dataType: 'json'
             })
             .done(create_config_loaded("thermostats"))
@@ -565,7 +562,7 @@
             $.ajax({
                 url: '/get_group_action_configurations',
                 type: 'POST',
-                data: { 'token' : token, 'fields' : JSON.stringify([ 'name' ]) },
+                data: { 'token' : "None", 'fields' : JSON.stringify([ 'name' ]) },
                 dataType: 'json'
             })
             .done(create_config_loaded("group_actions"))
@@ -574,7 +571,7 @@
             $.ajax({
                 url: '/get_plugins',
                 type: 'POST',
-                data: { 'token' : token },
+                data: { 'token' : "None" },
                 dataType: 'json'
             })
             .done(function(data) {
@@ -595,7 +592,7 @@
                     if (is_configurable) {
                         row += '<a href="#" class="btn btn-small" id="btn-config-' + plugin['name'] + '">Configure</a>';
                     }
-                    row += '<a href="/remove_plugin?token=' + token + '&name=' + plugin['name'] + '" class="btn btn-small">Remove</a>';
+                    row += '<a href="/remove_plugin?token=None&name=' + plugin['name'] + '" class="btn btn-small">Remove</a>';
                     row += "</div></td></tr>";
                     $("#plugin_table").append(row);
 
@@ -611,7 +608,7 @@
 
                     if (is_webui) {
                         var content = $("#content");
-                        content.append('<div class="section" style="display: none; height: 100%;" id="' + plugin['name'] + '"><iframe style="height:100%;width:100%" width="100%" height="100%" frameborder="0" scrolling="no" marginheight="0" marginwidth="0" src="/plugins/' + plugin['name'] + '/html_index?token=' + token + '"></iframe></div>');
+                        content.append('<div class="section" style="display: none; height: 100%;" id="' + plugin['name'] + '"><iframe style="height:100%;width:100%" width="100%" height="100%" frameborder="0" scrolling="no" marginheight="0" marginwidth="0" src="/plugins/' + plugin['name'] + '/html_index?token=None"></iframe></div>');
 
                         var tabs = $(".tabs");
                         tabs.append('<li class="tab"><a id="' + plugin['name'] + '_button" href="#">' + plugin['name'] + '</a></li>');
@@ -650,40 +647,11 @@
                 });
             });
 
-            $("#password").keypress(function(e) {
-                if (e.which == 13) {
-                    $("#login").trigger("click");
-                }
-            });
-
-            $("#login").click(function(e) {
-                $.ajax({
-                    url: '/login',
-                    type: 'POST',
-                    dataType: 'json',
-                    data: {
-                        username: $("#username").val(),
-                        password: $("#password").val(),
-                        fe_time: gettimestamp()
-                    }
-                })
-                .done(function(result) {
-                    loggedIn = true;
-                    token = result['token'];
-                    $('#token').val(token);
-                    logged_in_callback();
-                })
-                .fail(function(xhr) {
-                    if (xhr.status === 401) {
-                        location.reload(true);
-                    }
-                    show_message("Login failed", "The entered credentials were incorrect.");
-                });
-            });
-
             $('#modal-message').on('hidden', function () {
                 messageActive = false;
             });
+
+            init();
         });
 
         function show_message(title, body) {
@@ -799,6 +767,10 @@
                         </li>
                     </ul>
                 </div>
+
+                <div class="btn-group pull-right">
+                    <a class="btn" href="/logout?token=None"><i class="icon-user"></i> Logout</a>
+                </div>
             </div>
         </div>
     </div>
@@ -813,37 +785,7 @@
                     <li class="tab"><a id="plugins_button" href="#">Plugins</a></li>
                 </ul>
 
-                <div id='login_form'>
-                    <h3>Login</h3>
-                    <p>
-                        Please enter your gateway username and password.
-                    </p>
-                    <br />
-                    <form class="form-horizontal">
-                        <div class="control-group">
-                            <label class="control-label" for="username">Username</label>
-                            <div class="controls">
-                                <input type="text" id="username" placeholder="Username" />
-                            </div>
-                        </div>
-                        <div class="control-group">
-                            <label class="control-label" for="password">Password</label>
-                            <div class="controls">
-                                <input type="password" id="password" placeholder="Password" />
-                            </div>
-                        </div>
-                        <div class="form-actions">
-                            <input class="btn btn-primary"  type='button' id='login' value='Login'/>
-                            <a class="btn" href='/static/new_account.html'>Create a new account</a>
-                        </div>
-                    </form>
-                    <p>
-                        <b>Remark:</b> For maximum security, your gateway account is different from the one in the cloud and is not synchronized.
-                        It may thus have a different username and/or password. To create an account, click the button above, and follow the displayed steps.
-                    </p>
-                </div>
-
-                <div class="loading" style="display: none;">
+                <div class="loading">
                     <h3>Loading configuration</h3>
                     <img src="/static/img/loading_round.gif" class="spaced" style="padding: 50px; width: 25px; height: 25px;"/>
                 </div>
@@ -874,7 +816,7 @@
 
                     <form action="/install_plugin" method="post" class="form-horizontal" enctype="multipart/form-data">
                         <h4>Install a new plugin.</h4>
-                        <input id="token" name="token" type="hidden"/>
+                        <input id="token" name="token" type="hidden" value="None" />
                         <div class="control-group ">
                             <label for="package_data" class="control-label">Plugin package file</label>
                             <div class="controls">
