@@ -21,6 +21,10 @@ class EepromController(object):
         """
         self.__eeprom_file = eeprom_file
 
+    def invalidate_cache(self):
+        """ Invalidate the cache, this should happen when maintenance mode was used. """
+        self.__eeprom_file.invalidate_cache()
+
     def read(self, eeprom_model, id=None, fields=None):
         """ Create an instance of an EepromModel by reading it from the EepromFile. The id has to
         be specified if the model has an EepromId field.
@@ -125,6 +129,11 @@ class EepromFile(object):
         :type master_communicator: instance of MasterCommunicator.
         """
         self.__master_communicator = master_communicator
+        self.__bank_cache = dict()
+
+    def invalidate_cache(self):
+        """ Invalidate the cache, this should happen when maintenance mode was used. """
+        self.__bank_cache = dict()
 
     def activate(self):
         """ Activate a change in the Eeprom. The master will read the eeprom
@@ -161,8 +170,9 @@ class EepromFile(object):
         provides two function for reading from the eeprom: master_api.eeprom_list() and
         master_api.read_eeprom(). The list reads a full bank (256 bytes), while the read can only
         read 10 bytes at once. Due to communciation overhead the read function is about half the
-        speed (per byte) of the list function. If more than 13 reads are required for 1 bank,
-        the list function is used to read the bank at once.
+        speed (per byte) of the list function. Howver the list function is cached while the read
+        function is not. If more than 6 reads are required for 1 bank, the list function is used
+        to read the bank at once.
 
         :param bank: the number of the bank
         :type bank: Integer
@@ -190,9 +200,9 @@ class EepromFile(object):
                 i += 1
 
         ## Read from the start addresses
-        if len(start_addresses) > 13:
+        if len(start_addresses) > 6:
             ## Too many reads, better read the whole bank at once using eeprom_list.
-            return self.__master_communicator.do_command(eeprom_list(), {"bank" : bank})['data']
+            return self.__read_banks([bank])[bank]
         else:
             ## Fill the bytes with dummies and only read the required bytes from eeprom.
             bytes = ["\xff"] * 256
@@ -214,8 +224,14 @@ class EepromFile(object):
         ret = dict()
 
         for bank in banks:
-            output = self.__master_communicator.do_command(eeprom_list(), {"bank" : bank})
-            ret[bank] = output['data']
+            if bank in self.__bank_cache:
+                data = self.__bank_cache[bank]
+            else:
+                output = self.__master_communicator.do_command(eeprom_list(), {"bank" : bank})
+                data = output['data']
+                self.__bank_cache[bank] = data
+
+            ret[bank] = data
 
         return ret
 
@@ -233,24 +249,32 @@ class EepromFile(object):
             self.__patch(new_bank_data, data_piece)
 
         # Check what changed and write changes in batch
-        for bank in bank_data.keys():
-            old = bank_data[bank]
-            new = new_bank_data[bank]
-
-            i = 0
-            while i < len(bank_data[bank]):
-                if old[i] != new[i]:
-                    length = 1
-                    j = 1
-                    while j < EepromFile.BATCH_SIZE:
-                        if old[i + j] != new[i + j]:
-                            length = j + 1
-                        j += 1
-
-                    self.__write(bank, i, new[i:i + length])
-                    i += EepromFile.BATCH_SIZE
-                else:
-                    i += 1
+        try:
+            for bank in bank_data.keys():
+                old = bank_data[bank]
+                new = new_bank_data[bank]
+    
+                i = 0
+                while i < len(bank_data[bank]):
+                    if old[i] != new[i]:
+                        length = 1
+                        j = 1
+                        while j < EepromFile.BATCH_SIZE:
+                            if old[i + j] != new[i + j]:
+                                length = j + 1
+                            j += 1
+    
+                        self.__write(bank, i, new[i:i + length])
+                        i += EepromFile.BATCH_SIZE
+                    else:
+                        i += 1
+    
+                self.__bank_cache[bank] = new
+        except Exception as exception:
+            ## The write failed at some point, we are not sure about the data in the cache,
+            ## so we invalidate it.
+            self.invalidate_cache()
+            raise exception
 
     def __patch(self, bank_data, eeprom_data):
         """ Patch a byte array with a eeprom_data.

@@ -488,6 +488,140 @@ class EepromFileTest(unittest.TestCase):
         self.assertTrue('write1' in done)
         self.assertTrue('write2' in done)
 
+    def test_cache(self):
+        """ Test the caching of banks. """
+        state = { 'count' : 0 }
+
+        def read(data):
+            """ Read dummy. """
+            if state['count'] == 0:
+                state['count'] = 1
+                return {"data" : "\xff" * 256}
+            else:
+                raise Exception("Too many reads !")
+
+        communicator = MasterCommunicatorDummy(read, None)
+
+        eeprom_file = EepromFile(communicator)
+        read = eeprom_file.read([EepromAddress(1, 0, 256)])
+        self.assertEquals("\xff" * 256, read[0].bytes)
+
+        # Second read should come from cache, if read is called
+        # an exception will be thrown.
+        read = eeprom_file.read([EepromAddress(1, 0, 256)])
+        self.assertEquals("\xff" * 256, read[0].bytes)
+
+    def test_cache_invalidate(self):
+        """ Test the cache invalidation. """
+        state = { 'count' : 0 }
+
+        def read(data):
+            """ Read dummy. """
+            if state['count'] == 0:
+                state['count'] = 1
+                return {"data" : "\xff" * 256}
+            elif state['count'] == 1:
+                state['count'] = 2
+                return {"data" : "\xff" * 256}
+            else:
+                raise Exception("Too many reads !")
+
+        communicator = MasterCommunicatorDummy(read, None)
+
+        eeprom_file = EepromFile(communicator)
+        read = eeprom_file.read([EepromAddress(1, 0, 256)])
+        self.assertEquals("\xff" * 256, read[0].bytes)
+
+        # Second read should come from cache.
+        read = eeprom_file.read([EepromAddress(1, 0, 256)])
+        self.assertEquals("\xff" * 256, read[0].bytes)
+
+        eeprom_file.invalidate_cache()
+        # Should be read from communicator, since cache is invalid
+        read = eeprom_file.read([EepromAddress(1, 0, 256)])
+        self.assertEquals("\xff" * 256, read[0].bytes)
+
+        self.assertEquals(2, state['count'])
+
+    def test_cache_write(self):
+        """ Test the eeprom cache on writing. """
+        state = {'read' : 0, 'write' : 0}
+
+        def read(data):
+            """ Read dummy. """
+            if state['read'] == 0:
+                state['read'] = 1
+                return {"data" : "\xff" * 256}
+            else:
+                raise Exception("Too many reads !")
+
+        def write(data):
+            """ Write dummy. """
+            if state['write'] == 0:
+                self.assertEquals(1, data["bank"])
+                self.assertEquals(100, data["address"])
+                self.assertEquals("\x00" * 10, data["data"])
+                state['write'] = 1
+            elif state['write'] == 1:
+                self.assertEquals(1, data["bank"])
+                self.assertEquals(110, data["address"])
+                self.assertEquals("\x00" * 10, data["data"])
+                state['write'] = 2
+            else:
+                raise Exception("Too many writes !")
+
+        communicator = MasterCommunicatorDummy(read, write)
+        eeprom_file = EepromFile(communicator)
+
+        read = eeprom_file.read([EepromAddress(1, 0, 256)])
+        self.assertEquals("\xff" * 256, read[0].bytes)
+
+        eeprom_file.write([EepromData(EepromAddress(1, 100, 20), "\x00" * 20)])
+
+        read = eeprom_file.read([EepromAddress(1, 0, 256)])
+        self.assertEquals("\xff" * 100 + "\x00" * 20 + "\xff" * 136, read[0].bytes)
+
+        self.assertEquals(1, state['read'])
+        self.assertEquals(2, state['write'])
+
+    def test_cache_write_exception(self):
+        """ The cache should be invalidated if a write fails. """
+        state = {'read' : 0, 'write' : 0}
+
+        def read(data):
+            """ Read dummy. """
+            if state['read'] == 0:
+                state['read'] = 1
+                return {"data" : "\xff" * 256}
+            elif state['read'] == 1:
+                state['read'] = 2
+                return {"data" : "\xff" * 256}
+            else:
+                raise Exception("Too many reads !")
+
+        def write(data):
+            """ Write dummy. """
+            state['write'] += 1
+            raise Exception("write fails...")
+
+        communicator = MasterCommunicatorDummy(read, write)
+        eeprom_file = EepromFile(communicator)
+
+        read = eeprom_file.read([EepromAddress(1, 0, 256)])
+        self.assertEquals("\xff" * 256, read[0].bytes)
+
+        try:
+            eeprom_file.write([EepromData(EepromAddress(1, 100, 20), "\x00" * 20)])
+            self.fail("Should not get here !")
+        except Exception as exception:
+            pass
+
+        read = eeprom_file.read([EepromAddress(1, 0, 256)])
+        self.assertEquals("\xff" * 256, read[0].bytes)
+
+        self.assertEquals(2, state['read'])
+        self.assertEquals(1, state['write'])
+
 
 class EepromModelTest(unittest.TestCase):
     """ Tests for EepromModel. """

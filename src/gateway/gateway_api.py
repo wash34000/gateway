@@ -147,6 +147,7 @@ class GatewayApi(object):
             msg = "Exception while setting status leds before maintenance mode:" + str(exception)
             LOGGER.warning(msg)
 
+        self.__eeprom_controller.invalidate_cache() # Eeprom can be changed in maintenance mode.
         self.__master_communicator.start_maintenance_mode()
 
         def check_maintenance_timeout():
