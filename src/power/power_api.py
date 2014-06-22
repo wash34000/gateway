@@ -143,3 +143,7 @@ def bootloader_write_configuration():
 def bootloader_jump_application():
     """ Go from bootloader to applications """
     return PowerCommand('S', 'BJA', '', '')
+
+def get_version():
+    """ Get the current version of the power module firmware """
+    return PowerCommand('G', 'FIV', '', '16s')

@@ -18,7 +18,7 @@ import constants
 from power.power_communicator import PowerCommunicator
 from power.power_controller import PowerController
 from power.power_api import bootloader_goto, bootloader_read_id, bootloader_write_code, \
-                            bootloader_jump_application
+                            bootloader_jump_application, get_version
 
 class HexReader(object):
     """ Reads the hex from file and returns it in the OpenMotics format. """
@@ -66,19 +66,14 @@ class HexReader(object):
         return self.__crc
 
 
-def bootload(port, paddr, hex_file, verbose=False):
+def bootload(paddr, hex_file, power_communicator, verbose=False):
     """ Bootload a power module.
 
     :param paddr: The address of a power module (integer).
     :param hex_file: The filename of the hex file to write.
+    :param power_communicator: Communication with the power modules.
     :param verbose: Show serial command on output if verbose is True.
     """
-    power_serial = RS485(Serial(port, 115200))
-
-    power_communicator = PowerCommunicator(power_serial, None, time_keeper_period=0,
-                                           verbose=verbose)
-    power_communicator.start()
-
     reader = HexReader(hex_file)
 
     print "E%d - Going to bootloader" % paddr
@@ -105,6 +100,15 @@ def bootload(port, paddr, hex_file, verbose=False):
     power_communicator.do_command(paddr, bootloader_jump_application())
 
 
+def version(paddr, power_communicator):
+    """ Get the version of a power module.
+
+    :param paddr: The address of a power module (integer).
+    :param power_communicator: Communication with the power modules.
+    """
+    version = power_communicator.do_command(paddr, get_version())[0]
+    return version.split("\x00")[0]
+
 def main():
     """ The main function. """
     parser = argparse.ArgumentParser(description='Tool to bootload a power module.')
@@ -114,6 +118,8 @@ def main():
                         help='bootload all power modules')
     parser.add_argument('--file', dest='file',
                         help='the filename of the hex file to bootload')
+    parser.add_argument('--version', dest='version', action='store_true',
+                        help='display the version of the power module(s)')
     parser.add_argument('--verbose', dest='verbose', action='store_true',
                         help='show the serial output')
 
@@ -123,18 +129,29 @@ def main():
     config.read(constants.get_config_file())
 
     port = config.get('OpenMotics', 'power_serial')
+    power_serial = RS485(Serial(port, 115200))
+    power_communicator = PowerCommunicator(power_serial, None, time_keeper_period=0,
+                                           verbose=args.verbose)
+    power_communicator.start()
 
-    if args.file and (args.address or args.all):
+    if (args.address or args.all):
         if args.all:
             power_controller = PowerController(constants.get_power_database_file())
             power_modules = power_controller.get_power_modules()
 
             for module_id in power_modules:
-                bootload(port, power_modules[module_id]['address'], args.file,
-                         verbose=args.verbose)
+                addr = power_modules[module_id]['address']
+                if args.version:
+                    print "E%d - Version: %s" % (addr, version(addr, power_communicator))
+                if args.file:
+                    bootload(port, addr, args.file, power_communicator, verbose=args.verbose)
 
         else:
-            bootload(port, args.address, args.file, verbose=args.verbose)
+            addr = args.address
+            if args.version:
+                print "E%d - Version: %s" % (addr, version(addr, power_communicator))
+            if args.file:
+                bootload(port, addr, args.file, power_communicator, verbose=args.verbose)
     else:
         parser.print_help()
 
