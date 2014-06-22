@@ -92,7 +92,7 @@ def get_module_addresses(master_communicator, type):
     for i in range(no_output_modules):
         modules.append(eeprom_file.read([EepromAddress(33 + i, 0, 4)])[0].bytes)
 
-    return [module for module in modules if module[0].lower == type]
+    return [module for module in modules if module[0].lower() == type]
 
 
 def pretty_address(address):
@@ -113,7 +113,7 @@ def calc_crc(ihex):
     :returns: tuple containing 4 crc bytes.
     """
     sum = 0
-    for i in range(64 * 384):
+    for i in range(64 * 384 - 8):
         sum += ihex[i]
 
     crc0 = (sum & (255 << 24)) >> 24
@@ -149,15 +149,19 @@ def bootload(master_communicator, address, version, ihex, crc):
             raise Exception("%s returned error code %d" % (cmd.action, result['error_code']))
 
     print "Going to bootloader"
-    result = master_communicator.do_command(
-            create_bl_action(master_api.modules_goto_bootloader(),
+    try:
+     result = master_communicator.do_command(
+            *create_bl_action(master_api.modules_goto_bootloader(),
                              {"addr" : address, "sec" : 5}))
 
-    check_result(master_api.modules_goto_bootloader(), result)
+     check_result(master_api.modules_goto_bootloader(), result)
+    except:
+        print "Got exception: OK"
+    
 
     print "Setting new firmware version"
     result = master_communicator.do_command(
-            create_bl_action(master_api.modules_new_firmware_version(),
+            *create_bl_action(master_api.modules_new_firmware_version(),
                              {"addr" : address, "f1n": version[0],
                               "f2n": version[1], "f3n": version[2]}))
 
@@ -165,7 +169,7 @@ def bootload(master_communicator, address, version, ihex, crc):
 
     print "Setting the firmware crc"
     result = master_communicator.do_command(
-            create_bl_action(master_api.modules_new_crc(),
+            *create_bl_action(master_api.modules_new_crc(),
                              {"addr" : address, "ccrc0": crc[0], "ccrc1": crc[1],
                               "ccrc2": crc[2], "ccrc3": crc[3]}))
 
@@ -179,16 +183,21 @@ def bootload(master_communicator, address, version, ihex, crc):
         for i in range(384):
             bytes = ""
             for j in range(64):
-                bytes += chr(ihex[i*64 + j])
+                if i == 383 and j >= 56:
+                    # The first 8 bytes (the jump) is placed at the end of the code.
+                    bytes += chr(ihex[j - 56])
+                else: 
+                    bytes += chr(ihex[i*64 + j])
 
             update = master_api.modules_update_firmware_block()
+            print "Block %d" % i
             cmd = create_bl_action(update, {"addr" : address, "block" : i, "bytes": bytes})
 
             try:
-                check_result(cmd, master_communicator.do_command(cmd))
+                check_result(update, master_communicator.do_command(*cmd))
             except Exception as exception:
                 print "Got exception while writing firmware: %s. Retrying..." % exception
-                check_result(cmd, master_communicator.do_command(cmd))
+                check_result(update, master_communicator.do_command(*cmd))
 
     finally:
         print "Going to short mode"
@@ -196,14 +205,14 @@ def bootload(master_communicator, address, version, ihex, crc):
 
     print "Verifying firmware"
     result = master_communicator.do_command(
-            create_bl_action(master_api.modules_verify_firmware(),
+            *create_bl_action(master_api.modules_verify_firmware(),
                              {"addr": address}))
 
     check_result(master_api.modules_verify_firmware(), result)
 
     print "Going to application"
     result = master_communicator.do_command(
-            create_bl_action(master_api.modules_goto_application(),
+            *create_bl_action(master_api.modules_goto_application(),
                              {"addr" : address}))
 
     check_result(master_api.modules_goto_application(), result)
@@ -231,6 +240,8 @@ def bootload_modules(type, filename, version, verbose=False):
     master_communicator.start()
 
     addresses = get_module_addresses(master_communicator, type)
+
+    print addresses
 
     ihex = intelhex.IntelHex(filename)
     crc = calc_crc(ihex)
