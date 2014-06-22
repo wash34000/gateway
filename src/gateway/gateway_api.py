@@ -997,6 +997,8 @@ class GatewayApi(object):
         'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
         """
         self.__eeprom_controller.write(ThermostatConfiguration.from_dict(config))
+        if self.__thermostat_status != None:
+            self.__thermostat_status.force_refresh()
 
     def set_thermostat_configurations(self, config):
         """
@@ -1024,6 +1026,8 @@ class GatewayApi(object):
         """
         self.__eeprom_controller.write_batch(
                 [ThermostatConfiguration.from_dict(o) for o in config])
+        if self.__thermostat_status != None:
+            self.__thermostat_status.force_refresh()
 
     def get_sensor_configuration(self, id, fields=None):
         """
