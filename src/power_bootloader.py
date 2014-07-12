@@ -144,14 +144,14 @@ def main():
                 if args.version:
                     print "E%d - Version: %s" % (addr, version(addr, power_communicator))
                 if args.file:
-                    bootload(port, addr, args.file, power_communicator, verbose=args.verbose)
+                    bootload(addr, args.file, power_communicator, verbose=args.verbose)
 
         else:
             addr = args.address
             if args.version:
                 print "E%d - Version: %s" % (addr, version(addr, power_communicator))
             if args.file:
-                bootload(port, addr, args.file, power_communicator, verbose=args.verbose)
+                bootload(addr, args.file, power_communicator, verbose=args.verbose)
     else:
         parser.print_help()
 
