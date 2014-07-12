@@ -79,8 +79,14 @@ class PowerCommand(object):
         return "RTR" + command + chr(crc7(command)) + "\r\n"
 
     def check_header(self, header, address, cid):
-        """ Check if the header matches the command, when an address and cid is provided. """
+        """ Check if the response header matches the command,
+        when an address and cid are provided. """
         return header[:-1] == "E" + chr(address) + chr(cid) + str(self.mode) + str(self.type)
+
+    def is_nack(self, header, address, cid):
+        """ Check if the response header is a nack to the command, when an address and cid are
+        provided. """
+        return header[:-1] == "E" + chr(address) + chr(cid) + "N" + str(self.type)
 
     def check_header_partial(self, header):
         """ Check if the header matches the command, does not check address and cid. """

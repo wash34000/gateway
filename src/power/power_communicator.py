@@ -11,7 +11,7 @@ LOGGER = logging.getLogger("openmotics")
 import traceback
 
 import time
-from threading import Thread, Lock
+from threading import Thread, RLock
 
 from serial_utils import printable, CommunicationTimedOutException
 
@@ -32,7 +32,7 @@ class PowerCommunicator(object):
         :type verbose: boolean.
         """
         self.__serial = serial
-        self.__serial_lock = Lock()
+        self.__serial_lock = RLock()
         self.__serial_bytes_written = 0
         self.__serial_bytes_read = 0
         self.__cid = 1
@@ -118,7 +118,10 @@ class PowerCommunicator(object):
                 (header, data) = self.__read_from_serial()
 
                 if not cmd.check_header(header, address, cid):
-                    raise Exception("Header did not match command")
+                    if cmd.is_nack(header, address, cid) and data == "\x02":
+                        raise UnkownCommandException()
+                    else:
+                        raise Exception("Header did not match command")
 
                 self.__last_success = time.time()
                 return cmd.read_output(data)
@@ -126,10 +129,16 @@ class PowerCommunicator(object):
         with self.__serial_lock:
             try:
                 return do_once(address, cmd, *data)
+            except UnkownCommandException:
+                # This happens when the module is stuck in the bootloader.
+                print "Got UnkownCommandException"
+                do_once(address, power_api.bootloader_jump_application())
+                time.sleep(1)
+                return self.do_command(address, cmd, *data)
             except:
-                # Communication timed out, or header did not match, try again in 100 ms.
+                # Communication timed out, or header did not match, try again in 50 ms.
                 print "First communication timed out !"
-                time.sleep(0.1)
+                time.sleep(0.05)
                 return do_once(address, cmd, *data)
 
     def start_address_mode(self):
@@ -286,5 +295,10 @@ class PowerCommunicator(object):
 
 class InAddressModeException(Exception):
     """ Raised when the power communication is in address mode. """
+    def __init__(self):
+        Exception.__init__(self)
+
+class UnkownCommandException(Exception):
+    """ Raised when the power module responds with a NACK indicating an unkown command. """
     def __init__(self):
         Exception.__init__(self)
