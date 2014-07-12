@@ -148,16 +148,17 @@ def bootload(master_communicator, address, version, ihex, crc):
         if result.get('error_code', None) != 0:
             raise Exception("%s returned error code %d" % (cmd.action, result['error_code']))
 
+
     print "Going to bootloader"
     try:
-     result = master_communicator.do_command(
+        result = master_communicator.do_command(
             *create_bl_action(master_api.modules_goto_bootloader(),
                              {"addr" : address, "sec" : 5}))
 
-     check_result(master_api.modules_goto_bootloader(), result)
+        check_result(master_api.modules_goto_bootloader(), result)
     except:
         print "Got exception: OK"
-    
+
 
     print "Setting new firmware version"
     result = master_communicator.do_command(
@@ -205,10 +206,10 @@ def bootload(master_communicator, address, version, ihex, crc):
 
     print "Verifying firmware"
     result = master_communicator.do_command(
-            *create_bl_action(master_api.modules_verify_firmware(),
+            *create_bl_action(master_api.modules_get_version(),
                              {"addr": address}))
 
-    check_result(master_api.modules_verify_firmware(), result)
+    check_result(master_api.modules_get_version(), result)
 
     print "Going to application"
     result = master_communicator.do_command(

@@ -381,8 +381,8 @@ def modules_update_firmware_block():
         [Field.str('addr', 4), Field.byte("error_code"), Field.lit('C'), Field.byte('crc0'),
          Field.byte('crc1'), Field.lit("\r\n")])
 
-def modules_verify_firmware():
-    """ Tell the master to verify the update firmware. """
+def modules_get_version():
+    """ Get the version of the module. """
     return MasterCommandSpec("FV",
         [Field.str('addr', 4), Field.lit('C'), Field.byte('crc0'), Field.byte('crc1'),
          Field.padding(6)],
