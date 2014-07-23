@@ -115,8 +115,14 @@ class GatewayApi(object):
             date = "%02d.%02d.%02d %02d:%02d:%02d" % (status['day'], status['month'],
                         status['year'], status['hours'], status['minutes'], status['seconds'])
 
-            epoch_master = pytime.mktime(pytime.strptime(date, "%d.%m.%y %H:%M:%S"))
             epoch_gateway = pytime.time()
+
+            try:
+                epoch_master = pytime.mktime(pytime.strptime(date, "%d.%m.%y %H:%M:%S"))
+            except ValueError:
+                # If the master returns insane values, make sure the time is synced.
+                LOGGER.error("Got bad time values from master: %s" % date)
+                epoch_master = 0
 
             if abs(epoch_master - epoch_gateway) > 180: # Allow 3 minutes slack
                 self.sync_master_time()
