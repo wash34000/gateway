@@ -87,9 +87,11 @@ class MasterCommunicator(object):
 
             def flush_serial_input():
                 """ Try to read from the serial input and discard the bytes read. """
+                i = 0
                 data = self.__serial.read(1)
-                while len(data) > 0:
+                while len(data) > 0 and i < 100:
                     data = self.__serial.read(1)
+                    i += 1
 
             self.__serial.timeout = 1
             self.__serial.write(" "*18 + "\r\n")
