@@ -474,7 +474,9 @@ else:
 
     def __expose_plugin(self, plugin):
         """ Expose the plugins using cherrypy. """
-        cherrypy.tree.mount(plugin, "/plugins/%s" % plugin.name)
+        cherrypy.tree.mount(plugin,
+                            "/plugins/%s" % plugin.name,
+                            { "/" : { 'tools.sessions.on' : True }})
 
     def process_input_status(self, input_status_inst):
         """ Should be called when the input status changes, notifies all plugins. """
