@@ -11,6 +11,13 @@ from master_command import MasterCommandSpec, Field, OutputFieldType, DimmerFiel
 
 BA_GROUP_ACTION = 2
 
+BA_SHUTTER_UP=100
+BA_SHUTTER_DOWN=101
+BA_SHUTTER_STOP=102
+BA_SHUTTER_GROUP_UP=104
+BA_SHUTTER_GROUP_DOWN=105
+BA_SHUTTER_GROUP_STOP=106
+
 BA_ALL_SETPOINT_0 = 134
 BA_ALL_SETPOINT_1 = 135
 BA_ALL_SETPOINT_2 = 136
@@ -126,7 +133,8 @@ def number_of_io_modules():
     """ Read the number of input and output modules """
     return MasterCommandSpec("rn",
         [Field.padding(13)],
-        [Field.byte("in"), Field.byte("out"), Field.padding(11), Field.lit('\r\n')])
+        [Field.byte("in"), Field.byte("out"), Field.byte("shutter"), Field.padding(10),
+         Field.lit('\r\n')])
 
 def read_output():
     """ Read the information about an output """
@@ -144,6 +152,12 @@ def read_input():
         [Field.byte("input_nr"), Field.padding(12)],
         [Field.byte('input_nr'), Field.byte('output_action'), Field.bytes('output_list', 30),
          Field.str('input_name', 8), Field.crc(), Field.lit('\r\n')])
+
+def shutter_status():
+    """ Read the status of a shutter module. """
+    return MasterCommandSpec("SO",
+        [Field.byte("module_nr"), Field.padding(12)],
+        [Field.byte("module_nr"), Field.padding(3), Field.byte("status"), Field.lit('\r\n')])
 
 def temperature_list():
     """ Read the temperature thermostat sensor list for a series of 12 sensors """
@@ -332,7 +346,7 @@ def module_initialize():
     return MasterCommandSpec("MI",
         [],
         [Field.str('id', 4), Field.str('instr', 1), Field.byte('module_nr'), Field.byte('data'),
-         Field.padding(6), Field.lit('\r\n')])
+         Field.byte('io_type'), Field.padding(5), Field.lit('\r\n')])
 
 ### Below are the function to update the firmware of the modules (input/output/dimmer/thermostat)
 

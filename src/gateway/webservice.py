@@ -384,6 +384,85 @@ class WebInterface(object):
         return self.__success(inputs=self.__gateway_api.get_last_inputs())
 
     @cherrypy.expose
+    def get_shutter_status(self, token):
+        """ Get the status of the shutters.
+
+        :returns: 'status': list of dictionaries with the following keys: id, position.
+        """
+        self.check_token(token)
+        return self.__success(status=self.__gateway_api.get_shutter_status())
+
+    @cherrypy.expose
+    def do_shutter_down(self, token, id):
+        """ Make a shutter go down. The shutter stops automatically when the down position is
+        reached (after the predefined number of seconds).
+
+        :param id: The id of the shutter.
+        :type id: Byte
+        :returns:'status': 'OK'.
+        """
+        self.check_token(token)
+        return self.__wrap(self.__gateway_api.do_shutter_down)
+
+    @cherrypy.expose
+    def do_shutter_up(self, token, id):
+        """ Make a shutter go up. The shutter stops automatically when the up position is
+        reached (after the predefined number of seconds).
+
+        :param id: The id of the shutter.
+        :type id: Byte
+        :returns:'status': 'OK'.
+        """
+        self.check_token(token)
+        return self.__wrap(self.__gateway_api.do_shutter_up)
+
+    @cherrypy.expose
+    def do_shutter_stop(self, token, id):
+        """ Make a shutter stop.
+
+        :param id: The id of the shutter.
+        :type id: Byte
+        :returns:'status': 'OK'.
+        """
+        self.check_token(token)
+        return self.__wrap(self.__gateway_api.do_shutter_stop)
+
+    @cherrypy.expose
+    def do_shutter_group_down(self, token, id):
+        """ Make a shutter group go down. The shutters stop automatically when the down position is
+        reached (after the predefined number of seconds).
+
+        :param id: The id of the shutter group.
+        :type id: Byte
+        :returns:'status': 'OK'.
+        """
+        self.check_token(token)
+        return self.__wrap(self.__gateway_api.do_shutter_group_down)
+
+    @cherrypy.expose
+    def do_shutter_group_up(self, token, id):
+        """ Make a shutter group go up. The shutters stop automatically when the up position is
+        reached (after the predefined number of seconds).
+
+        :param id: The id of the shutter group.
+        :type id: Byte
+        :returns:'status': 'OK'.
+        """
+        self.check_token(token)
+        return self.__wrap(self.__gateway_api.do_shutter_group_up)
+
+    @cherrypy.expose
+    def do_shutter_group_stop(self, token, id):
+        """ Make a shutter group stop.
+
+        :param id: The id of the shutter group.
+        :type id: Byte
+        :returns:'status': 'OK'.
+        """
+        self.check_token(token)
+        return self.__wrap(self.__gateway_api.do_shutter_group_stop)
+
+    @cherrypy.expose
     def get_thermostat_status(self, token):
         """ Get the status of the thermostats.
 
@@ -539,8 +618,7 @@ class WebInterface(object):
         :type id: Id
         :param fields: The field of the output_configuration to get. (None gets all fields)
         :type fields: Json encoded list of strings
-        :returns: 'config': output_configuration dict: contains 'id' (Id), 'floor' (Byte), \
-        'module_type' (String[1]), 'name' (String[16]), 'timer' (Word), 'type' (Byte)
+        :returns: 'config': output_configuration dict: contains 'id' (Id), 'floor' (Byte), 'module_type' (String[1]), 'name' (String[16]), 'timer' (Word), 'type' (Byte)
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -553,9 +631,7 @@ class WebInterface(object):
 
         :param fields: The field of the output_configuration to get. (None gets all fields)
         :type fields: Json encoded list of strings
-        :returns: 'config': list of output_configuration dict: contains 'id' (Id), \
-        'floor' (Byte), 'module_type' (String[1]), 'name' (String[16]), 'timer' (Word), \
-        'type' (Byte)
+        :returns: 'config': list of output_configuration dict: contains 'id' (Id), 'floor' (Byte), 'module_type' (String[1]), 'name' (String[16]), 'timer' (Word), 'type' (Byte)
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -567,8 +643,7 @@ class WebInterface(object):
         Set one output_configuration.
 
         :param config: The output_configuration to set
-        :type config: output_configuration dict: contains 'id' (Id), 'floor' (Byte), \
-        'name' (String[16]), 'timer' (Word), 'type' (Byte)
+        :type config: output_configuration dict: contains 'id' (Id), 'floor' (Byte), 'name' (String[16]), 'timer' (Word), 'type' (Byte)
         """
         self.check_token(token)
         self.__gateway_api.set_output_configuration(json.loads(config))
@@ -580,11 +655,114 @@ class WebInterface(object):
         Set multiple output_configurations.
 
         :param config: The list of output_configurations to set
-        :type config: list of output_configuration dict: contains 'id' (Id), 'floor' (Byte), \
-        'name' (String[16]), 'timer' (Word), 'type' (Byte)
+        :type config: list of output_configuration dict: contains 'id' (Id), 'floor' (Byte), 'name' (String[16]), 'timer' (Word), 'type' (Byte)
         """
         self.check_token(token)
         self.__gateway_api.set_output_configurations(json.loads(config))
+        return self.__success()
+
+    @cherrypy.expose
+    def get_shutter_configuration(self, token, id, fields=None):
+        """
+        Get a specific shutter_configuration defined by its id.
+
+        :param id: The id of the shutter_configuration
+        :type id: Id
+        :param fields: The field of the shutter_configuration to get. (None gets all fields)
+        :type fields: Json encoded list of strings
+        :returns: 'config': shutter_configuration dict: contains 'id' (Id), 'group_1' (Byte), 'group_2' (Byte), 'name' (String[16]), 'timer_down' (Byte), 'timer_up' (Byte), 'up_down_config' (Byte)
+        """
+        self.check_token(token)
+        fields = None if fields is None else json.loads(fields)
+        return self.__success(config=self.__gateway_api.get_shutter_configuration(int(id), fields))
+
+    @cherrypy.expose
+    def get_shutter_configurations(self, token, fields=None):
+        """
+        Get all shutter_configurations.
+
+        :param fields: The field of the shutter_configuration to get. (None gets all fields)
+        :type fields: Json encoded list of strings
+        :returns: 'config': list of shutter_configuration dict: contains 'id' (Id), 'group_1' (Byte), 'group_2' (Byte), 'name' (String[16]), 'timer_down' (Byte), 'timer_up' (Byte), 'up_down_config' (Byte)
+        """
+        self.check_token(token)
+        fields = None if fields is None else json.loads(fields)
+        return self.__success(config=self.__gateway_api.get_shutter_configurations(fields))
+
+    @cherrypy.expose
+    def set_shutter_configuration(self, token, config):
+        """
+        Set one shutter_configuration.
+
+        :param config: The shutter_configuration to set
+        :type config: shutter_configuration dict: contains 'id' (Id), 'group_1' (Byte), 'group_2' (Byte), 'name' (String[16]), 'timer_down' (Byte), 'timer_up' (Byte), 'up_down_config' (Byte)
+        """
+        self.check_token(token)
+        self.__gateway_api.set_shutter_configuration(json.loads(config))
+        return self.__success()
+
+    @cherrypy.expose
+    def set_shutter_configurations(self, token, config):
+        """
+        Set multiple shutter_configurations.
+
+        :param config: The list of shutter_configurations to set
+        :type config: list of shutter_configuration dict: contains 'id' (Id), 'group_1' (Byte), 'group_2' (Byte), 'name' (String[16]), 'timer_down' (Byte), 'timer_up' (Byte), 'up_down_config' (Byte)
+        """
+        self.check_token(token)
+        self.__gateway_api.set_shutter_configurations(json.loads(config))
+        return self.__success()
+
+    @cherrypy.expose
+    def get_shutter_group_configuration(self, token, id, fields=None):
+        """
+        Get a specific shutter_group_configuration defined by its id.
+
+        :param id: The id of the shutter_group_configuration
+        :type id: Id
+        :param fields: The field of the shutter_group_configuration to get. (None gets all fields)
+        :type fields: Json encoded list of strings
+        :returns: 'config': shutter_group_configuration dict: contains 'id' (Id), 'timer_down' (Byte), 'timer_up' (Byte)
+        """
+        self.check_token(token)
+        fields = None if fields is None else json.loads(fields)
+        return self.__success(config=self.__gateway_api.get_shutter_group_configuration(int(id), fields))
+
+    @cherrypy.expose
+    def get_shutter_group_configurations(self, token, fields=None):
+        """
+        Get all shutter_group_configurations.
+
+        :param fields: The field of the shutter_group_configuration to get. (None gets all fields)
+        :type fields: Json encoded list of strings
+        :returns: 'config': list of shutter_group_configuration dict: contains 'id' (Id), 'timer_down' (Byte), 'timer_up' (Byte)
+        """
+        self.check_token(token)
+        fields = None if fields is None else json.loads(fields)
+        return self.__success(config=self.__gateway_api.get_shutter_group_configurations(fields))
+
+    @cherrypy.expose
+    def set_shutter_group_configuration(self, token, config):
+        """
+        Set one shutter_group_configuration.
+
+        :param config: The shutter_group_configuration to set
+        :type config: shutter_group_configuration dict: contains 'id' (Id), 'timer_down' (Byte), 'timer_up' (Byte)
+        """
+        self.check_token(token)
+        self.__gateway_api.set_shutter_group_configuration(json.loads(config))
+        return self.__success()
+
+    @cherrypy.expose
+    def set_shutter_group_configurations(self, token, config):
+        """
+        Set multiple shutter_group_configurations.
+
+        :param config: The list of shutter_group_configurations to set
+        :type config: list of shutter_group_configuration dict: contains 'id' (Id), 'timer_down' (Byte), 'timer_up' (Byte)
+        """
+        self.check_token(token)
+        self.__gateway_api.set_shutter_group_configurations(json.loads(config))
         return self.__success()
 
     @cherrypy.expose
@@ -596,9 +774,7 @@ class WebInterface(object):
         :type id: Id
         :param fields: The field of the input_configuration to get. (None gets all fields)
         :type fields: Json encoded list of strings
-        :returns: 'config': input_configuration dict: contains 'id' (Id), 'action' (Byte), \
-        'basic_actions' (Actions[15]), 'invert' (Byte), 'module_type' (String[1]), \
-        'name' (String[8])
+        :returns: 'config': input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'module_type' (String[1]), 'name' (String[8])
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -611,9 +787,7 @@ class WebInterface(object):
 
         :param fields: The field of the input_configuration to get. (None gets all fields)
         :type fields: Json encoded list of strings
-        :returns: 'config': list of input_configuration dict: contains 'id' (Id), \
-        'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), \
-        'module_type' (String[1]), 'name' (String[8])
+        :returns: 'config': list of input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'module_type' (String[1]), 'name' (String[8])
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -625,8 +799,7 @@ class WebInterface(object):
         Set one input_configuration.
 
         :param config: The input_configuration to set
-        :type config: input_configuration dict: contains 'id' (Id), 'action' (Byte), \
-        'basic_actions' (Actions[15]), 'invert' (Byte), 'name' (String[8])
+        :type config: input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'name' (String[8])
         """
         self.check_token(token)
         self.__gateway_api.set_input_configuration(json.loads(config))
@@ -638,8 +811,7 @@ class WebInterface(object):
         Set multiple input_configurations.
 
         :param config: The list of input_configurations to set
-        :type config: list of input_configuration dict: contains 'id' (Id), 'action' (Byte), \
-        'basic_actions' (Actions[15]), 'invert' (Byte), 'name' (String[8])
+        :type config: list of input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'name' (String[8])
         """
         self.check_token(token)
         self.__gateway_api.set_input_configurations(json.loads(config))
@@ -654,29 +826,11 @@ class WebInterface(object):
         :type id: Id
         :param fields: The field of the thermostat_configuration to get. (None gets all fields)
         :type fields: Json encoded list of strings
-        :returns: 'config': thermostat_configuration dict: contains 'id' (Id), \
-        'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
-        stop_d2(Time),temp_d2(Temp)]), \
-        'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
-        stop_d2(Time),temp_d2(Temp)]), \
-        'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
-        stop_d2(Time),temp_d2(Temp)]), \
-        'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
-        stop_d2(Time),temp_d2(Temp)]), \
-        'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
-        stop_d2(Time),temp_d2(Temp)]), \
-        'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
-        stop_d2(Time),temp_d2(Temp)]), \
-        'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
-        stop_d2(Time),temp_d2(Temp)]), \
-        'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'pid_d' (Byte), 'pid_i' (Byte), \
-        'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), \
-        'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
+        :returns: 'config': thermostat_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
-        return self.__success(
-                config=self.__gateway_api.get_thermostat_configuration(int(id), fields))
+        return self.__success(config=self.__gateway_api.get_thermostat_configuration(int(id), fields))
 
     @cherrypy.expose
     def get_thermostat_configurations(self, token, fields=None):
@@ -685,24 +839,7 @@ class WebInterface(object):
 
         :param fields: The field of the thermostat_configuration to get. (None gets all fields)
         :type fields: Json encoded list of strings
-        :returns: 'config': list of thermostat_configuration dict: contains 'id' (Id), \
-        'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
-        stop_d2(Time),temp_d2(Temp)]), \
-        'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
-        stop_d2(Time),temp_d2(Temp)]), \
-        'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
-        stop_d2(Time),temp_d2(Temp)]), \
-        'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
-        stop_d2(Time),temp_d2(Temp)]), \
-        'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
-        stop_d2(Time),temp_d2(Temp)]), \
-        'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
-        stop_d2(Time),temp_d2(Temp)]), \
-        'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
-        stop_d2(Time),temp_d2(Temp)]), \
-        'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'pid_d' (Byte), 'pid_i' (Byte), \
-        'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), \
-        'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
+        :returns: 'config': list of thermostat_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -714,24 +851,7 @@ class WebInterface(object):
         Set one thermostat_configuration.
 
         :param config: The thermostat_configuration to set
-        :type config: thermostat_configuration dict: contains 'id' (Id), \
-        'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
-        stop_d2(Time),temp_d2(Temp)]), \
-        'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
-        stop_d2(Time),temp_d2(Temp)]), \
-        'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
-        stop_d2(Time),temp_d2(Temp)]), \
-        'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
-        stop_d2(Time),temp_d2(Temp)]), \
-        'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
-        stop_d2(Time),temp_d2(Temp)]), \
-        'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
-        stop_d2(Time),temp_d2(Temp)]), \
-        'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
-        stop_d2(Time),temp_d2(Temp)]), \
-        'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'pid_d' (Byte), 'pid_i' (Byte), \
-        'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), \
-        'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
+        :type config: thermostat_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
         """
         self.check_token(token)
         self.__gateway_api.set_thermostat_configuration(json.loads(config))
@@ -743,24 +863,7 @@ class WebInterface(object):
         Set multiple thermostat_configurations.
 
         :param config: The list of thermostat_configurations to set
-        :type config: list of thermostat_configuration dict: contains 'id' (Id), \
-        'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
-        stop_d2(Time),temp_d2(Temp)]), \
-        'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
-        stop_d2(Time),temp_d2(Temp)]), \
-        'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
-        stop_d2(Time),temp_d2(Temp)]), \
-        'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
-        stop_d2(Time),temp_d2(Temp)]), \
-        'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
-        stop_d2(Time),temp_d2(Temp)]), \
-        'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
-        stop_d2(Time),temp_d2(Temp)]), \
-        'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),\
-        stop_d2(Time),temp_d2(Temp)]), \
-        'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'pid_d' (Byte), 'pid_i' (Byte), \
-        'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), \
-        'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
+        :type config: list of thermostat_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
         """
         self.check_token(token)
         self.__gateway_api.set_thermostat_configurations(json.loads(config))
@@ -775,8 +878,7 @@ class WebInterface(object):
         :type id: Id
         :param fields: The field of the sensor_configuration to get. (None gets all fields)
         :type fields: Json encoded list of strings
-        :returns: 'config': sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), \
-        'offset' (SignedTemp(-7.5 to 7.5 degrees))
+        :returns: 'config': sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees))
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -789,8 +891,7 @@ class WebInterface(object):
 
         :param fields: The field of the sensor_configuration to get. (None gets all fields)
         :type fields: Json encoded list of strings
-        :returns: 'config': list of sensor_configuration dict: contains 'id' (Id), \
-        'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees))
+        :returns: 'config': list of sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees))
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -802,8 +903,7 @@ class WebInterface(object):
         Set one sensor_configuration.
 
         :param config: The sensor_configuration to set
-        :type config: sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), \
-        'offset' (SignedTemp(-7.5 to 7.5 degrees))
+        :type config: sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees))
         """
         self.check_token(token)
         self.__gateway_api.set_sensor_configuration(json.loads(config))
@@ -815,8 +915,7 @@ class WebInterface(object):
         Set multiple sensor_configurations.
 
         :param config: The list of sensor_configurations to set
-        :type config: list of sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), \
-        'offset' (SignedTemp(-7.5 to 7.5 degrees))
+        :type config: list of sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees))
         """
         self.check_token(token)
         self.__gateway_api.set_sensor_configurations(json.loads(config))
@@ -835,8 +934,7 @@ class WebInterface(object):
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
-        return self.__success(
-                config=self.__gateway_api.get_pump_group_configuration(int(id), fields))
+        return self.__success(config=self.__gateway_api.get_pump_group_configuration(int(id), fields))
 
     @cherrypy.expose
     def get_pump_group_configurations(self, token, fields=None):
@@ -845,8 +943,7 @@ class WebInterface(object):
 
         :param fields: The field of the pump_group_configuration to get. (None gets all fields)
         :type fields: Json encoded list of strings
-        :returns: 'config': list of pump_group_configuration dict: contains 'id' (Id), \
-        'outputs' (CSV[32])
+        :returns: 'config': list of pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32])
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -870,8 +967,7 @@ class WebInterface(object):
         Set multiple pump_group_configurations.
 
         :param config: The list of pump_group_configurations to set
-        :type config: list of pump_group_configuration dict: contains 'id' (Id), \
-        'outputs' (CSV[32])
+        :type config: list of pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32])
         """
         self.check_token(token)
         self.__gateway_api.set_pump_group_configurations(json.loads(config))
@@ -886,13 +982,11 @@ class WebInterface(object):
         :type id: Id
         :param fields: The field of the group_action_configuration to get. (None gets all fields)
         :type fields: Json encoded list of strings
-        :returns: 'config': group_action_configuration dict: contains 'id' (Id), \
-        'actions' (Actions[16]), 'name' (String[16])
+        :returns: 'config': group_action_configuration dict: contains 'id' (Id), 'actions' (Actions[16]), 'name' (String[16])
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
-        return self.__success(
-                config=self.__gateway_api.get_group_action_configuration(int(id), fields))
+        return self.__success(config=self.__gateway_api.get_group_action_configuration(int(id), fields))
 
     @cherrypy.expose
     def get_group_action_configurations(self, token, fields=None):
@@ -901,8 +995,7 @@ class WebInterface(object):
 
         :param fields: The field of the group_action_configuration to get. (None gets all fields)
         :type fields: Json encoded list of strings
-        :returns: 'config': list of group_action_configuration dict: contains 'id' (Id), \
-        'actions' (Actions[16]), 'name' (String[16])
+        :returns: 'config': list of group_action_configuration dict: contains 'id' (Id), 'actions' (Actions[16]), 'name' (String[16])
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -914,8 +1007,7 @@ class WebInterface(object):
         Set one group_action_configuration.
 
         :param config: The group_action_configuration to set
-        :type config: group_action_configuration dict: contains 'id' (Id), \
-        'actions' (Actions[16]), 'name' (String[16])
+        :type config: group_action_configuration dict: contains 'id' (Id), 'actions' (Actions[16]), 'name' (String[16])
         """
         self.check_token(token)
         self.__gateway_api.set_group_action_configuration(json.loads(config))
@@ -927,8 +1019,7 @@ class WebInterface(object):
         Set multiple group_action_configurations.
 
         :param config: The list of group_action_configurations to set
-        :type config: list of group_action_configuration dict: contains 'id' (Id), \
-        'actions' (Actions[16]), 'name' (String[16])
+        :type config: list of group_action_configuration dict: contains 'id' (Id), 'actions' (Actions[16]), 'name' (String[16])
         """
         self.check_token(token)
         self.__gateway_api.set_group_action_configurations(json.loads(config))
@@ -941,32 +1032,26 @@ class WebInterface(object):
 
         :param id: The id of the scheduled_action_configuration
         :type id: Id
-        :param fields: The field of the scheduled_action_configuration to get. \
-        (None gets all fields)
+        :param fields: The field of the scheduled_action_configuration to get. (None gets all fields)
         :type fields: Json encoded list of strings
-        :returns: 'config': scheduled_action_configuration dict: contains 'id' (Id), \
-        'action' (Actions[1]), 'day' (Byte), 'hour' (Byte), 'minute' (Byte)
+        :returns: 'config': scheduled_action_configuration dict: contains 'id' (Id), 'action' (Actions[1]), 'day' (Byte), 'hour' (Byte), 'minute' (Byte)
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
-        return self.__success(
-                config=self.__gateway_api.get_scheduled_action_configuration(int(id), fields))
+        return self.__success(config=self.__gateway_api.get_scheduled_action_configuration(int(id), fields))
 
     @cherrypy.expose
     def get_scheduled_action_configurations(self, token, fields=None):
         """
         Get all scheduled_action_configurations.
 
-        :param fields: The field of the scheduled_action_configuration to get. \
-        (None gets all fields)
+        :param fields: The field of the scheduled_action_configuration to get. (None gets all fields)
         :type fields: Json encoded list of strings
-        :returns: 'config': list of scheduled_action_configuration dict: contains 'id' (Id), \
-        'action' (Actions[1]), 'day' (Byte), 'hour' (Byte), 'minute' (Byte)
+        :returns: 'config': list of scheduled_action_configuration dict: contains 'id' (Id), 'action' (Actions[1]), 'day' (Byte), 'hour' (Byte), 'minute' (Byte)
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
-        return self.__success(
-                    config=self.__gateway_api.get_scheduled_action_configurations(fields))
+        return self.__success(config=self.__gateway_api.get_scheduled_action_configurations(fields))
 
     @cherrypy.expose
     def set_scheduled_action_configuration(self, token, config):
@@ -974,8 +1059,7 @@ class WebInterface(object):
         Set one scheduled_action_configuration.
 
         :param config: The scheduled_action_configuration to set
-        :type config: scheduled_action_configuration dict: contains 'id' (Id), \
-        'action' (Actions[1]), 'day' (Byte), 'hour' (Byte), 'minute' (Byte)
+        :type config: scheduled_action_configuration dict: contains 'id' (Id), 'action' (Actions[1]), 'day' (Byte), 'hour' (Byte), 'minute' (Byte)
         """
         self.check_token(token)
         self.__gateway_api.set_scheduled_action_configuration(json.loads(config))
@@ -987,8 +1071,7 @@ class WebInterface(object):
         Set multiple scheduled_action_configurations.
 
         :param config: The list of scheduled_action_configurations to set
-        :type config: list of scheduled_action_configuration dict: contains 'id' (Id), \
-        'action' (Actions[1]), 'day' (Byte), 'hour' (Byte), 'minute' (Byte)
+        :type config: list of scheduled_action_configuration dict: contains 'id' (Id), 'action' (Actions[1]), 'day' (Byte), 'hour' (Byte), 'minute' (Byte)
         """
         self.check_token(token)
         self.__gateway_api.set_scheduled_action_configurations(json.loads(config))
@@ -1003,13 +1086,11 @@ class WebInterface(object):
         :type id: Id
         :param fields: The field of the pulse_counter_configuration to get. (None gets all fields)
         :type fields: Json encoded list of strings
-        :returns: 'config': pulse_counter_configuration dict: contains 'id' (Id), 'input' (Byte), \
-        'name' (String[16])
+        :returns: 'config': pulse_counter_configuration dict: contains 'id' (Id), 'input' (Byte), 'name' (String[16])
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
-        return self.__success(
-                config=self.__gateway_api.get_pulse_counter_configuration(int(id), fields))
+        return self.__success(config=self.__gateway_api.get_pulse_counter_configuration(int(id), fields))
 
     @cherrypy.expose
     def get_pulse_counter_configurations(self, token, fields=None):
@@ -1018,8 +1099,7 @@ class WebInterface(object):
 
         :param fields: The field of the pulse_counter_configuration to get. (None gets all fields)
         :type fields: Json encoded list of strings
-        :returns: 'config': list of pulse_counter_configuration dict: contains 'id' (Id), \
-        'input' (Byte), 'name' (String[16])
+        :returns: 'config': list of pulse_counter_configuration dict: contains 'id' (Id), 'input' (Byte), 'name' (String[16])
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -1031,8 +1111,7 @@ class WebInterface(object):
         Set one pulse_counter_configuration.
 
         :param config: The pulse_counter_configuration to set
-        :type config: pulse_counter_configuration dict: contains 'id' (Id), 'input' (Byte), \
-        'name' (String[16])
+        :type config: pulse_counter_configuration dict: contains 'id' (Id), 'input' (Byte), 'name' (String[16])
         """
         self.check_token(token)
         self.__gateway_api.set_pulse_counter_configuration(json.loads(config))
@@ -1044,8 +1123,7 @@ class WebInterface(object):
         Set multiple pulse_counter_configurations.
 
         :param config: The list of pulse_counter_configurations to set
-        :type config: list of pulse_counter_configuration dict: contains 'id' (Id), \
-        'input' (Byte), 'name' (String[16])
+        :type config: list of pulse_counter_configuration dict: contains 'id' (Id), 'input' (Byte), 'name' (String[16])
         """
         self.check_token(token)
         self.__gateway_api.set_pulse_counter_configurations(json.loads(config))
@@ -1083,8 +1161,7 @@ class WebInterface(object):
 
         :param fields: The field of the dimmer_configuration to get. (None gets all fields)
         :type fields: Json encoded list of strings
-        :returns: 'config': dimmer_configuration dict: contains 'dim_memory' (Byte), \
-        'dim_step' (Byte), 'dim_wait_cycle' (Byte), 'min_dim_level' (Byte)
+        :returns: 'config': dimmer_configuration dict: contains 'dim_memory' (Byte), 'dim_step' (Byte), 'dim_wait_cycle' (Byte), 'min_dim_level' (Byte)
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -1096,8 +1173,7 @@ class WebInterface(object):
         Set the dimmer_configuration.
 
         :param config: The dimmer_configuration to set
-        :type config: dimmer_configuration dict: contains 'dim_memory' (Byte), \
-        'dim_step' (Byte), 'dim_wait_cycle' (Byte), 'min_dim_level' (Byte)
+        :type config: dimmer_configuration dict: contains 'dim_memory' (Byte), 'dim_step' (Byte), 'dim_wait_cycle' (Byte), 'min_dim_level' (Byte)
         """
         self.check_token(token)
         self.__gateway_api.set_dimmer_configuration(json.loads(config))
@@ -1108,16 +1184,13 @@ class WebInterface(object):
         """
         Get the global_thermostat_configuration.
 
-        :param fields: The field of the global_thermostat_configuration to get. \
-        (None gets all fields)
+        :param fields: The field of the global_thermostat_configuration to get. (None gets all fields)
         :type fields: Json encoded list of strings
-        :returns: 'config': global_thermostat_configuration dict: contains \
-        'outside_sensor' (Byte), 'pump_delay' (Byte), 'threshold_temp' (Temp)
+        :returns: 'config': global_thermostat_configuration dict: contains 'outside_sensor' (Byte), 'pump_delay' (Byte), 'threshold_temp' (Temp)
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
-        return self.__success(
-                config=self.__gateway_api.get_global_thermostat_configuration(fields))
+        return self.__success(config=self.__gateway_api.get_global_thermostat_configuration(fields))
 
     @cherrypy.expose
     def set_global_thermostat_configuration(self, token, config):
@@ -1125,12 +1198,12 @@ class WebInterface(object):
         Set the global_thermostat_configuration.
 
         :param config: The global_thermostat_configuration to set
-        :type config: global_thermostat_configuration dict: contains 'outside_sensor' (Byte), \
-        'pump_delay' (Byte), 'threshold_temp' (Temp)
+        :type config: global_thermostat_configuration dict: contains 'outside_sensor' (Byte), 'pump_delay' (Byte), 'threshold_temp' (Temp)
         """
         self.check_token(token)
         self.__gateway_api.set_global_thermostat_configuration(json.loads(config))
         return self.__success()
+
 
     ###### End of the the autogenerated configuration api
 

@@ -32,7 +32,7 @@ class OutputConfiguration(EepromModel):
     """ Models an output. The maximum number of inputs is 240 (30 modules), the actual number of
     outputs is 8 times the number of output modules (eeprom address 0, 2).
     """
-    id = EepromId(160, address=EepromAddress(0, 2, 1), multiplier=8)
+    id = EepromId(240, address=EepromAddress(0, 2, 1), multiplier=8)
     module_type = EepromString(1, lambda id: (33 + id /8, 0), read_only=True)
     name = EepromString(16, page_per_module(8, 33, 20, 16))
     timer = EepromWord(page_per_module(8, 33, 4, 2))
@@ -44,12 +44,32 @@ class InputConfiguration(EepromModel):
     """ Models an input. The maximum number of inputs is 240 (30 modules), the actual number of
     inputs is 8 times the number of input modules (eeprom address 0, 1).
     """
-    id = EepromId(160, address=EepromAddress(0, 1, 1), multiplier=8)
+    id = EepromId(240, address=EepromAddress(0, 1, 1), multiplier=8)
     module_type = EepromString(1, lambda id: (2 + id /8, 0), read_only=True)
     name = EepromString(8, per_module(8, lambda mid, iid: (115+(mid/4), 64*(mid % 4) + 8*iid)))
     action = EepromByte(page_per_module(8, 2, 4, 1))
     basic_actions = EepromActions(15, page_per_module(8, 2, 12, 30))
     invert = EepromByte(lambda id: (32, id))
+
+
+class ShutterConfiguration(EepromModel):
+    """ Models a shutter. The maximum number of shutters is 120 (30 modules), the actual number of
+    shutters is 4 times the number of shutter modules (eeprom address 0, 3).
+    """
+    id = EepromId(240, address=EepromAddress(0, 3, 1), multiplier=4)
+    timer_up = EepromByte(page_per_module(4, 33, 177, 2))
+    timer_down = EepromByte(page_per_module(4, 33, 178, 2))
+    up_down_config = EepromByte(page_per_module(4, 33, 185, 1))
+    name = EepromString(16, page_per_module(4, 33, 189, 16))
+    group_1 = EepromByte(lambda id: (63, (id * 2) + 0))
+    group_2 = EepromByte(lambda id: (63, (id * 2) + 1))
+
+
+class ShutterGroupConfiguration(EepromModel):
+    """ Models a group of shutters. """
+    id = EepromId(240)
+    timer_up = EepromByte(lambda id: (64, (id * 2) + 0))
+    timer_down = EepromByte(lambda id: (64, (id * 2) + 1))
 
 
 class ThermostatConfiguration(EepromModel):
