@@ -125,6 +125,7 @@ class MasterCommandSpec(object):
                 return index
 
         partial_result.complete = True
+        partial_result.actual_bytes = byte_str[:index]
         return (index - from_pending, partial_result, True)
 
     def output_has_crc(self):
@@ -149,6 +150,7 @@ class Result(object):
         self.field_index = 0
         self.fields = {}
         self.pending_bytes = ""
+        self.actual_bytes = ""
 
     def __getitem__(self, key):
         """ Implemented so class can be accessed as a dict. """

@@ -316,6 +316,8 @@ class MasterCommunicator(object):
             """ Callback for when consumer is done. ReadState does not access parent directly. """
             if isinstance(consumer, Consumer):
                 self.__consumers.remove(consumer)
+            elif isinstance(consumer, BackgroundConsumer) and consumer.send_to_passthrough:
+                self.__passthrough_queue.put(consumer.last_cmd_data)
 
         class ReadState(object):
             """" The read state keeps track of the current consumer and the partial result
@@ -462,16 +464,19 @@ class BackgroundConsumer(object):
     but does a callback to a function whenever a message was consumed.
     """
 
-    def __init__(self, cmd, cid, callback):
+    def __init__(self, cmd, cid, callback, send_to_passthrough=False):
         """ Create a background consumer using a cmd, cid and callback.
 
         :param cmd: the MasterCommand to consume.
         :param cid: the communication id.
         :param callback: function to call when an instance was found.
+        :param send_to_passthrough: whether to send the command to the passthrough.
         """
         self.cmd = cmd
         self.cid = cid
         self.callback = callback
+        self.last_cmd_data = None # Keep the data of the last command.
+        self.send_to_passthrough = send_to_passthrough
 
     def get_prefix(self):
         """ Get the prefix of the answer from the master. """
@@ -479,7 +484,9 @@ class BackgroundConsumer(object):
 
     def consume(self, data, partial_result):
         """ Consume data. """
-        return self.cmd.consume_output(data, partial_result)
+        (bytes_consumed, last_result, done) = self.cmd.consume_output(data, partial_result)
+        self.last_cmd_data = (self.get_prefix() + last_result.actual_bytes) if done else None
+        return (bytes_consumed, last_result, done)
 
     def deliver(self, output):
         """ Deliver output to the thread waiting on get(). """

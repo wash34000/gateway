@@ -234,6 +234,24 @@ class MasterCommunicatorTest(unittest.TestCase):
         self.assertEquals(3, got_output["phase"])
         self.assertEquals("junk here", comm.get_passthrough_data())
 
+    def test_background_consumer_passthrough(self):
+        """ Test the background consumer with passing the data to the passthrough. """
+        serial_mock = SerialMock([ sout("OL\x00\x01"), sout("\x03\x0c\r\n") ])
+        comm = MasterCommunicator(serial_mock, init_master=False)
+
+        got_output = {"passed" : False}
+
+        def callback(output):
+            """ Callback that check if the correct result was returned for OL. """
+            self.assertEquals([(3, int(12 * 10.0 / 6.0))], output["outputs"])
+            got_output["passed"] = True
+
+        comm.register_consumer(BackgroundConsumer(master_api.output_list(), 0, callback, True))
+        comm.start()
+
+        self.assertEquals(True, got_output["passed"])
+        self.assertEquals("OL\x00\x01\x03\x0c\r\n", comm.get_passthrough_data())
+
     def test_bytes_counter(self):
         """ Test the number of bytes written and read from the serial port. """
         action = master_api.basic_action()
