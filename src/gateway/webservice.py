@@ -402,7 +402,7 @@ class WebInterface(object):
         :returns:'status': 'OK'.
         """
         self.check_token(token)
-        return self.__wrap(self.__gateway_api.do_shutter_down)
+        return self.__wrap(lambda: self.__gateway_api.do_shutter_down(int(id)))
 
     @cherrypy.expose
     def do_shutter_up(self, token, id):
@@ -414,7 +414,7 @@ class WebInterface(object):
         :returns:'status': 'OK'.
         """
         self.check_token(token)
-        return self.__wrap(self.__gateway_api.do_shutter_up)
+        return self.__wrap(lambda: self.__gateway_api.do_shutter_up(int(id)))
 
     @cherrypy.expose
     def do_shutter_stop(self, token, id):
@@ -425,7 +425,7 @@ class WebInterface(object):
         :returns:'status': 'OK'.
         """
         self.check_token(token)
-        return self.__wrap(self.__gateway_api.do_shutter_stop)
+        return self.__wrap(lambda: self.__gateway_api.do_shutter_stop(int(id)))
 
     @cherrypy.expose
     def do_shutter_group_down(self, token, id):
@@ -437,7 +437,7 @@ class WebInterface(object):
         :returns:'status': 'OK'.
         """
         self.check_token(token)
-        return self.__wrap(self.__gateway_api.do_shutter_group_down)
+        return self.__wrap(lambda: self.__gateway_api.do_shutter_group_down(int(id)))
 
     @cherrypy.expose
     def do_shutter_group_up(self, token, id):
@@ -449,7 +449,7 @@ class WebInterface(object):
         :returns:'status': 'OK'.
         """
         self.check_token(token)
-        return self.__wrap(self.__gateway_api.do_shutter_group_up)
+        return self.__wrap(lambda: self.__gateway_api.do_shutter_group_up(int(id)))
 
     @cherrypy.expose
     def do_shutter_group_stop(self, token, id):
@@ -460,7 +460,7 @@ class WebInterface(object):
         :returns:'status': 'OK'.
         """
         self.check_token(token)
-        return self.__wrap(self.__gateway_api.do_shutter_group_stop)
+        return self.__wrap(lambda: self.__gateway_api.do_shutter_group_stop(int(id)))
 
     @cherrypy.expose
     def get_thermostat_status(self, token):

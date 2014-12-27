@@ -11,7 +11,7 @@ import time
 class ShutterStatus(object):
     """ Tracks the current state of the shutters. """
 
-    def __init__(self, shutter_configs, shutter_states):
+    def __init__(self):
         """ Default constructor. Call init to initialize the states. """
         self.__configs = None
         self.__timestamped_states = []
@@ -32,7 +32,7 @@ class ShutterStatus(object):
 
         self.__timestamped_states = []
         for i in range(len(shutter_configs)):
-            states = self.__create_states(shutter_configs[i], shutter_state[i])
+            states = self.__create_states(shutter_configs[i], shutter_states[i])
             self.__timestamped_states.append(zip([ time.time() for _ in states], states))
 
 
@@ -46,10 +46,11 @@ class ShutterStatus(object):
         """
         states = []
         for i in range(4):
-            up_down = module_config[i]['up_down_config'] # updown = 0 -> output 0 = up, updown = 1 -> output 1 = up
+            # updown = 0 -> output 0 = up, updown = 1 -> output 1 = up
+            up_down = 0 if module_config[i]['up_down_config'] == 0 else 1
 
-            up = (module_state >> (i * 2 + up_down)) & 0x1
-            down = (module_state >> (i * 2 + (1 - up_down))) & 0x1
+            up = (module_state >> (i * 2 + (1 - up_down))) & 0x1
+            down = (module_state >> (i * 2 + up_down)) & 0x1
 
             if up == 1:
                 states.append('going_up')
@@ -74,14 +75,18 @@ class ShutterStatus(object):
             else:
                 if current_state[i] == 'stopped':
                     if t_state[i][1] == 'going_up':
-                        full_run = (t_state[i][0] + self.__configs[module]['timer_up'] <= now)
+                        roll_time = 0.95 * self.__configs[module][i]['timer_up'] # 5% time slack.
+                        full_run = (t_state[i][0] + roll_time <= now)
+
                         if full_run:
                             t_state[i] = (now, 'up')
                         else:
                             t_state[i] = (now, 'stopped')
 
                     elif t_state[i][1] == 'going_down':
-                        full_run = (t_state[i][0] + self.__configs[module]['timer_down'] <= now)
+                        roll_time = 0.95 * self.__configs[module][i]['timer_down'] # 5% time slack.
+                        full_run = (t_state[i][0] + roll_time <= now)
+
                         if full_run:
                             t_state[i] = (now, 'down')
                         else:

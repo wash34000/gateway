@@ -28,7 +28,8 @@ from master.eeprom_controller import EepromController, EepromFile
 from master.eeprom_models import OutputConfiguration, InputConfiguration, ThermostatConfiguration,\
               SensorConfiguration, PumpGroupConfiguration, GroupActionConfiguration, \
               ScheduledActionConfiguration, PulseCounterConfiguration, StartupActionConfiguration,\
-              DimmerConfiguration, GlobalThermostatConfiguration
+              ShutterConfiguration, ShutterGroupConfiguration, DimmerConfiguration, \
+              GlobalThermostatConfiguration
 
 import power.power_api as power_api
 
@@ -61,16 +62,16 @@ class GatewayApi(object):
 
         self.__thermostat_status = None
 
+        self.__eeprom_controller = EepromController(EepromFile(self.__master_communicator))
+
         self.__shutter_status = ShutterStatus()
         self.__init_shutter_status()
         self.__master_communicator.register_consumer(
                     BackgroundConsumer(master_api.shutter_status(), 0,
                                        self.__shutter_status.handle_shutter_update))
 
-        self.__extend_func("set_shutter_configuration", self.__init_shutter_status)
-        self.__extend_func("set_shutter_configurations", self.__init_shutter_status)
-
-        self.__eeprom_controller = EepromController(EepromFile(self.__master_communicator))
+        self.__extend_method("set_shutter_configuration", self.__init_shutter_status)
+        self.__extend_method("set_shutter_configurations", self.__init_shutter_status)
 
         self.__power_communicator = power_communicator
         self.__power_controller = power_controller
@@ -80,7 +81,7 @@ class GatewayApi(object):
         self.init_master()
         self.__run_master_timer()
 
-    def extend_method(self, method_name, extension):
+    def __extend_method(self, method_name, extension):
         """ Extend a method of the object to call the extension function after method execution.
         This is used to add an event to the auto-generated code. This way, we don't have to modify
         the auto-generated code.
@@ -122,6 +123,12 @@ class GatewayApi(object):
                 LOGGER.info("Enabling async IL messages.")
                 self.__master_communicator.do_command(master_api.write_eeprom(),
                     {"bank" : 0, "address": 20, "data": chr(0)})
+                write = True
+
+            if eeprom_data[28] != chr(0):
+                LOGGER.info("Enabling async SO messages.")
+                self.__master_communicator.do_command(master_api.write_eeprom(),
+                    {"bank" : 0, "address": 28, "data": chr(0)})
                 write = True
 
             if write:
