@@ -253,22 +253,22 @@ class EepromFile(object):
             for bank in bank_data.keys():
                 old = bank_data[bank]
                 new = new_bank_data[bank]
-    
+
                 i = 0
                 while i < len(bank_data[bank]):
                     if old[i] != new[i]:
                         length = 1
                         j = 1
-                        while j < EepromFile.BATCH_SIZE:
+                        while j < EepromFile.BATCH_SIZE and i + j < len(old):
                             if old[i + j] != new[i + j]:
                                 length = j + 1
                             j += 1
-    
+
                         self.__write(bank, i, new[i:i + length])
                         i += EepromFile.BATCH_SIZE
                     else:
                         i += 1
-    
+
                 self.__bank_cache[bank] = new
         except Exception as exception:
             ## The write failed at some point, we are not sure about the data in the cache,

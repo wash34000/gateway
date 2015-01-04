@@ -281,7 +281,6 @@ class EepromControllerTest(unittest.TestCase):
         model = controller.read(Model2)
         self.assertEquals("Second model" + "\x01" * 88, model.name)
 
-
 class MasterCommunicatorDummy(object):
     """ Dummy for the MasterCommunicator. """
 
@@ -621,6 +620,27 @@ class EepromFileTest(unittest.TestCase):
 
         self.assertEquals(2, state['read'])
         self.assertEquals(1, state['write'])
+
+    def test_write_end_of_page(self):
+        """ Test writing an address that is close (< BATCH_SIZE) to the end of the page. """
+        done = {}
+
+        def read(data):
+            """ Read dummy. """
+            return {"data" : "\x00" * 256}
+
+        def write(data):
+            """ Write dummy. """
+            self.assertEquals(117, data["bank"])
+            self.assertEquals(248, data["address"])
+            self.assertEquals("test\xff\xff\xff\xff", data["data"])
+            done['done'] = True
+
+        communicator = MasterCommunicatorDummy(read, write)
+
+        eeprom_file = EepromFile(communicator)
+        eeprom_file.write([EepromData(EepromAddress(117, 248, 8), "test\xff\xff\xff\xff")])
+        self.assertTrue(done['done'])
 
 
 class EepromModelTest(unittest.TestCase):
