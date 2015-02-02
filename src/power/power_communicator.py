@@ -173,7 +173,7 @@ class PowerCommunicator(object):
         # Wait for WAA and answer.
         while not self.__address_mode_stop and time.time() < expire:
             try:
-                (header, _) = self.__read_from_serial()
+                (header, data) = self.__read_from_serial()
 
                 if not want_an_address.check_header_partial(header):
                     LOGGER.warning("Received non WAA message in address mode")
@@ -185,7 +185,10 @@ class PowerCommunicator(object):
                     if self.__power_controller.module_exists(old_address):
                         self.__power_controller.readdress_power_module(old_address, new_address)
                     else:
-                        self.__power_controller.register_power_module(new_address)
+                        version = power_api.POWER_API_8_PORTS if len(data) == 0 \
+                                  else power_api.POWER_API_12_PORTS
+
+                        self.__power_controller.register_power_module(new_address, version)
 
                     # Send new address to power module
                     bytes = set_address.create_input(old_address, ord(cid), new_address)

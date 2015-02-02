@@ -50,7 +50,7 @@ class GatewayApi(object):
 
         self.__output_status = None
         self.__master_communicator.register_consumer(
-                    BackgroundConsumer(master_api.output_list(), 0, self.__update_outputs))
+                    BackgroundConsumer(master_api.output_list(), 0, self.__update_outputs, True))
 
         self.__input_status = InputStatus()
         self.__master_communicator.register_consumer(
@@ -1448,10 +1448,13 @@ class GatewayApi(object):
     def get_power_modules(self):
         """ Get information on the power modules.
 
-        :returns: List of dictionaries with the following keys: 'id', 'name', 'address', \
-        'input0', 'input1', 'input2', 'input3', 'input4', 'input5', 'input6', 'input7', \
-        'sensor0', 'sensor1', 'sensor2', 'sensor3', 'sensor4', 'sensor5', 'sensor6', 'sensor7', \
-        'times0', 'times1', 'times2', 'times3', 'times4', 'times5', 'times6', 'times7'.
+        :returns: List of dict depending on the version of the power module. All versions \
+        contain 'id', 'name', 'input0', 'input1', 'input2', 'input3', 'input4', 'input5', \
+        'input6', 'input7', 'times0', 'times1', 'times2', 'times3', 'times4', 'times5', 'times6', \
+        'times7'. For the 8-port power it also contains 'sensor0', 'sensor1', 'sensor2', \
+        'sensor3', 'sensor4', 'sensor5', 'sensor6', 'sensor7'. For the 12-port power module also \
+        contains 'input8', 'input9', 'input10', 'input11', 'times8', 'times9', 'times10', \
+        'times11'.
         """
         modules = self.__power_controller.get_power_modules().values()
         def translate_address(module):
@@ -1463,19 +1466,25 @@ class GatewayApi(object):
     def set_power_modules(self, modules):
         """ Set information for the power modules.
 
-        :param modules: list of dicts with keys: 'id', 'name', 'input0', 'input1', \
-        'input2', 'input3', 'input4', 'input5', 'input6', 'input7', 'sensor0', 'sensor1', \
-        'sensor2', 'sensor3', 'sensor4', 'sensor5', 'sensor6', 'sensor7', 'times0', 'times1', \
-        'times2', 'times3', 'times4', 'times5', 'times6', 'times7'.
+        :param modules: list of dict depending on the version of the power module. All versions \
+        contain 'id', 'name', 'input0', 'input1', 'input2', 'input3', 'input4', 'input5', \
+        'input6', 'input7', 'times0', 'times1', 'times2', 'times3', 'times4', 'times5', 'times6', \
+        'times7'. For the 8-port power it also contains 'sensor0', 'sensor1', 'sensor2', \
+        'sensor3', 'sensor4', 'sensor5', 'sensor6', 'sensor7'. For the 12-port power module also \
+        contains 'input8', 'input9', 'input10', 'input11', 'times8', 'times9', 'times10', \
+        'times11'.
         :returns: empty dict.
         """
         for module in modules:
             self.__power_controller.update_power_module(module)
-            addr = self.__power_controller.get_address(module['id'])
 
-            self.__power_communicator.do_command(addr, power_api.set_sensor_types(),
-                    module["sensor0"], module["sensor1"], module["sensor2"], module["sensor3"],
-                    module["sensor4"], module["sensor5"], module["sensor6"], module["sensor7"])
+            # Setting the sensor type is only supported for the 8 port power modules.
+            version = self.__power_controller.get_version(module['id'])
+            if version == power_api.POWER_API_8_PORTS:
+                addr = self.__power_controller.get_address(module['id'])
+                self.__power_communicator.do_command(addr, power_api.set_sensor_types(version),
+                        module["sensor0"], module["sensor1"], module["sensor2"], module["sensor3"],
+                        module["sensor4"], module["sensor5"], module["sensor6"], module["sensor7"])
 
         return dict()
 
@@ -1491,16 +1500,35 @@ class GatewayApi(object):
         for id in sorted(modules.keys()):
             try:
                 addr = modules[id]['address']
+                version = modules[id]['version']
+                num_ports = power_api.NUM_PORTS[version]
 
-                volt = self.__power_communicator.do_command(addr, power_api.get_voltage())[0]
-                freq = self.__power_communicator.do_command(addr, power_api.get_frequency())[0]
-                current = self.__power_communicator.do_command(addr, power_api.get_current())
-                power = self.__power_communicator.do_command(addr, power_api.get_power())
+                if version == power_api.POWER_API_8_PORTS:
+                    raw_volt = self.__power_communicator.do_command(addr,
+                                                                power_api.get_voltage(version))
+                    raw_freq = self.__power_communicator.do_command(addr,
+                                                                power_api.get_frequency(version))
+
+                    volt = [raw_volt[0] for i in range(num_ports)]
+                    freq = [raw_freq[0] for i in range(num_ports)]
+
+                elif version == power_api.POWER_API_12_PORTS:
+                    volt = self.__power_communicator.do_command(addr,
+                                                                power_api.get_voltage(version))
+                    freq = self.__power_communicator.do_command(addr,
+                                                                power_api.get_frequency(version)) 
+                else:
+                    raise ValueError("Unknown power api version")
+
+                current = self.__power_communicator.do_command(addr,
+                                                               power_api.get_current(version))
+                power = self.__power_communicator.do_command(addr,
+                                                             power_api.get_power(version))
 
                 out = []
-                for i in range(0, 8):
-                    out.append([convert_nan(volt), convert_nan(freq), convert_nan(current[i]),
-                                convert_nan(power[i])])
+                for i in range(num_ports):
+                    out.append([convert_nan(volt[i]), convert_nan(freq[i]),
+                                convert_nan(current[i]), convert_nan(power[i])])
 
                 output[str(id)] = out
             except Exception as exception:
@@ -1519,12 +1547,15 @@ class GatewayApi(object):
         for id in sorted(modules.keys()):
             try:
                 addr = modules[id]['address']
+                version = modules[id]['version']
 
-                day = self.__power_communicator.do_command(addr, power_api.get_day_energy())
-                night = self.__power_communicator.do_command(addr, power_api.get_night_energy())
+                day = self.__power_communicator.do_command(addr,
+                                                           power_api.get_day_energy(version))
+                night = self.__power_communicator.do_command(addr,
+                                                             power_api.get_night_energy(version))
 
                 out = []
-                for i in range(0, 8):
+                for i in range(power_api.NUM_PORTS[version]):
                     out.append([convert_nan(day[i]), convert_nan(night[i])])
 
                 output[str(id)] = out
@@ -1564,5 +1595,6 @@ class GatewayApi(object):
         :returns: empty dict
         """
         addr = self.__power_controller.get_address(module_id)
-        self.__power_communicator.do_command(addr, power_api.set_voltage(), voltage)
+        version = self.__power_controller.get_address(module_id)
+        self.__power_communicator.do_command(addr, power_api.set_voltage(version), voltage)
         return dict()

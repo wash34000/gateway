@@ -62,7 +62,7 @@ class UserController(object):
         """
         username = username.lower()
 
-        self.__cursor.execute("INSERT INTO users (username, password, role, enabled) "
+        self.__cursor.execute("INSERT OR REPLACE INTO users (username, password, role, enabled) "
                               "VALUES (?, ?, ?, ?);",
                               (username, self.__hash(password), role, int(enabled)))
 

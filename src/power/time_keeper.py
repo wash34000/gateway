@@ -60,14 +60,15 @@ class TimeKeeper(object):
         """ One run of the background thread. """
         date = datetime.now()
         for module in self.__power_controller.get_power_modules().values():
+            version = module['version']
             daynight = []
-            for i in range(8):
+            for i in range(power_api.NUM_PORTS[version]):
                 if self.is_day_time(module['times%d' % i], date):
                     daynight.append(power_api.DAY)
                 else:
                     daynight.append(power_api.NIGHT)
 
-            self.__set_mode(module['address'], daynight)
+            self.__set_mode(version, module['address'], daynight)
 
     def is_day_time(self, times, date):
         """ Check if a date is in day time. """
@@ -84,9 +85,9 @@ class TimeKeeper(object):
 
         return current_time >= start and current_time < stop
 
-    def __set_mode(self, address, bytes):
+    def __set_mode(self, version, address, bytes):
         """ Set the power modules mode. """
         if address not in self.__mode or self.__mode[address] != bytes:
             LOGGER.info("Setting day/night mode to " + str(bytes))
-            self.__power_communicator.do_command(address, power_api.set_day_night(), *bytes)
+            self.__power_communicator.do_command(address, power_api.set_day_night(version), *bytes)
             self.__mode[address] = bytes
