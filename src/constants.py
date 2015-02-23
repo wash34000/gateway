@@ -58,3 +58,7 @@ def get_timezone_file():
     """ Get the path of the timezone file. """
     return "/opt/openmotics/etc/timezone"
 
+
+def get_self_test_cmd():
+    """ Get the path of the bash script that executes the self test. """
+    return "/opt/openmotics/bin/self_test.sh"
