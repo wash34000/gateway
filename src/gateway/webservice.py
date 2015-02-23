@@ -1583,8 +1583,9 @@ class WebInterface(object):
         return self.__wrap(lambda: self.__plugin_controller.remove_plugin(name))
 
     @cherrypy.expose
-    def self_test(self):
+    def self_test(self, token):
         """ Perform a Gateway self-test. """
+        self.check_token(token)
         if self.__authorized_check():
             subprocess.Popen(constants.get_self_test_cmd(), close_fds=True)
             return self.__success()
