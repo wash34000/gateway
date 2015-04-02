@@ -88,6 +88,18 @@ def output_status(method):
     return method
 
 
+def receive_events(method):
+    """ Decorator to indicate that the method should receive event messages.
+    The receiving method should accept one parameter: the event code.
+    Each time an event is triggered, the method will be called.
+
+    Important !This method should not block, as this will result in an unresponsive system.
+    Please use a separate thread to perform complex actions on event messages.
+    """
+    method.receive_events = True
+    return method
+
+
 def background_task(method):
     """ Decorator to indicate that the method is a background task. A thread running this
     background task will be started on startup.
@@ -172,6 +184,7 @@ class PluginController(object):
 
         self.__input_status_receivers = []
         self.__output_status_receivers = []
+        self.__event_receivers = []
 
         for plugin in self.__plugins:
             self.__add_receivers(plugin)
@@ -185,6 +198,10 @@ class PluginController(object):
         osrs = self._get_special_methods(plugin, 'output_status')
         for osr in osrs:
             self.__output_status_receivers.append((plugin.name, osr))
+
+        ers = self._get_special_methods(plugin, 'receive_events')
+        for er in ers:
+            self.__event_receivers.append((plugin.name, er))
 
     def start_plugins(self):
         """ Start the background tasks for the plugins and expose them via the webinterface. """
@@ -494,6 +511,15 @@ else:
                 osr[1](output_status_inst)
             except Exception as exception:
                 self.log(osr[0], "Exception while processing output status", exception,
+                         traceback.format_exc())
+
+    def process_event(self, code):
+        """ Should be called when an event is triggered, notifies all plugins. """
+        for er in self.__event_receivers:
+            try:
+                er[1](output_status_inst)
+            except Exception as exception:
+                self.log(er[0], "Exception while processing event", exception,
                          traceback.format_exc())
 
     def log(self, plugin, msg, exception, stacktrace=None):
