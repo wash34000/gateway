@@ -23,6 +23,8 @@ class PowerController(object):
         if new_database:
             self.__create_tables()
 
+        self.__update_schema_if_needed() # Adds the fields required for the 12-port power modules. 
+
     def __create_tables(self):
         """ Create the power tables. """
         self.__cursor.execute("CREATE TABLE power_modules (id INTEGER PRIMARY KEY, "
@@ -40,6 +42,27 @@ class PowerController(object):
                               "times0 TEXT, times1 TEXT, times2 TEXT, times3 TEXT, "
                               "times4 TEXT, times5 TEXT, times6 TEXT, times7 TEXT, "
                               "times8 TEXT, times9 TEXT, times10 TEXT, times11 TEXT );")
+
+    def __update_scheam_if_needed(self):
+        """ Upadtes the power_modules table schema from the 8-port power module version to the
+        12-port power module version. The __create_tables above generates the 12-port version, so
+        the update is only performed for legacy users that still have the old schema. """
+        has_new_schema = False # Check the presence of the version field in the table.
+        for row in self.__cursor.execute("PRAGMA table_info('power_modules');"):
+            if row[1] == 'version':
+                has_new_schema = True
+
+        if not has_new_schema:
+            self.__cursor.execute("ALTER TABLE power_modules ADD COLUMN version INTEGER default 8;")
+            self.__cursor.execute("ALTER TABLE power_modules ADD COLUMN input8 TEXT default ''");
+            self.__cursor.execute("ALTER TABLE power_modules ADD COLUMN input9 TEXT default ''");
+            self.__cursor.execute("ALTER TABLE power_modules ADD COLUMN input10 TEXT default ''");
+            self.__cursor.execute("ALTER TABLE power_modules ADD COLUMN input11 TEXT default ''");
+            self.__cursor.execute("ALTER TABLE power_modules ADD COLUMN times8 TEXT");
+            self.__cursor.execute("ALTER TABLE power_modules ADD COLUMN times9 TEXT");
+            self.__cursor.execute("ALTER TABLE power_modules ADD COLUMN times10 TEXT");
+            self.__cursor.execute("ALTER TABLE power_modules ADD COLUMN times11 TEXT ");
+            self.__connection.commit()
 
     def get_power_modules(self):
         """ Get a dict containing all power modules. The key of the dict is the id of the module,
