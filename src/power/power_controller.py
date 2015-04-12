@@ -43,7 +43,7 @@ class PowerController(object):
                               "times4 TEXT, times5 TEXT, times6 TEXT, times7 TEXT, "
                               "times8 TEXT, times9 TEXT, times10 TEXT, times11 TEXT );")
 
-    def __update_scheam_if_needed(self):
+    def __update_schema_if_needed(self):
         """ Upadtes the power_modules table schema from the 8-port power module version to the
         12-port power module version. The __create_tables above generates the 12-port version, so
         the update is only performed for legacy users that still have the old schema. """

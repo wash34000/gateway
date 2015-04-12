@@ -11,12 +11,24 @@ from master_command import MasterCommandSpec, Field, OutputFieldType, DimmerFiel
 
 BA_GROUP_ACTION = 2
 
-BA_SHUTTER_UP=100
-BA_SHUTTER_DOWN=101
-BA_SHUTTER_STOP=102
-BA_SHUTTER_GROUP_UP=104
-BA_SHUTTER_GROUP_DOWN=105
-BA_SHUTTER_GROUP_STOP=106
+BA_TRIGGER_EVENT = 60
+
+BA_SHUTTER_UP = 100
+BA_SHUTTER_DOWN = 101
+BA_SHUTTER_STOP = 102
+BA_SHUTTER_GROUP_UP = 104
+BA_SHUTTER_GROUP_DOWN = 105
+BA_SHUTTER_GROUP_STOP = 106
+
+BA_SET_HEATING_MODE = 80
+BA_SET_AIRCO_STATUS = 81
+
+BA_ONE_SETPOINT_0 = 128
+BA_ONE_SETPOINT_1 = 129
+BA_ONE_SETPOINT_2 = 130
+BA_ONE_SETPOINT_3 = 131
+BA_ONE_SETPOINT_4 = 132
+BA_ONE_SETPOINT_5 = 133
 
 BA_ALL_SETPOINT_0 = 134
 BA_ALL_SETPOINT_1 = 135
@@ -24,8 +36,11 @@ BA_ALL_SETPOINT_2 = 136
 BA_ALL_SETPOINT_3 = 137
 BA_ALL_SETPOINT_4 = 138
 BA_ALL_SETPOINT_5 = 139
+
 BA_THERMOSTAT_MODE = 140
 BA_THERMOSTAT_AUTOMATIC = 141
+BA_THERMOSTAT_COOLING_HEATING = 80
+BA_THERMOSTAT_AIRCO_STATUS = 81
 
 BA_LIGHT_OFF = 160
 BA_LIGHT_ON = 161
@@ -302,6 +317,30 @@ def clear_error_list():
         [Field.padding(13)],
         [Field.str("resp", 2), Field.padding(11), Field.lit("\r\n")])
 
+def write_airco_status_bit():
+    """ Write the airco status bit. """
+    return MasterCommandSpec("AW",
+        [Field.byte("thermostat"), Field.byte("ASB"), Field.padding(11)],
+        [Field.byte("ASB0"), Field.byte("ASB1"), Field.byte("ASB2"), Field.byte("ASB3"),
+         Field.byte("ASB4"), Field.byte("ASB5"), Field.byte("ASB6"), Field.byte("ASB7"),
+         Field.byte("ASB8"), Field.byte("ASB9"), Field.byte("ASB10"), Field.byte("ASB11"),
+         Field.byte("ASB12"), Field.byte("ASB13"), Field.byte("ASB14"), Field.byte("ASB15"),
+         Field.byte("ASB16"), Field.byte("ASB17"), Field.byte("ASB18"), Field.byte("ASB19"),
+         Field.byte("ASB20"), Field.byte("ASB21"), Field.byte("ASB22"), Field.byte("ASB23"),
+         Field.lit("\r\n")])
+
+def read_airco_status_bits():
+    """ Read the airco status bits. """
+    return MasterCommandSpec("AR",
+        [Field.padding(13)],
+        [Field.byte("ASB0"), Field.byte("ASB1"), Field.byte("ASB2"), Field.byte("ASB3"),
+         Field.byte("ASB4"), Field.byte("ASB5"), Field.byte("ASB6"), Field.byte("ASB7"),
+         Field.byte("ASB8"), Field.byte("ASB9"), Field.byte("ASB10"), Field.byte("ASB11"),
+         Field.byte("ASB12"), Field.byte("ASB13"), Field.byte("ASB14"), Field.byte("ASB15"),
+         Field.byte("ASB16"), Field.byte("ASB17"), Field.byte("ASB18"), Field.byte("ASB19"),
+         Field.byte("ASB20"), Field.byte("ASB21"), Field.byte("ASB22"), Field.byte("ASB23"),
+         Field.lit("\r\n")])
+
 def to_cli_mode():
     """ Go to CLI mode """
     return MasterCommandSpec("CM",
@@ -347,6 +386,13 @@ def module_initialize():
         [],
         [Field.str('id', 4), Field.str('instr', 1), Field.byte('module_nr'), Field.byte('data'),
          Field.byte('io_type'), Field.padding(5), Field.lit('\r\n')])
+
+def event_triggered():
+    """ The message sent by the master to trigger an event. This event is triggered by basic
+    action 60. """
+    return MasterCommandSpec("EV",
+        [],
+        [Field.byte('code'), Field.padding(12), Field.lit('\r\n')])
 
 ### Below are the function to update the firmware of the modules (input/output/dimmer/thermostat)
 
