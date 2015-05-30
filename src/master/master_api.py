@@ -302,8 +302,13 @@ def pulse_list():
     """ List the pulse counter values. """
     return MasterCommandSpec("PL",
         [Field.padding(13)],
-        [Field.int('pv0'), Field.int('pv1'), Field.int('pv2'), Field.int('pv3'), Field.int('pv4'),
-         Field.int('pv5'), Field.int('pv6'), Field.int('pv7'), Field.lit('\r\n')])
+        [Field.int('pv0'), Field.int('pv1'), Field.int('pv2'), Field.int('pv3'),
+         Field.int('pv4'), Field.int('pv5'), Field.int('pv6'), Field.int('pv7'),
+         Field.int('pv8'), Field.int('pv9'), Field.int('pv10'), Field.int('pv11'),
+         Field.int('pv12'), Field.int('pv13'), Field.int('pv14'), Field.int('pv15'),
+         Field.int('pv16'), Field.int('pv17'), Field.int('pv18'), Field.int('pv19'),
+         Field.int('pv20'), Field.int('pv21'), Field.int('pv22'), Field.int('pv23'),
+         Field.crc(), Field.lit('\r\n')])
 
 def error_list():
     """ Get the number of errors for each input and output module. """

@@ -29,7 +29,8 @@ from master.eeprom_models import OutputConfiguration, InputConfiguration, Thermo
               SensorConfiguration, PumpGroupConfiguration, GroupActionConfiguration, \
               ScheduledActionConfiguration, PulseCounterConfiguration, StartupActionConfiguration,\
               ShutterConfiguration, ShutterGroupConfiguration, DimmerConfiguration, \
-              GlobalThermostatConfiguration
+              GlobalThermostatConfiguration, CoolingConfiguration, CoolingPumpGroupConfiguration, \
+              GlobalRTD10Configuration, RTD10HeatingConfiguration, RTD10CoolingConfiguration
 
 import power.power_api as power_api
 
@@ -1045,11 +1046,15 @@ class GatewayApi(object):
     def get_pulse_counter_status(self):
         """ Get the pulse counter values.
 
-        :returns: array with the 8 pulse counter values.
+        :returns: array with the 24 pulse counter values.
         """
         out_dict = self.__master_communicator.do_command(master_api.pulse_list())
         return [out_dict['pv0'], out_dict['pv1'], out_dict['pv2'], out_dict['pv3'],
-                out_dict['pv4'], out_dict['pv5'], out_dict['pv6'], out_dict['pv7']]
+                out_dict['pv4'], out_dict['pv5'], out_dict['pv6'], out_dict['pv7'],
+                out_dict['pv8'], out_dict['pv9'], out_dict['pv10'], out_dict['pv11'],
+                out_dict['pv12'], out_dict['pv13'], out_dict['pv14'], out_dict['pv15'],
+                out_dict['pv16'], out_dict['pv17'], out_dict['pv18'], out_dict['pv19'],
+                out_dict['pv20'], out_dict['pv21'], out_dict['pv22'], out_dict['pv23']]
 
     ###### Below are the auto generated master configuration functions
 

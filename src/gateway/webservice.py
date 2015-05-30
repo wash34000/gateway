@@ -74,11 +74,7 @@ class GatewayApiWrapper(object):
     def _wrap(self, func, args, kwargs):
         """ Wrap a function, convert the InMaintenanceModeException to a HttpError(503). """
         try:
-            if type(func) == MethodType:
-                result = func(*args, **kwargs) #pylint: disable=W0142
-            else:
-                result = func(self.__gateway_api, *args, **kwargs) #pylint: disable=W0142
-            return result
+            return func(*args, **kwargs) #pylint: disable=W0142
         except InMaintenanceModeException:
             raise cherrypy.HTTPError(503, "In maintenance mode")
 
@@ -563,7 +559,7 @@ class WebInterface(object):
         self.check_token(token)
         return self.__success(status=self.__gateway_api.get_sensor_brightness_status())
 
-    @cherrypy.epoxe
+    @cherrypy.expose
     def do_basic_action(self, token, action_type, action_number):
         """ Execute a basic action.
         

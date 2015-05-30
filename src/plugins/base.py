@@ -517,7 +517,7 @@ else:
         """ Should be called when an event is triggered, notifies all plugins. """
         for er in self.__event_receivers:
             try:
-                er[1](output_status_inst)
+                er[1](code)
             except Exception as exception:
                 self.log(er[0], "Exception while processing event", exception,
                          traceback.format_exc())

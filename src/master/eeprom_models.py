@@ -338,10 +338,10 @@ class ScheduledActionConfiguration(EepromModel):
 
 
 class PulseCounterConfiguration(EepromModel):
-    """ Models a pulse counter. The maximum number of pulse counters is 8. """
-    id = EepromId(8)
-    name = EepromString(16, lambda id: (195, 16*id))
-    input = EepromByte(lambda id: (0, 120+id))
+    """ Models a pulse counter. The maximum number of pulse counters is 24. """
+    id = EepromId(24)
+    name = EepromString(16, lambda id: (98 + (id / 16), 16 * (id % 16)))
+    input = EepromByte(lambda id: (0, 160+id))
 
 
 class StartupActionConfiguration(EepromModel):

@@ -193,7 +193,15 @@ class Gateway(object):
             return data
 
     def get_pulse_counter_status(self):
-        """ Get the pulse counter values. """
+        """ Get the total pulse counter values. """
+        data = self.do_call("get_pulse_counter_status?token=None")
+        if data == None or data['success'] == False:
+            return None
+        else:
+            return data['counters']
+
+    def get_pulse_counter_diff(self):
+        """ Get the pulse counter differences. """
         data = self.do_call("get_pulse_counter_status?token=None")
         if data == None or data['success'] == False:
             return None
@@ -201,10 +209,10 @@ class Gateway(object):
             counters = data['counters']
 
             if self.__last_pulse_counters == None:
-                ret = [0 for i in range(0, 8)]
+                ret = [0 for i in range(0, 24)]
             else:
                 ret = [self.__counter_diff(counters[i], self.__last_pulse_counters[i])
-                       for i in range(0, 8)]
+                       for i in range(0, 24)]
 
             self.__last_pulse_counters = counters
             return ret
@@ -430,7 +438,8 @@ def main():
 
     collectors = {'energy' : DataCollector(gateway.get_total_energy, 300),
                   'thermostats' : DataCollector(gateway.get_thermostats, 60),
-                  'pulses' : DataCollector(gateway.get_pulse_counter_status, 60),
+                  'pulse_totals' : DataCollector(gateway.get_pulse_counter_status, 300),
+                  'pulses' : DataCollector(gateway.get_pulse_counter_diff, 60),
                   'outputs' : DataCollector(gateway.get_enabled_outputs, mode='rt'),
                   'power' : DataCollector(gateway.get_real_time_power, mode='rt'),
                   'update' : DataCollector(gateway.get_update_status),
