@@ -364,13 +364,14 @@ class GatewayApi(object):
     def get_modules(self):
         """ Get a list of all modules attached and registered with the master.
 
-        :returns: dict with 'output' (list of module types: O,R,D) and 'input' \
-        (list of input module types: I,T,L).
+        :returns: dict with 'outputs' (list of module types: O,R,D), 'inputs' \
+        (list of input module types: I,T,L) and 'shutters' (List of modules types: S).
         """
         mods = self.__master_communicator.do_command(master_api.number_of_io_modules())
 
         inputs = []
         outputs = []
+        shutters = []
 
         for i in range(mods['in']):
             ret = self.__master_communicator.do_command(
@@ -386,7 +387,10 @@ class GatewayApi(object):
 
             outputs.append(ret['data'][0])
 
-        return {'outputs' : outputs, 'inputs' : inputs}
+        for shutter in range(mods['shutter']):
+            shutters.append('S')
+
+        return {'outputs' : outputs, 'inputs' : inputs, 'shutters' : shutters}
 
     def flash_leds(self, type, id):
         """ Flash the leds on the module for an output/input/sensor.

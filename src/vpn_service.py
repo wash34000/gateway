@@ -248,7 +248,7 @@ class Gateway(object):
     def get_modules(self):
         """ Get the modules known by the master.
         :returns: a list of characters. The master module (M), the output modules (O, D or R),
-        the input modules (I or T), followed by the power modules (P).
+        the input modules (I or T), the shutter modules (S), followed by the power modules (P).
         """
         data = self.do_call("get_modules?token=None")
         power_data = self.do_call("get_power_modules?token=None")
@@ -266,6 +266,8 @@ class Gateway(object):
                 for mod in data['outputs']:
                     ret.append(str(mod))
                 for mod in data['inputs']:
+                    ret.append(str(mod))
+                for mod in data['shutters']:
                     ret.append(str(mod))
 
             if not power_failed:
