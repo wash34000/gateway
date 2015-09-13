@@ -707,19 +707,23 @@ class GatewayApi(object):
         :returns: array containing 24 dicts (one for each thermostats) with the following keys: \
         'active', 'sensor_nr', 'output0_nr', 'output1_nr', 'name'.
         """
-        thermostats = []
-        for thermostat_id in range(0, 24):
-            thermostat = self.__master_communicator.do_command(master_api.read_setpoint(),
-                                                               {'thermostat' :  thermostat_id})
-            info = {}
-            info['active'] = (thermostat['sensor_nr'] < 30 or  thermostat['sensor_nr'] == 240) \
-                             and thermostat['output0_nr'] < 240
-            info['sensor_nr'] = thermostat['sensor_nr']
-            info['output0_nr'] = thermostat['output0_nr']
-            info['output1_nr'] = thermostat['output1_nr']
-            info['name'] = thermostat['name']
+        thermostats = {'heating':[], 'cooling':[]}
 
-            thermostats.append(info)
+        fields = ['sensor', 'output0', 'output1', 'name']
+        heating_config = self.get_thermostat_configurations(fields=fields)
+        cooling_config = self.get_cooling_configurations(fields=fields)
+
+        for (key, config) in [('heating', heating_config), ('cooling', cooling_config)]:
+            for thermostat in config:
+                info = {}
+                info['active'] = (thermostat['sensor'] < 30 or  thermostat['sensor'] == 240) \
+                                 and thermostat['output0'] <= 240
+                info['sensor_nr'] = thermostat['sensor']
+                info['output0_nr'] = thermostat['output0']
+                info['output1_nr'] = thermostat['output1']
+                info['name'] = thermostat['name']
+
+                thermostats[key].append(info)
 
         return thermostats
 
@@ -735,7 +739,6 @@ class GatewayApi(object):
             self.__thermostat_status = ThermostatStatus(self.__get_all_thermostats(), 1800)
         elif self.__thermostat_status.should_refresh():
             self.__thermostat_status.update(self.__get_all_thermostats())
-        cached_thermostats = self.__thermostat_status.get_thermostats()
 
         thermostat_info = self.__master_communicator.do_command(master_api.thermostat_list())
 
@@ -748,6 +751,9 @@ class GatewayApi(object):
 
         thermostats = []
         outputs = self.get_output_status()
+
+        cached_thermostats = \
+            self.__thermostat_status.get_thermostats()['cooling' if cooling else 'heating']
 
         for thermostat_id in range(0, 24):
             if cached_thermostats[thermostat_id]['active'] == True:
