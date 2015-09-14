@@ -755,6 +755,8 @@ class GatewayApi(object):
         cached_thermostats = \
             self.__thermostat_status.get_thermostats()['cooling' if cooling else 'heating']
 
+        aircos = self.__master_communicator.do_command(master_api.read_airco_status_bits())
+
         for thermostat_id in range(0, 24):
             if cached_thermostats[thermostat_id]['active'] == True:
                 thermostat = {'id' : thermostat_id}
@@ -777,6 +779,8 @@ class GatewayApi(object):
 
                 thermostat['name'] = cached_thermostats[thermostat_id]['name']
                 thermostat['sensor_nr'] = cached_thermostats[thermostat_id]['sensor_nr']
+
+                thermostat['airco'] = aircos["ASB%d" % thermostat_id]
 
                 thermostats.append(thermostat)
 

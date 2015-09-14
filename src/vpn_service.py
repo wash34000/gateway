@@ -157,7 +157,7 @@ class Gateway(object):
             thermostats = []
             for thermostat in data['status']:
                 to_add = {}
-                for field in ['id', 'act', 'csetp', 'mode', 'output0', 'output1', 'outside']:
+                for field in ['id','act','csetp','mode','output0','output1','outside','airco']:
                     to_add[field] = thermostat[field]
                 thermostats.append(to_add)
             ret['status'] = thermostats
