@@ -7,7 +7,6 @@ import inspect
 import threading
 import re
 import os
-import signal
 import traceback
 
 try:
@@ -421,15 +420,8 @@ else:
 
 
     def __exit(self):
-        """ Shutdown the cherrypy server. """
-        cherrypy.engine.exit() ## Shutdown the cherrypy server: no new requests
-
-        def do_kill():
-            """ Kill the current process. """
-            os.kill(os.getpid(), signal.SIGKILL)
-
-        ## Send the kill signal to the process after 3 seconds
-        threading.Timer(3, do_kill).start()
+        """ Exit the cherrypy server after 1 second. Lets the current request terminate. """
+        threading.Timer(1, lambda: os._exit(0)).start()
 
 
     def remove_plugin(self, name):

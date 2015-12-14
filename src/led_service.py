@@ -29,8 +29,9 @@ AUTH_CODE = 1 + 4 + 16 + 64 + 128
 
 HOME = 75
 
-ETH_LEFT = 60
-ETH_RIGHT = 49
+ETH_LEFT_BB = 60
+ETH_RIGHT_BB = 49
+ETH_STATUS_BBB = 48
 
 AUTH_LOOP = ['1', '0', '1', '0', '0', '0', '0', '0']
 
@@ -203,13 +204,18 @@ class StatusObject(dbus.service.Object):
 
     def __set_network(self):
         """ Set the LEDs on the ethernet port using the current state. """
-        fh_r = open("/sys/class/gpio/gpio%i/value" % ETH_LEFT, 'w')
-        fh_r.write('1' if self.__network_enabled else '0')
-        fh_r.close()
+        if not is_beagle_bone_black():
+            fh_r = open("/sys/class/gpio/gpio%i/value" % ETH_LEFT_BB, 'w')
+            fh_r.write('1' if self.__network_enabled else '0')
+            fh_r.close()
 
-        fh_l = open("/sys/class/gpio/gpio%i/value" % ETH_RIGHT, 'w')
-        fh_l.write('1' if self.__network_activity else '0')
-        fh_l.close()
+            fh_l = open("/sys/class/gpio/gpio%i/value" % ETH_RIGHT_BB, 'w')
+            fh_l.write('1' if self.__network_activity else '0')
+            fh_l.close()
+        else:
+            fh_s = open("/sys/class/gpio/gpio%i/value" % ETH_STATUS_BBB, 'w')
+            fh_s.write('0' if self.__network_enabled else '1')
+            fh_s.close()
 
     def input(self):
         """ Read the input button on the top panel. Enables the master LEDs when pressed shortly,

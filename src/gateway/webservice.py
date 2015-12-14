@@ -1888,6 +1888,7 @@ class WebService(object):
                                    }
                             )
 
+        cherrypy.config.update({'engine.autoreload.on': False})
         cherrypy.server.unsubscribe()
 
         self.__https_server = cherrypy._cpserver.Server()
