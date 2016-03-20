@@ -148,7 +148,7 @@ class MasterCommunicator(object):
         """
         self.__consumers.append(consumer)
 
-    def do_command(self, cmd, fields=None, timeout=1):
+    def do_command(self, cmd, fields=None, timeout=2):
         """ Send a command over the serial port and block until an answer is received.
         If the master does not respond within the timeout period, a CommunicationTimedOutException
         is raised
