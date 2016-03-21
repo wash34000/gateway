@@ -313,9 +313,9 @@ class GlobalRTD10Configuration(EepromModel):
 
 
 class SensorConfiguration(EepromModel):
-    """ Models a sensor. The maximum number of sensors is 16. """
-    id = EepromId(16)
-    name = EepromString(16, lambda id: (193, id * 16))
+    """ Models a sensor. The maximum number of sensors is 32. """
+    id = EepromId(32)
+    name = EepromString(16, lambda id: (193 + (id / 16), (id % 16) * 16))
     offset = EepromSignedTemp(lambda id: (0, 60 + id))
 
 
