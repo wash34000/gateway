@@ -162,7 +162,7 @@ class PowerCommunicator(object):
         """ This code is running in a thread when in address mode. """
         expire = time.time() + self.__address_mode_timeout
         address_mode = power_api.set_addressmode()
-        want_an_address = power_api.want_an_address()
+        want_an_address = power_api.want_an_address(power_api.POWER_API_8_PORTS)
         set_address = power_api.set_address()
 
         # AGT start

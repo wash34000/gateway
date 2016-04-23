@@ -928,7 +928,7 @@ class GatewayApi(object):
 
     def do_basic_action(self, action_type, action_number):
         """ Execute a basic action.
-        
+
         :param action_type: The type of the action as defined by the master api.
         :type action_type: Integer [0, 254]
         :param action_number: The number provided to the basic action, its meaning depends on the \
@@ -1747,11 +1747,28 @@ class GatewayApi(object):
 
             # Setting the sensor type is only supported for the 8 port power modules.
             version = self.__power_controller.get_version(module['id'])
+            addr = self.__power_controller.get_address(module['id'])
             if version == power_api.POWER_API_8_PORTS:
-                addr = self.__power_controller.get_address(module['id'])
-                self.__power_communicator.do_command(addr, power_api.set_sensor_types(version),
-                        module["sensor0"], module["sensor1"], module["sensor2"], module["sensor3"],
-                        module["sensor4"], module["sensor5"], module["sensor6"], module["sensor7"])
+                self.__power_communicator.do_command(
+                    addr, power_api.set_sensor_types(version),
+                    *[module['sensor%d' % i] for i in xrange(power_api.NUM_PORTS[version])]
+                )
+            elif version == power_api.POWER_API_12_PORTS:
+                def _convert(data_type, key):
+                    if data_type == 'ccf':
+                        return 1 if module[key] == 3 else 0.5
+                    if data_type == 'sci':
+                        return 1 if module[key] in [True, 1] else 0
+                self.__power_communicator.do_command(
+                    addr, power_api.set_current_clamp_factor(version),
+                    *[_convert('ccf', 'sensor%d' % i) for i in xrange(power_api.NUM_PORTS[version])]
+                )
+                self.__power_communicator.do_command(
+                    addr, power_api.set_current_inverse(version),
+                    *[_convert('sci', 'inverted%d' % i) for i in xrange(power_api.NUM_PORTS[version])]
+                )
+            else:
+                raise ValueError('Unknown power api version')
 
         return dict()
 
@@ -1776,8 +1793,8 @@ class GatewayApi(object):
                     raw_freq = self.__power_communicator.do_command(addr,
                                                                 power_api.get_frequency(version))
 
-                    volt = [raw_volt[0] for i in range(num_ports)]
-                    freq = [raw_freq[0] for i in range(num_ports)]
+                    volt = [raw_volt[0] for _ in range(num_ports)]
+                    freq = [raw_freq[0] for _ in range(num_ports)]
 
                 elif version == power_api.POWER_API_12_PORTS:
                     volt = self.__power_communicator.do_command(addr,
