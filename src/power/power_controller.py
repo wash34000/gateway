@@ -78,14 +78,13 @@ class PowerController(object):
             fields[version] += ['times%d' % i for i in xrange(amount)]
             fields[version] += ['inverted%d' % i for i in xrange(amount)]
         with self.__lock:
-            data = self.__cursor.execute("SELECT %s FROM power_modules;" % ", ".join(fields[POWER_API_12_PORTS]))
-        for row in data:
-            version = row[3]
-            if version not in [POWER_API_8_PORTS, POWER_API_12_PORTS]:
-                raise ValueError("Unknown power api version")
-            power_modules[row[0]] = dict([(field, row[fields[POWER_API_12_PORTS].index(field)])
-                                          for field in fields[version]])
-        return power_modules
+            for row in self.__cursor.execute("SELECT %s FROM power_modules;" % ", ".join(fields[POWER_API_12_PORTS])):
+                version = row[3]
+                if version not in [POWER_API_8_PORTS, POWER_API_12_PORTS]:
+                    raise ValueError("Unknown power api version")
+                power_modules[row[0]] = dict([(field, row[fields[POWER_API_12_PORTS].index(field)])
+                                              for field in fields[version]])
+            return power_modules
 
     def get_address(self, id):
         """ Get the address of a module when the module id is provided. """
@@ -151,10 +150,9 @@ class PowerController(object):
         """ Get a free address for a power module. """
         max_address = 0
         with self.__lock:
-            data = self.__cursor.execute("SELECT address FROM power_modules;")
-        for row in data:
-            max_address = max(max_address, row[0])
-        return max_address + 1 if max_address < 255 else 1
+            for row in self.__cursor.execute("SELECT address FROM power_modules;"):
+                max_address = max(max_address, row[0])
+            return max_address + 1 if max_address < 255 else 1
 
     def close(self):
         """ Commit the changes and close the database connection. """
