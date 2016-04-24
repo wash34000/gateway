@@ -5,6 +5,7 @@ power modules and their address.
 
 import sqlite3
 import os.path
+from threading import Lock
 
 from power_api import POWER_API_8_PORTS, POWER_API_12_PORTS, NUM_PORTS
 
@@ -21,6 +22,7 @@ class PowerController(object):
         self.__connection = sqlite3.connect(db_filename, detect_types=sqlite3.PARSE_DECLTYPES,
                                             check_same_thread=False, isolation_level=None)
         self.__cursor = self.__connection.cursor()
+        self.__lock = Lock()
         if new_database:
             self.__create_tables()
 
@@ -36,24 +38,26 @@ class PowerController(object):
 
     def __create_tables(self):
         """ Create the power tables. """
-        self.__cursor.execute("CREATE TABLE power_modules (id INTEGER PRIMARY KEY, %s);"
-                              % ", ".join(['%s %s' % (key, value) for key, value in self._schema.iteritems()]))
+        with self.__lock:
+            self.__cursor.execute("CREATE TABLE power_modules (id INTEGER PRIMARY KEY, %s);"
+                                  % ", ".join(['%s %s' % (key, value) for key, value in self._schema.iteritems()]))
 
     def __update_schema_if_needed(self):
         """ Upadtes the power_modules table schema from the 8-port power module version to the
         12-port power module version. The __create_tables above generates the 12-port version, so
         the update is only performed for legacy users that still have the old schema. """
-        changed = False
-        fields = []
-        for row in self.__cursor.execute("PRAGMA table_info('power_modules');"):
-            fields.append(row[1])
-        for field, default in self._schema.iteritems():
-            if field not in fields:
-                self.__cursor.execute("ALTER TABLE power_modules ADD COLUMN %s %s;"
-                                      % (field, default))
-                changed = True
-        if changed is True:
-            self.__connection.commit()
+        with self.__lock:
+            changed = False
+            fields = []
+            for row in self.__cursor.execute("PRAGMA table_info('power_modules');"):
+                fields.append(row[1])
+            for field, default in self._schema.iteritems():
+                if field not in fields:
+                    self.__cursor.execute("ALTER TABLE power_modules ADD COLUMN %s %s;"
+                                          % (field, default))
+                    changed = True
+            if changed is True:
+                self.__connection.commit()
 
     def get_power_modules(self):
         """ Get a dict containing all power modules. The key of the dict is the id of the module,
@@ -73,7 +77,9 @@ class PowerController(object):
             fields[version] += ['sensor%d' % i for i in xrange(amount)]
             fields[version] += ['times%d' % i for i in xrange(amount)]
             fields[version] += ['inverted%d' % i for i in xrange(amount)]
-        for row in self.__cursor.execute("SELECT %s FROM power_modules;" % ", ".join(fields[POWER_API_12_PORTS])):
+        with self.__lock:
+            data = self.__cursor.execute("SELECT %s FROM power_modules;" % ", ".join(fields[POWER_API_12_PORTS]))
+        for row in data:
             version = row[3]
             if version not in [POWER_API_8_PORTS, POWER_API_12_PORTS]:
                 raise ValueError("Unknown power api version")
@@ -83,21 +89,24 @@ class PowerController(object):
 
     def get_address(self, id):
         """ Get the address of a module when the module id is provided. """
-        for row in self.__cursor.execute("SELECT address FROM power_modules WHERE id=?;",
-                                         (id,)):
-            return row[0]
+        with self.__lock:
+            for row in self.__cursor.execute("SELECT address FROM power_modules WHERE id=?;",
+                                             (id,)):
+                return row[0]
 
     def get_version(self, id):
         """ Get the version of a module when the module id is provided. """
-        for row in self.__cursor.execute("SELECT version FROM power_modules WHERE id=?;",
-                                         (id,)):
-            return row[0]
+        with self.__lock:
+            for row in self.__cursor.execute("SELECT version FROM power_modules WHERE id=?;",
+                                             (id,)):
+                return row[0]
 
     def module_exists(self, address):
         """ Check if a module with a certain address exists. """
-        for row in self.__cursor.execute("SELECT count(id) FROM power_modules WHERE address=?;",
-                                         (address,)):
-            return row[0] > 0
+        with self.__lock:
+            for row in self.__cursor.execute("SELECT count(id) FROM power_modules WHERE address=?;",
+                                             (address,)):
+                return row[0] > 0
 
     def update_power_module(self, module):
         """ Update the name and names of the inputs of the power module.
@@ -118,27 +127,32 @@ class PowerController(object):
         fields += ['sensor%d' % i for i in xrange(amount)]
         fields += ['times%d' % i for i in xrange(amount)]
         fields += ['inverted%d' % i for i in xrange(amount)]
-        self.__cursor.execute("UPDATE power_modules SET %s WHERE id=?" %
-                              ", ".join(["%s=?" % field for field in fields]),
-                              tuple([module[field] for field in fields] + [module['id']]))
-        self.__connection.commit()
+        with self.__lock:
+            self.__cursor.execute("UPDATE power_modules SET %s WHERE id=?" %
+                                  ", ".join(["%s=?" % field for field in fields]),
+                                  tuple([module[field] for field in fields] + [module['id']]))
+            self.__connection.commit()
 
     def register_power_module(self, address, version):
         """ Register a new power module using an address. """
-        self.__cursor.execute("INSERT INTO power_modules(address, version) VALUES (?, ?);",
-                              (address, version))
-        self.__connection.commit()
+        with self.__lock:
+            self.__cursor.execute("INSERT INTO power_modules(address, version) VALUES (?, ?);",
+                                  (address, version))
+            self.__connection.commit()
 
     def readdress_power_module(self, old_address, new_address):
         """ Change the address of a power module. """
-        self.__cursor.execute("UPDATE power_modules SET address=? WHERE address=?;",
-                              (new_address, old_address))
-        self.__connection.commit()
+        with self.__lock:
+            self.__cursor.execute("UPDATE power_modules SET address=? WHERE address=?;",
+                                  (new_address, old_address))
+            self.__connection.commit()
 
     def get_free_address(self):
         """ Get a free address for a power module. """
         max_address = 0
-        for row in self.__cursor.execute("SELECT address FROM power_modules;"):
+        with self.__lock:
+            data = self.__cursor.execute("SELECT address FROM power_modules;")
+        for row in data:
             max_address = max(max_address, row[0])
         return max_address + 1 if max_address < 255 else 1
 
