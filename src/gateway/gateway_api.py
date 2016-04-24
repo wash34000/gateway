@@ -147,19 +147,23 @@ class GatewayApi(object):
 
         try:
             status = self.__master_communicator.do_command(master_api.status())
-            date = "%02d.%02d.%02d %02d:%02d:%02d" % (status['day'], status['month'],
-                        status['year'], status['hours'], status['minutes'], status['seconds'])
 
-            epoch_gateway = pytime.time()
+            master_time = datetime.datetime(1, 1, 1, status['hours'], status['minutes'], status['seconds'])
 
-            try:
-                epoch_master = pytime.mktime(pytime.strptime(date, "%d.%m.%y %H:%M:%S"))
-            except ValueError:
-                # If the master returns insane values, make sure the time is synced.
-                LOGGER.error("Got bad time values from master: %s" % date)
-                epoch_master = 0
+            now = datetime.datetime.now()
+            expected_weekday = now.weekday() + 1
+            expected_time = now.replace(year=1, month=1, day=1, microsecond=0)
 
-            if abs(epoch_master - epoch_gateway) > 180: # Allow 3 minutes slack
+            sync = False
+            if abs((master_time - expected_time).total_seconds()) > 180:  # Allow 3 minutes difference
+                sync = True
+            if status['weekday'] != expected_weekday:
+                sync = True
+
+            if sync is True:
+                LOGGER.info('Time - master: {0} ({1}) - gateway: {2} ({3})'.format(
+                    master_time, status['weekday'], expected_time, expected_weekday)
+                )
                 self.sync_master_time()
 
         except:
