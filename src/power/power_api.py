@@ -169,7 +169,27 @@ def set_sensor_types(version):
     else:
         raise ValueError("Unknown power api version")
 
+def set_current_clamp_factor(version):
+    """ Sets the current clamp factor.
+    :param version: power api version (POWER_API_8_PORTS or POWER_API_12_PORTS).
+    """
+    if version == POWER_API_8_PORTS:
+        raise ValueError("Setting clamp factor is not applicable for the 8 port modules.")
+    elif version == POWER_API_12_PORTS:
+        return PowerCommand('S', 'CCF', '12f', '')
+    else:
+        raise ValueError('Unknown power api version')
 
+def set_current_inverse(version):
+    """ Sets the current inverse.
+    :param version: power api version (POWER_API_8_PORTS or POWER_API_12_PORTS).
+    """
+    if version == POWER_API_8_PORTS:
+        raise ValueError("Setting current inverse is not applicable for the 8 port modules.")
+    elif version == POWER_API_12_PORTS:
+        return PowerCommand('S', 'SCI', '12b', '')
+    else:
+        raise ValueError('Unknown power api version')
 
 ## Below are the address mode functions.
 
@@ -177,9 +197,14 @@ def set_addressmode():
     """ Set the address mode of the power module, 1 = address mode, 0 = normal mode """
     return PowerCommand('S', 'AGT', 'b', '')
 
-def want_an_address():
+def want_an_address(version):
     """ The Want An Address command, send by the power modules in address mode. """
-    return PowerCommand('S', 'WAA', '', '')
+    if version == POWER_API_8_PORTS:
+        return PowerCommand('S', 'WAA', '', '')
+    elif version == POWER_API_12_PORTS:
+        return PowerCommand('S', 'WAD', '', '')
+    else:
+        raise ValueError('Unknown power api version')
 
 def set_address():
     """ Reply on want_an_address, setting a new address for the power module. """
@@ -202,7 +227,7 @@ def reset_normal_energy(version):
         return PowerCommand('S', 'ENE', 'B12L', '')
     else:
         raise ValueError("Unknown power api version")
-    
+
 
 def reset_day_energy(version):
     """ Reset the energy measured during the day by the power module.
