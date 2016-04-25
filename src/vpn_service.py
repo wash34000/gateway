@@ -153,7 +153,7 @@ class Gateway(object):
             return None
         else:
             ret = {'thermostats_on' : data['thermostats_on'], 'automatic' : data['automatic'],
-                   'cooling' : data['cooling'], 'cooling_on' : data['cooling_on']}
+                   'cooling' : data['cooling']}
             thermostats = []
             for thermostat in data['status']:
                 to_add = {}
