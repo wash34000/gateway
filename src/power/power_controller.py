@@ -36,6 +36,15 @@ class PowerController(object):
 
         self.__update_schema_if_needed() # Adds the fields required for the 12-port power modules.
 
+    @staticmethod
+    def _generate_fields(amount):
+        fields = []
+        fields += ['input%d' % i for i in xrange(amount)]
+        fields += ['sensor%d' % i for i in xrange(amount)]
+        fields += ['times%d' % i for i in xrange(amount)]
+        fields += ['inverted%d' % i for i in xrange(amount)]
+        return fields
+
     def __create_tables(self):
         """ Create the power tables. """
         with self.__lock:
@@ -72,11 +81,7 @@ class PowerController(object):
         fields = {}
         for version in [POWER_API_8_PORTS, POWER_API_12_PORTS]:
             amount = NUM_PORTS[version]
-            fields[version]  = ['id', 'name', 'address', 'version']
-            fields[version] += ['input%d' % i for i in xrange(amount)]
-            fields[version] += ['sensor%d' % i for i in xrange(amount)]
-            fields[version] += ['times%d' % i for i in xrange(amount)]
-            fields[version] += ['inverted%d' % i for i in xrange(amount)]
+            fields[version] = ['id', 'name', 'address', 'version'] + PowerController._generate_fields(amount)
         with self.__lock:
             for row in self.__cursor.execute("SELECT %s FROM power_modules;" % ", ".join(fields[POWER_API_12_PORTS])):
                 version = row[3]
@@ -121,11 +126,7 @@ class PowerController(object):
         if version not in [POWER_API_8_PORTS, POWER_API_12_PORTS]:
             raise ValueError("Unknown power api version")
         amount = NUM_PORTS[version]
-        fields  = ['name']
-        fields += ['input%d' % i for i in xrange(amount)]
-        fields += ['sensor%d' % i for i in xrange(amount)]
-        fields += ['times%d' % i for i in xrange(amount)]
-        fields += ['inverted%d' % i for i in xrange(amount)]
+        fields = ['name'] + PowerController._generate_fields(amount)
         with self.__lock:
             self.__cursor.execute("UPDATE power_modules SET %s WHERE id=?" %
                                   ", ".join(["%s=?" % field for field in fields]),

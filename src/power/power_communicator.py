@@ -162,7 +162,8 @@ class PowerCommunicator(object):
         """ This code is running in a thread when in address mode. """
         expire = time.time() + self.__address_mode_timeout
         address_mode = power_api.set_addressmode()
-        want_an_address = power_api.want_an_address(power_api.POWER_API_8_PORTS)
+        want_an_address_8 = power_api.want_an_address(power_api.POWER_API_8_PORTS)
+        want_an_address_12 = power_api.want_an_address(power_api.POWER_API_12_PORTS)
         set_address = power_api.set_address()
 
         # AGT start
@@ -175,8 +176,11 @@ class PowerCommunicator(object):
             try:
                 (header, data) = self.__read_from_serial()
 
-                if not want_an_address.check_header_partial(header):
-                    LOGGER.warning("Received non WAA message in address mode")
+                waa_8 = want_an_address_8.check_header_partial(header)
+                waa_12 = want_an_address_12.check_header_partial(header)
+
+                if not waa_8 and not waa_12:
+                    LOGGER.warning("Received non WAA/WAD message in address mode")
                 else:
                     (old_address, cid) = (ord(header[:2][1]), header[2:3])
                     # Ask power_controller for new address, and register it.
@@ -185,8 +189,7 @@ class PowerCommunicator(object):
                     if self.__power_controller.module_exists(old_address):
                         self.__power_controller.readdress_power_module(old_address, new_address)
                     else:
-                        version = power_api.POWER_API_8_PORTS if len(data) == 0 \
-                                  else power_api.POWER_API_12_PORTS
+                        version = power_api.POWER_API_8_PORTS if waa_8 else power_api.POWER_API_12_PORTS
 
                         self.__power_controller.register_power_module(new_address, version)
 

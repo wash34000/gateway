@@ -1773,7 +1773,6 @@ class GatewayApi(object):
         for module in modules:
             self.__power_controller.update_power_module(module)
 
-            # Setting the sensor type is only supported for the 8 port power modules.
             version = self.__power_controller.get_version(module['id'])
             addr = self.__power_controller.get_address(module['id'])
             if version == power_api.POWER_API_8_PORTS:
@@ -1782,18 +1781,18 @@ class GatewayApi(object):
                     *[module['sensor%d' % i] for i in xrange(power_api.NUM_PORTS[version])]
                 )
             elif version == power_api.POWER_API_12_PORTS:
-                def _convert(data_type, key):
-                    if data_type == 'ccf':
-                        return 1 if module[key] == 3 else 0.5
-                    if data_type == 'sci':
-                        return 1 if module[key] in [True, 1] else 0
+                def _convert_ccf(key):
+                    return 1 if module[key] == 3 else 0.5
                 self.__power_communicator.do_command(
                     addr, power_api.set_current_clamp_factor(version),
-                    *[_convert('ccf', 'sensor%d' % i) for i in xrange(power_api.NUM_PORTS[version])]
+                    *[_convert_ccf('sensor%d' % i) for i in xrange(power_api.NUM_PORTS[version])]
                 )
+
+                def _convert_sci(key):
+                    return 1 if module[key] in [True, 1] else 0
                 self.__power_communicator.do_command(
                     addr, power_api.set_current_inverse(version),
-                    *[_convert('sci', 'inverted%d' % i) for i in xrange(power_api.NUM_PORTS[version])]
+                    *[_convert_sci('inverted%d' % i) for i in xrange(power_api.NUM_PORTS[version])]
                 )
             else:
                 raise ValueError('Unknown power api version')
