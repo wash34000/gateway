@@ -322,7 +322,7 @@ def virtual_sensor_list():
          Field.byte('vsc20'), Field.byte('vsc21'), Field.byte('vsc22'), Field.byte('vsc23'),
          Field.byte('vsc24'), Field.byte('vsc25'), Field.byte('vsc26'), Field.byte('vsc27'),
          Field.byte('vsc28'), Field.byte('vsc29'), Field.byte('vsc30'), Field.byte('vsc31'),
-         Field.crc(), Field.lit('\r\n')]))
+         Field.crc(), Field.lit('\r\n')])
 
 def virtual_sensor_write():
     """ Write temperature, humidty, brightness to a virtual sensor. """
