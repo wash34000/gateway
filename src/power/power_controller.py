@@ -18,13 +18,6 @@ class PowerController(object):
 
         :param db_filename: filename of the sqlite database.
         """
-        new_database = not os.path.exists(db_filename)
-        self.__connection = sqlite3.connect(db_filename, detect_types=sqlite3.PARSE_DECLTYPES,
-                                            check_same_thread=False, isolation_level=None)
-        self.__cursor = self.__connection.cursor()
-        self.__lock = Lock()
-        if new_database:
-            self.__create_tables()
 
         self._schema = {'name': "TEXT default ''",
                         'address': "INTEGER",
@@ -34,7 +27,15 @@ class PowerController(object):
         self._schema.update(dict([('times%d' % i, "TEXT") for i in xrange(12)]))
         self._schema.update(dict([('inverted%d' % i, "INT default 0") for i in xrange(12)]))
 
-        self.__update_schema_if_needed() # Adds the fields required for the 12-port power modules.
+        new_database = not os.path.exists(db_filename)
+        self.__connection = sqlite3.connect(db_filename, detect_types=sqlite3.PARSE_DECLTYPES,
+                                            check_same_thread=False, isolation_level=None)
+        self.__cursor = self.__connection.cursor()
+        self.__lock = Lock()
+
+        if new_database:
+            self.__create_tables()
+        self.__update_schema_if_needed()  # Adds the fields required for the 12-port power modules.
 
     @staticmethod
     def _generate_fields(amount):
@@ -50,6 +51,7 @@ class PowerController(object):
         with self.__lock:
             self.__cursor.execute("CREATE TABLE power_modules (id INTEGER PRIMARY KEY, %s);"
                                   % ", ".join(['%s %s' % (key, value) for key, value in self._schema.iteritems()]))
+            self.__connection.commit()
 
     def __update_schema_if_needed(self):
         """ Upadtes the power_modules table schema from the 8-port power module version to the
