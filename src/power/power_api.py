@@ -204,7 +204,7 @@ def set_current_inverse(version):
     if version == POWER_API_8_PORTS:
         raise ValueError("Setting current inverse is not applicable for the 8 port modules.")
     elif version == POWER_API_12_PORTS:
-        return PowerCommand('S', 'SCI', '12b', '')
+        return PowerCommand('S', 'SCI', '=12B', '')
     else:
         raise ValueError('Unknown power api version')
 
@@ -341,9 +341,21 @@ def bootloader_read_id():
     return PowerCommand('G', 'BRI', '', '8B')
 
 
-def bootloader_write_code():
-    """ Write code """
-    return PowerCommand('S', 'BWC', '195B', '')
+ def bootloader_write_code(version):
+    """ Write code
+    :param version: power api version (POWER_API_8_PORTS or POWER_API_12_PORTS).
+    """
+    if version == POWER_API_8_PORTS:
+        return PowerCommand('S', 'BWC', '195B', '')
+    elif version == POWER_API_12_PORTS:
+        return PowerCommand('S', 'BWC', '132B', '')
+    else:
+        raise ValueError("Unknown power api version")
+
+
+def bootloader_erase_code():
+    """ Erase the code on a given page. """
+    return PowerCommand('S', 'BEC', 'H', '')
 
 
 def bootloader_write_configuration():

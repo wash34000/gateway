@@ -18,7 +18,9 @@ import constants
 from power.power_communicator import PowerCommunicator
 from power.power_controller import PowerController
 from power.power_api import bootloader_goto, bootloader_read_id, bootloader_write_code, \
-                            bootloader_jump_application, get_version
+                            bootloader_jump_application, bootloader_erase_code, get_version, \
+                            POWER_API_8_PORTS, POWER_API_12_PORTS
+
 
 class HexReader(object):
     """ Reads the hex from file and returns it in the OpenMotics format. """
@@ -28,7 +30,7 @@ class HexReader(object):
         self.__ih = intelhex.IntelHex(hex_file)
         self.__crc = 0
 
-    def get_bytes(self, address):
+    def get_bytes_8(self, address):
         """ Get the 192 bytes from the hex file, with 3 address bytes prepended. """
         bytes = []
 
@@ -61,13 +63,43 @@ class HexReader(object):
 
         return bytes
 
+    def int_to_array_12(self, integer):
+        """ Convert an integer to an array for the 12 port energy module. """
+        return [ integer % 256, (integer % 65536) / 256, (integer / 65536) % 256, (integer / 65536) / 256 ]
+
+    def get_bytes_12(self, address):
+        """ Get the 128 bytes from the hex file, with 4 address bytes prepended. """
+        bytes = []
+
+        bytes.extend(int_to_array_12(address))
+
+        for i in range(32):
+            data0 = self.__ih[address + 4*i + 0]
+            data1 = self.__ih[address + 4*i + 1]
+            data2 = self.__ih[address + 4*i + 2]
+            data3 = self.__ih[address + 4*i + 3]
+
+            bytes.append(data0)
+            bytes.append(data1)
+            bytes.append(data2)
+            bytes.append(data3)
+
+            if not (address == 486801280 and i == 31):
+                self.__crc += data0 + data1 + data2 + data3
+
+        if address == 486801280:
+            bytes = bytes[:-4]
+            bytes.extend(int_to_array_12(self.get_crc()))
+
+        return bytes
+
     def get_crc(self):
         """ Get the crc for the block that have been read from the HexReader. """
         return self.__crc
 
 
-def bootload(paddr, hex_file, power_communicator, verbose=False):
-    """ Bootload a power module.
+def bootload_8(paddr, hex_file, power_communicator, verbose=False):
+    """ Bootload a 8 port power module.
 
     :param paddr: The address of a power module (integer).
     :param hex_file: The filename of the hex file to write.
@@ -87,14 +119,40 @@ def bootload(paddr, hex_file, power_communicator, verbose=False):
     print "E%d - Writing vector tabel" % paddr
     for address in range(0, 1024, 128):      # 0x000 - 0x400
         print " Writing %d" % address
-        bytes = reader.get_bytes(address)
-        power_communicator.do_command(paddr, bootloader_write_code(), *bytes)
+        bytes = reader.get_bytes_8(address)
+        power_communicator.do_command(paddr, bootloader_write_code(POWER_API_8_PORTS), *bytes)
 
     print "E%d -  Writing code" % paddr
     for address in range(8192, 44032, 128):  # 0x2000 - 0xAC00
         print " Writing %d" % address
-        bytes = reader.get_bytes(address)
-        power_communicator.do_command(paddr, bootloader_write_code(), *bytes)
+        bytes = reader.get_bytes_8(address)
+        power_communicator.do_command(paddr, bootloader_write_code(POWER_API_8_PORTS), *bytes)
+
+    print "E%d - Jumping to application" % paddr
+    power_communicator.do_command(paddr, bootloader_jump_application())
+
+
+def bootload_12(paddr, hex_file, power_communicator, verbose=False):
+    """ Bootload a 12 port power module.
+
+    :param paddr: The address of a power module (integer).
+    :param hex_file: The filename of the hex file to write.
+    :param power_communicator: Communication with the power modules.
+    :param verbose: Show serial command on output if verbose is True.
+    """
+    reader = HexReader(hex_file)
+
+    print "E%d - Going to bootloader" % paddr
+    power_communicator.do_command(paddr, bootloader_goto(), 10)
+
+    print "E%d - Erasing code" % paddr
+    for page in range(6, 64):
+        power_communicator.do_command(paddr, bootloader_erase_code(), page)
+
+    print "E%d -  Writing code" % paddr
+    for address in range(0x1D006000, 0x1D03FFFB, 128):
+        bytes = reader.get_bytes_12(address)
+        power_communicator.do_command(paddr, bootloader_write_code(POWER_API_12_PORTS), *bytes)
 
     print "E%d - Jumping to application" % paddr
     power_communicator.do_command(paddr, bootloader_jump_application())
@@ -108,6 +166,7 @@ def version(paddr, power_communicator):
     """
     version = power_communicator.do_command(paddr, get_version())[0]
     return version.split("\x00")[0]
+
 
 def main():
     """ The main function. """
@@ -140,10 +199,12 @@ def main():
             power_modules = power_controller.get_power_modules()
 
             for module_id in power_modules:
-                addr = power_modules[module_id]['address']
+                module = power_modules[module_id]
+                addr = module['address']
                 if args.version:
                     print "E%d - Version: %s" % (addr, version(addr, power_communicator))
                 if args.file:
+                    bootload = bootload_8 if module['version'] == POWER_API_8_PORTS else bootload_12
                     bootload(addr, args.file, power_communicator, verbose=args.verbose)
 
         else:
