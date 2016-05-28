@@ -65,13 +65,13 @@ class HexReader(object):
 
     def int_to_array_12(self, integer):
         """ Convert an integer to an array for the 12 port energy module. """
-        return [ integer % 256, (integer % 65536) / 256, (integer / 65536) % 256, (integer / 65536) / 256 ]
+        return [integer % 256, (integer % 65536) / 256, (integer / 65536) % 256, (integer / 65536) / 256]
 
     def get_bytes_12(self, address):
         """ Get the 128 bytes from the hex file, with 4 address bytes prepended. """
         bytes = []
 
-        bytes.extend(int_to_array_12(address))
+        bytes.extend(self.int_to_array_12(address))
 
         for i in range(32):
             data0 = self.__ih[address + 4*i + 0]
@@ -89,7 +89,7 @@ class HexReader(object):
 
         if address == 486801280:
             bytes = bytes[:-4]
-            bytes.extend(int_to_array_12(self.get_crc()))
+            bytes.extend(self.int_to_array_12(self.get_crc()))
 
         return bytes
 
@@ -209,9 +209,11 @@ def main():
 
         else:
             addr = args.address
+            module_version = version(addr, power_communicator)
             if args.version:
-                print "E%d - Version: %s" % (addr, version(addr, power_communicator))
+                print "E%d - Version: %s" % (addr, module_version)
             if args.file:
+                bootload = bootload_8 if module_version == POWER_API_8_PORTS else bootload_12
                 bootload(addr, args.file, power_communicator, verbose=args.verbose)
     else:
         parser.print_help()
