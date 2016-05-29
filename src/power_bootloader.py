@@ -5,6 +5,7 @@ Created on Apr 20, 2013
 
 @author: fryckbos
 '''
+import sys
 import argparse
 from ConfigParser import ConfigParser
 
@@ -193,11 +194,10 @@ def main():
                                            verbose=args.verbose)
     power_communicator.start()
 
-    if (args.address or args.all):
+    if args.address or args.all:
+        power_controller = PowerController(constants.get_power_database_file())
+        power_modules = power_controller.get_power_modules()
         if args.all:
-            power_controller = PowerController(constants.get_power_database_file())
-            power_modules = power_controller.get_power_modules()
-
             for module_id in power_modules:
                 module = power_modules[module_id]
                 addr = module['address']
@@ -209,11 +209,14 @@ def main():
 
         else:
             addr = args.address
-            module_version = version(addr, power_communicator)
+            modules = [module for module in power_modules.keys() if module['address'] == addr]
+            if len(modules) != 1:
+                print 'ERROR: Could not determine energy module version. Aborting'
+                sys.exit(1)
             if args.version:
-                print "E%d - Version: %s" % (addr, module_version)
+                print "E%d - Version: %s" % (addr, version(addr, power_communicator))
             if args.file:
-                bootload = bootload_8 if module_version == POWER_API_8_PORTS else bootload_12
+                bootload = bootload_8 if modules[0]['version'] == POWER_API_8_PORTS else bootload_12
                 bootload(addr, args.file, power_communicator, verbose=args.verbose)
     else:
         parser.print_help()
