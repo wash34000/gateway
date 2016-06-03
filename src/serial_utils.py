@@ -5,20 +5,26 @@ Created on Dec 29, 2012
 
 @author: fryckbos
 """
+import time
 import struct
 import fcntl
+from threading import Thread
+from Queue import Queue
+
 
 class CommunicationTimedOutException(Exception):
     """ An exception that is raised when the master did not respond in time. """
     def __init__(self):
         Exception.__init__(self)
 
+
 def printable(string):
     """ Converts non-printable characters into hex notation """
 
     hex_notation = " ".join(['%3d' % ord(c) for c in string])
-    readable = "".join([c if ord(c) > 32 and ord(c) <= 126 else '.' for c in string])
+    readable = "".join([c if 32 < ord(c) <= 126 else '.' for c in string])
     return hex_notation + "    " + readable
+
 
 class RS485(object):
     """ Replicates the pyserial interface. """
@@ -29,16 +35,24 @@ class RS485(object):
         fileno = serial.fileno()
         serial_rs485 = struct.pack('hhhhhhhh', 3, 0, 0, 0, 0, 0, 0, 0)
         fcntl.ioctl(fileno, 0x542F, serial_rs485)
-        serial.timeout = 1
+        serial.timeout = None
+        self.__thread = Thread(target=self._reader)
+        self.__thread.daemon = True
+        self.__thread.start()
+        self.read_queue = Queue()
 
     def write(self, data):
         """ Write data to serial port """
         self.__serial.write(data)
 
-    def read(self, size):
-        """ Read size bytes from serial port """
-        return self.__serial.read(size)
-
-    def inWaiting(self): #pylint: disable=C0103
-        """ Get the number of bytes pending to be read """
-        return self.__serial.inWaiting()
+    def _reader(self):
+        try:
+            while True:
+                size = self.__serial.inWaiting()
+                if size > 0:
+                    for byte in self.__serial.read(size):
+                        self.read_queue.put(byte)
+                else:
+                    time.sleep(0.01)
+        except Exception as ex:
+            print 'Error in reader: {0}'.format(ex)

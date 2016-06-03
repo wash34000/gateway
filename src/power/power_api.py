@@ -341,7 +341,7 @@ def bootloader_read_id():
     return PowerCommand('G', 'BRI', '', '8B')
 
 
- def bootloader_write_code(version):
+def bootloader_write_code(version):
     """ Write code
     :param version: power api version (POWER_API_8_PORTS or POWER_API_12_PORTS).
     """
