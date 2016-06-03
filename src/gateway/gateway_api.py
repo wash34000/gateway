@@ -873,14 +873,19 @@ class GatewayApi(object):
 
         :returns: dict with 'status'.
         """
+        def check_resp(ret_dict):
+            """ Checks if the response is 'OK', throws a ValueError otherwise. """
+            if ret_dict['resp'] != 'OK':
+                raise ValueError("Setting thermostat mode did not return OK !")
+
         if thermostat_id < 0 or thermostat_id > 24:
             raise ValueError("thermostat_idid not in [0, 24]: %d" % thermostat_id)
 
         modifier = 0 if airco_on else 100
 
         check_resp(self.__master_communicator.do_command(master_api.basic_action(),
-                 {'action_type' : master_api.BA_THERMOSTAT_AIRCO_STATUS,
-                  'action_number' : modifier + thermostat_id}))
+                   {'action_type' : master_api.BA_THERMOSTAT_AIRCO_STATUS,
+                    'action_number' : modifier + thermostat_id}))
 
         return {'status': 'OK'}
 
@@ -1842,8 +1847,8 @@ class GatewayApi(object):
                                 convert_nan(current[i]), convert_nan(power[i])])
 
                 output[str(id)] = out
-            except Exception as exception:
-                LOGGER.exception("Got Exception for power module %s: %s", id, exception)
+            except Exception as ex:
+                LOGGER.exception("Got Exception for power module %s: %s", id, ex)
 
         return output
 
@@ -1870,8 +1875,8 @@ class GatewayApi(object):
                     out.append([convert_nan(day[i]), convert_nan(night[i])])
 
                 output[str(id)] = out
-            except Exception:
-                LOGGER.error("Got Exception for power module %s", id)
+            except Exception as ex:
+                LOGGER.exception("Got Exception for power module %s: %s", id, ex)
 
         return output
 
@@ -1896,7 +1901,7 @@ class GatewayApi(object):
 
         :returns: dict with key 'address_mode' and value True or False.
         """
-        return {'address_mode' : self.__power_communicator.in_address_mode()}
+        return {'address_mode': self.__power_communicator.in_address_mode()}
 
     def set_power_voltage(self, module_id, voltage):
         """ Set the voltage for a given module.
@@ -1906,6 +1911,64 @@ class GatewayApi(object):
         :returns: empty dict
         """
         addr = self.__power_controller.get_address(module_id)
-        version = self.__power_controller.get_address(module_id)
-        self.__power_communicator.do_command(addr, power_api.set_voltage(version), voltage)
+        version = self.__power_controller.get_version(module_id)
+        if version != power_api.POWER_API_12_PORTS:
+            raise ValueError('Unknown power api version')
+        self.__power_communicator.do_command(addr, power_api.set_voltage(), voltage)
         return dict()
+
+    def get_energy_time(self, module_id, input_id=None):
+        """ Get a 'time' sample of voltage and current
+
+        :returns: dict with input_id and the voltage and cucrrent time samples
+        """
+        addr = self.__power_controller.get_address(module_id)
+        version = self.__power_controller.get_version(module_id)
+        if version != power_api.POWER_API_12_PORTS:
+            raise ValueError('Unknown power api version')
+        if input_id is None:
+            input_ids = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+        else:
+            input_id = int(input_id)
+            if input_id < 0 or input_id > 11:
+                raise ValueError('Invalid input_id (should be 0-11)')
+            input_ids = [input_id]
+        data = {}
+        for input_id in input_ids:
+            voltage = list(self.__power_communicator.do_command(addr, power_api.get_voltage_sample_time(version), input_id, 0))
+            current = list(self.__power_communicator.do_command(addr, power_api.get_current_sample_time(version), input_id, 0))
+            for entry in self.__power_communicator.do_command(addr, power_api.get_voltage_sample_time(version), input_id, 1):
+                if entry == float('inf'):
+                    break
+                voltage.append(entry)
+            for entry in self.__power_communicator.do_command(addr, power_api.get_current_sample_time(version), input_id, 1):
+                if entry == float('inf'):
+                    break
+                current.append(entry)
+            data[str(input_id)] = {'voltage': voltage,
+                                   'current': current}
+        return data
+
+    def get_energy_frequency(self, module_id, input_id=None):
+        """ Get a 'frequency' sample of voltage and current
+
+        :returns: dict with input_id and the voltage and cucrrent frequency samples
+        """
+        addr = self.__power_controller.get_address(module_id)
+        version = self.__power_controller.get_version(module_id)
+        if version != power_api.POWER_API_12_PORTS:
+            raise ValueError('Unknown power api version')
+        if input_id is None:
+            input_ids = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+        else:
+            input_id = int(input_id)
+            if input_id < 0 or input_id > 11:
+                raise ValueError('Invalid input_id (should be 0-11)')
+            input_ids = [input_id]
+        data = {}
+        for input_id in input_ids:
+            voltage = self.__power_communicator.do_command(addr, power_api.get_voltage_sample_frequency(version), input_id, 20)
+            current = self.__power_communicator.do_command(addr, power_api.get_current_sample_frequency(version), input_id, 20)
+            data[str(input_id)] = {'voltage': [voltage[:20], voltage[20:]],
+                                   'current': [current[:20], current[20:]]}
+        return data

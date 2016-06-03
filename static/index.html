@@ -322,7 +322,11 @@
             var onoff = $("#thermostat_onoff");
             onoff.text(data['thermostats_on'] ? 'on' : 'off');
             onoff.css('color', data['thermostats_on'] ? '#51A351' : '#BD362F');
-            $("#thermostat_outside_temp").text(round_fixed(data['status'][0]['outside'], 1));
+            if (data['status'].length > 0 && data['status'][0].hasOwnProperty('outside')) {
+                $("#thermostat_outside_temp").text(round_fixed(data['status'][0]['outside'], 1));
+            } else {
+                $("#thermostat_outside_temp").text('n/a');
+            }
 
 
             // Set enabled mode
@@ -480,7 +484,7 @@
 
                     $("#save-config-" + plugin_name).click(function() {
                         var config = get_config(container, description);
-                        
+
                         $.ajax({
                             url: '/plugins/' + plugin_name + '/set_config',
                             type: 'POST',
@@ -551,9 +555,9 @@
 
                 if (is_configurable) {
                     $("#plugins").append('<div style="display: none;" id="div-config-' + plugin['name'] + '"><h4>Configure plugin ' + plugin['name'] + '</h4></div>');
-                    
+
                     create_config_div($("#div-config-" + plugin['name']), plugin['name']);
-                    
+
                     $("#btn-config-" + plugin['name']).click(function (e) {
                         $("#div-config-" + plugin['name']).show();
                     });
