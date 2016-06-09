@@ -48,11 +48,12 @@ class RS485(object):
     def _reader(self):
         try:
             while True:
+                byte = self.__serial.read(1)
+                if len(byte) == 1:
+                    self.read_queue.put(byte)
                 size = self.__serial.inWaiting()
                 if size > 0:
                     for byte in self.__serial.read(size):
                         self.read_queue.put(byte)
-                else:
-                    time.sleep(0.01)
         except Exception as ex:
             print 'Error in reader: {0}'.format(ex)

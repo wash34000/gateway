@@ -1927,7 +1927,7 @@ class GatewayApi(object):
         if version != power_api.POWER_API_12_PORTS:
             raise ValueError('Unknown power api version')
         if input_id is None:
-            input_ids = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+            input_ids = range(12)
         else:
             input_id = int(input_id)
             if input_id < 0 or input_id > 11:
@@ -1959,7 +1959,7 @@ class GatewayApi(object):
         if version != power_api.POWER_API_12_PORTS:
             raise ValueError('Unknown power api version')
         if input_id is None:
-            input_ids = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+            input_ids = range(12)
         else:
             input_id = int(input_id)
             if input_id < 0 or input_id > 11:
@@ -1969,6 +1969,8 @@ class GatewayApi(object):
         for input_id in input_ids:
             voltage = self.__power_communicator.do_command(addr, power_api.get_voltage_sample_frequency(version), input_id, 20)
             current = self.__power_communicator.do_command(addr, power_api.get_current_sample_frequency(version), input_id, 20)
+            # The received data has a length of 40; 20 harmonics entries, and 20 phase entries. For easier usage, the
+            # API calls splits them into two parts so the customers doesn't have to do the splitting.
             data[str(input_id)] = {'voltage': [voltage[:20], voltage[20:]],
                                    'current': [current[:20], current[20:]]}
         return data

@@ -1614,7 +1614,8 @@ class WebInterface(object):
         :param input_id: The id of the input on the given power module
         :type input_id: Byte or None
         :returns: A dict with the input_id(s) as key, and as value another dict with for
-                  voltage and current the 20 frequency components"""
+                  voltage and current the 20 frequency components
+        """
         self.check_token(token)
         module_id = int(module_id)
         input_id = int(input_id) if input_id is not None else None

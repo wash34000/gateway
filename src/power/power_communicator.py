@@ -76,13 +76,8 @@ class PowerCommunicator(object):
         (ret, self.__cid) = (self.__cid, (self.__cid % 255) + 1)
         return ret
 
-    def __log(self, write_data=None, read_data=None, header_data=None, main_data=None):
-        for name, data in {'writing to': write_data,
-                           'reading from': read_data,
-                           'reading header from': header_data,
-                           'reading data from': main_data}.iteritems():
-            if data is not None:
-                LOGGER.debug("%.3f %s power: %s" % (time.time(), name, printable(data)))
+    def __log(self, action, data):
+        LOGGER.debug("%.3f %s power: %s" % (time.time(), action, printable('' if data is None else data)))
 
     def __write_to_serial(self, data):
         """ Write data to the serial port.
@@ -91,7 +86,7 @@ class PowerCommunicator(object):
         :type data: string
         """
         if self.__verbose:
-            self.__log(write_data=data)
+            self.__log('writing to', data)
         self.__serial.write(data)
         self.__serial_bytes_written += len(data)
 
@@ -126,6 +121,10 @@ class PowerCommunicator(object):
                 try:
                     tries = 0
                     while True:
+                        # In this loop we might receive data that didn't match the expected header. This might happen
+                        # if we for some reason had a timeout on the previous call, and we now read the response
+                        # to that call. In this case, we just re-try (up to 3 times), as the correct data might be
+                        # next in line.
                         header, response_data = self.__read_from_serial()
                         if not _cmd.check_header(header, _address, cid):
                             if _cmd.is_nack(header, _address, cid) and response_data == "\x02":
@@ -136,12 +135,16 @@ class PowerCommunicator(object):
                                 raise Exception("Header did not match command ({0})".format(tries))
                             else:
                                 if not self.__verbose:
-                                    self.__log(write_data=send_data, header_data=header, main_data=response_data)
+                                    self.__log('writing to', send_data)
+                                    self.__log('reading header from', header)
+                                    self.__log('reading data from', response_data)
                         else:
                             break
                 except:
                     if not self.__verbose:
-                        self.__log(write_data=send_data, header_data=header, main_data=response_data)
+                        self.__log('writing to', send_data)
+                        self.__log('reading header from', header)
+                        self.__log('reading data from', response_data)
                     raise
 
                 self.__last_success = time.time()
@@ -321,7 +324,7 @@ class PowerCommunicator(object):
             raise
         finally:
             if self.__verbose or error is True:
-                self.__log(read_data=command)
+                self.__log('reading from', command)
 
         return header, data
 
