@@ -178,6 +178,8 @@ def main():
                         help='bootload all power modules')
     parser.add_argument('--file', dest='file',
                         help='the filename of the hex file to bootload')
+    parser.add_argument('--8', dest='old', action='store_true',
+                        help='bootload for the 8-port power modules')
     parser.add_argument('--version', dest='version', action='store_true',
                         help='display the version of the power module(s)')
     parser.add_argument('--verbose', dest='verbose', action='store_true',
@@ -204,8 +206,10 @@ def main():
                 if args.version:
                     print "E%d - Version: %s" % (addr, version(addr, power_communicator))
                 if args.file:
-                    bootload = bootload_8 if module['version'] == POWER_API_8_PORTS else bootload_12
-                    bootload(addr, args.file, power_communicator, verbose=args.verbose)
+                    if args.old and module['version'] == POWER_API_8_PORTS:
+                        bootload_8(addr, args.file, power_communicator, verbose=args.verbose)
+                    elif not args.old and module['version'] == POWER_API_12_PORTS:
+                        bootload_12(addr, args.file, power_communicator, verbose=args.verbose)
 
         else:
             addr = args.address
@@ -216,8 +220,11 @@ def main():
             if args.version:
                 print "E%d - Version: %s" % (addr, version(addr, power_communicator))
             if args.file:
-                bootload = bootload_8 if modules[0]['version'] == POWER_API_8_PORTS else bootload_12
-                bootload(addr, args.file, power_communicator, verbose=args.verbose)
+                if args.old and module['version'] == POWER_API_8_PORTS:
+                    bootload_8(addr, args.file, power_communicator, verbose=args.verbose)
+                elif not args.old and module['version'] == POWER_API_12_PORTS:
+                    bootload_12(addr, args.file, power_communicator, verbose=args.verbose)
+
     else:
         parser.print_help()
 
