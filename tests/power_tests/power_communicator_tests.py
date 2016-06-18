@@ -128,22 +128,26 @@ class PowerCommunicatorTest(unittest.TestCase):
         sad = power_api.set_addressmode()
         serial_mock = SerialMock(
             [sin(sad.create_input(power_api.BROADCAST_ADDRESS, 1, power_api.ADDRESS_MODE)),
-             sout(power_api.want_an_address().create_output(0, 0)),
+             sout(power_api.want_an_address(power_api.POWER_API_8_PORTS).create_output(0, 0)),
              sin(power_api.set_address().create_input(0, 0, 1)),
-             sout(power_api.want_an_address().create_output(0, 0)),
+             sout(power_api.want_an_address(power_api.POWER_API_12_PORTS).create_output(0, 0)),
              sin(power_api.set_address().create_input(0, 0, 2)),
              sout(''), ## Timeout read after 1 second
              sin(sad.create_input(power_api.BROADCAST_ADDRESS, 2, power_api.NORMAL_MODE))
             ], 1)
 
-        comm = self.__get_communicator(serial_mock)
+        controller = PowerController(PowerCommunicatorTest.FILE)
+        comm = self.__get_communicator(serial_mock, power_controller=controller)
         comm.start()
+
+        self.assertEqual(controller.get_free_address(), 1)
 
         comm.start_address_mode()
         self.assertTrue(comm.in_address_mode())
         time.sleep(0.5)
         comm.stop_address_mode()
 
+        self.assertEqual(controller.get_free_address(), 3)
         self.assertFalse(comm.in_address_mode())
 
     def test_do_command_in_address_mode(self):
