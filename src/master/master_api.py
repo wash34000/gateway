@@ -310,28 +310,6 @@ def pulse_list():
          Field.int('pv20'), Field.int('pv21'), Field.int('pv22'), Field.int('pv23'),
          Field.crc(), Field.lit('\r\n')])
 
-def virtual_sensor_list():
-    """ List the virtual sensors. """
-    return MasterCommandSpec("VL",
-        [Field.padding(13)],
-        [Field.byte('vsc0'), Field.byte('vsc1'), Field.byte('vsc2'), Field.byte('vsc3'),
-         Field.byte('vsc4'), Field.byte('vsc5'), Field.byte('vsc6'), Field.byte('vsc7'),
-         Field.byte('vsc8'), Field.byte('vsc9'), Field.byte('vsc10'), Field.byte('vsc11'),
-         Field.byte('vsc12'), Field.byte('vsc13'), Field.byte('vsc14'), Field.byte('vsc15'),
-         Field.byte('vsc16'), Field.byte('vsc17'), Field.byte('vsc18'), Field.byte('vsc19'),
-         Field.byte('vsc20'), Field.byte('vsc21'), Field.byte('vsc22'), Field.byte('vsc23'),
-         Field.byte('vsc24'), Field.byte('vsc25'), Field.byte('vsc26'), Field.byte('vsc27'),
-         Field.byte('vsc28'), Field.byte('vsc29'), Field.byte('vsc30'), Field.byte('vsc31'),
-         Field.crc(), Field.lit('\r\n')])
-
-def virtual_sensor_write():
-    """ Write temperature, humidty, brightness to a virtual sensor. """
-    return MasterCommandSpec("VS",
-        [Field.byte('sensor_nr'), Field.svt('tmp'), Field.hum('hum'), Field.byte('bri'),
-         Field.padding(9), Field.lit('\r\n')],
-        [Field.byte('sensor_nr'), Field.svt('tmp'), Field.hum('hum'), Field.byte('bri'),
-         Field.padding(9), Field.lit('\r\n')])
-
 def error_list():
     """ Get the number of errors for each input and output module. """
     return MasterCommandSpec("el",

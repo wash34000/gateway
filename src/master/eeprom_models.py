@@ -85,7 +85,6 @@ class ThermostatConfiguration(EepromModel):
     sensor = EepromByte(lambda id: (144, 8+id))
     output0 = EepromByte(lambda id: (142, id))
     output1 = EepromByte(lambda id: (142, 224+id))
-    permanent_manual = EepromByte(lambda id: (195, 32+id))
     pid_p = EepromByte(lambda id: (141, 4*id))
     pid_i = EepromByte(lambda id: (141, (4*id)+1))
     pid_d = EepromByte(lambda id: (141, (4*id)+2))
@@ -174,7 +173,6 @@ class CoolingConfiguration(EepromModel):
     sensor = EepromByte(lambda id: (203, 8+id))
     output0 = EepromByte(lambda id: (201, id))
     output1 = EepromByte(lambda id: (201, 224+id))
-    permanent_manual = EepromByte(lambda id: (195, 64+id))
     pid_p = EepromByte(lambda id: (200, 4*id))
     pid_i = EepromByte(lambda id: (200, (4*id)+1))
     pid_d = EepromByte(lambda id: (200, (4*id)+2))
@@ -319,7 +317,6 @@ class SensorConfiguration(EepromModel):
     id = EepromId(32)
     name = EepromString(16, lambda id: (193 + (id / 16), (id % 16) * 16))
     offset = EepromSignedTemp(lambda id: (0, 60 + id))
-    virtual = EepromByte(lambda id: (195, id))
 
 
 class GroupActionConfiguration(EepromModel):
