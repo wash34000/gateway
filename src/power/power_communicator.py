@@ -77,7 +77,8 @@ class PowerCommunicator(object):
         return ret
 
     def __log(self, action, data):
-        LOGGER.debug("%.3f %s power: %s" % (time.time(), action, printable('' if data is None else data)))
+        if data is not None:
+            LOGGER.info("%.3f %s power: %s" % (time.time(), action, printable(data)))
 
     def __write_to_serial(self, data):
         """ Write data to the serial port.
