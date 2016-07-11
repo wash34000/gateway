@@ -894,3 +894,23 @@ class EepromActions(EepromDataType):
     def get_length(self):
         return 2 * self.__length
 
+
+class EepromIBool(EepromDataType):
+    """ A boolean that is encoded in a byte where value 255 is False and values < 255 are True. """
+
+    def __init__(self, addr_gen, read_only=False):
+        EepromDataType.__init__(self, addr_gen, read_only)
+
+    def get_name(self):
+        return "Boolean"
+
+    def from_bytes(self, bytes):
+        return ord(bytes[0]) < 255
+
+    def to_bytes(self, field):
+        value = 0 if field is True else 255
+        return str(chr(value))
+
+    def get_length(self):
+        return 1
+

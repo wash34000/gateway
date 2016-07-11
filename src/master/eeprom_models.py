@@ -7,7 +7,7 @@ Created on Sep 4, 2013
 '''
 from eeprom_controller import EepromModel, EepromAddress, EepromId, EepromString, \
                               EepromWord, EepromByte, EepromActions, EepromTemp, EepromTime, \
-                              EepromCSV, CompositeDataType, EepromSignedTemp
+                              EepromCSV, CompositeDataType, EepromSignedTemp, EepromIBool
 
 
 def page_per_module(module_size, start_bank, start_offset, field_size):
@@ -89,6 +89,7 @@ class ThermostatConfiguration(EepromModel):
     pid_i = EepromByte(lambda id: (141, (4*id)+1))
     pid_d = EepromByte(lambda id: (141, (4*id)+2))
     pid_int = EepromByte(lambda id: (141, (4*id)+3))
+    permanent_manual = EepromIBool(lambda id: (195, 32+id))
     auto_mon = CompositeDataType(
         [('temp_n', EepromTemp(lambda id: (198, id + 0))),
          ('start_d1', EepromTime(lambda id: (189, (4*id)+0))),
@@ -177,6 +178,7 @@ class CoolingConfiguration(EepromModel):
     pid_i = EepromByte(lambda id: (200, (4*id)+1))
     pid_d = EepromByte(lambda id: (200, (4*id)+2))
     pid_int = EepromByte(lambda id: (200, (4*id)+3))
+    permanent_manual = EepromIBool(lambda id: (195, 64+id))
     auto_mon = CompositeDataType(
         [('temp_n', EepromTemp(lambda id: (212, id + 0))),
          ('start_d1', EepromTime(lambda id: (206, (4*id)+0))),
@@ -317,6 +319,7 @@ class SensorConfiguration(EepromModel):
     id = EepromId(32)
     name = EepromString(16, lambda id: (193 + (id / 16), (id % 16) * 16))
     offset = EepromSignedTemp(lambda id: (0, 60 + id))
+    virtual = EepromIBool(lambda id: (195, id))
 
 
 class GroupActionConfiguration(EepromModel):

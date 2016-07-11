@@ -8,7 +8,7 @@ import unittest
 
 from master.eeprom_controller import EepromController, EepromFile, EepromModel, EepromAddress, \
                                      EepromData, EepromId, EepromString, EepromByte, EepromWord, \
-                                     CompositeDataType, EepromActions, EepromSignedTemp
+                                     CompositeDataType, EepromActions, EepromSignedTemp, EepromIBool
 import master.master_api as master_api
 
 
@@ -1057,6 +1057,24 @@ class EepromSignedTempTest(unittest.TestCase):
             self.fail("Expected ValueError.")
         except ValueError:
             pass
+
+
+class EepromIBoolTest(unittest.TestCase):
+    """ Tests for EepromIBool. """
+
+    def test_from_bytes(self):
+        """ Test from_bytes. """
+        temp = EepromIBool((0, 0))
+        self.assertEquals(False, temp.from_bytes("\xff"))
+        self.assertEquals(True, temp.from_bytes("\x00"))
+        self.assertEquals(True, temp.from_bytes("\x0f"))
+
+    def test_to_bytes(self):
+        """ Test to_bytes. """
+        temp = EepromIBool((0, 0))
+        self.assertEquals("\x00", temp.to_bytes(True))
+        self.assertEquals("\xff", temp.to_bytes(False))
+
 
 
 if __name__ == "__main__":
