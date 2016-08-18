@@ -62,3 +62,8 @@ def get_timezone_file():
 def get_self_test_cmd():
     """ Get the path of the bash script that executes the self test. """
     return "/opt/openmotics/bin/self_test.sh"
+
+
+def get_buffer_file(name):
+    """ Get the path of a buffer file. """
+    return "/opt/openmotics/%s.buffer" % name

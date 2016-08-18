@@ -7,6 +7,7 @@ import time
 import subprocess
 import os
 import traceback
+import copy
 
 from threading import Thread
 from ConfigParser import ConfigParser
@@ -25,7 +26,7 @@ REBOOT_TIMEOUT = 900
 
 def reboot_gateway():
     """ Reboot the gateway. """
-    subprocess.call('reboot', shell=True)
+    subprocess.call('sync && reboot', shell=True)
 
 
 class VpnController(object):
@@ -89,13 +90,13 @@ class Cloud(object):
             self.__led_service.toggle_led('alive')
             self.__last_connect = time.time()
 
-            return data['open_vpn']
+            return (True, data['open_vpn'])
         except Exception as exception:
             print "Exception occured during check: ", exception
             self.__led_service.set_led('cloud', False)
             self.__led_service.set_led('alive', False)
 
-            return True
+            return (False, True)
 
     def get_sleep_time(self):
         """ Get the time to sleep between two cloud checks. """
@@ -364,6 +365,90 @@ class DataCollector(object):
         except Exception as exception:
             print "Exception while collecting data: ", exception
             traceback.print_exc()
+            return None
+
+
+class BufferingDataCollector(DataCollector):
+    """ Defines a Collector that buffers data when it cannot be sent to the cloud. """
+
+    BUFFER_SIZE = 2500 # Elements in the in-memory buffer
+    FILE_SIZE = 50 * 1024 * 1024 # Max size of the on-disk buffer
+
+    def __init__(self, function, period=0, mode=None):
+        DataCollector.__init__(self, function, period, mode)
+        self.__name = function.__name__
+        self.__buffer_path = constants.get_buffer_file(self.__name)
+        self.__buffer = []
+        self.__read_buffer()
+        self.__last_point = None
+
+    def __read_buffer(self):
+        if os.path.exists(self.__buffer_path):
+            try:
+                f = open(self.__buffer_path, "r")
+                for line in f:
+                    self.__append_to_buffer(json.loads(line))
+                f.close()
+            except Exception as e:
+                print "Exception while reading buffer %s : %s" % (self.__buffer_path, e)
+
+    def collect(self, current_modes):
+        """ Execute the collect if required, return None otherwise. """
+        point = DataCollector.collect(self, current_modes)
+        if point is not None:
+            self.__last_point = [ time.time(), point ]
+            self.__append_to_buffer(self.__last_point)
+            return { 'timestamp' : time.time(), 'values' : self.__buffer }
+        else:
+            return None
+
+    def data_sent_callback(self, success):
+        """ A function that should be called after each collection, to notify the collector that
+        the data was sent succesfully or failed. The BufferingDataCollector buffers the data when
+        sending the data failed. If the callback is not called, the data will not be buffered. """
+        if success:
+            self.__buffer = []
+            if os.path.exists(self.__buffer_path):
+                os.remove(self.__buffer_path)
+
+        elif self.__last_point is not None:
+            self.__append_to_file(self.__last_point)
+            self.__last_point = None
+
+    def __append_to_buffer(self, element):
+        """ Append an element to the buffer, limits the size of the in-memory buffer to BUFFER_SIZE
+        elements. """
+        self.__buffer.append(element)
+
+        if len(self.__buffer) > BufferingDataCollector.BUFFER_SIZE:
+                self.__buffer = \
+                    self.__buffer[len(self.__buffer) - BufferingDataCollector.BUFFER_SIZE:]
+
+
+    def __append_to_file(self, element):
+        """ Append an element to the file buffer, limits the size of the buffer to FILE_SIZE. """
+        f = open(self.__buffer_path, "a")
+        f.write("%s\n" % json.dumps(element))
+        f.close()
+
+        # Keep the size of the file limited. When the maximum file size is reached, a new
+        # file of half the size if created. The limits the amount of writes on the flash disk.
+        if os.stat(self.__buffer_path).st_size > BufferingDataCollector.FILE_SIZE:
+            old = open(self.__buffer_path, "r")
+            new = open(self.__buffer_path + ".new", "w")
+
+            skipped = 0
+            for line in old:
+                if skipped > BufferingDataCollector.FILE_SIZE / 2:
+                    new.write(line)
+                else:
+                    skipped += len(line)
+
+            new.close()
+            old.close()
+
+            os.remove(self.__buffer_path)
+            os.rename(self.__buffer_path + ".new", self.__buffer_path)
 
 
 class ActionExecutor(object):
@@ -439,9 +524,9 @@ def main():
     gateway = Gateway()
     cloud = Cloud(check_url, led_service, ActionExecutor(gateway))
 
-    collectors = {'energy' : DataCollector(gateway.get_total_energy, 300),
+    collectors = {'energy' : BufferingDataCollector(gateway.get_total_energy, 300),
                   'thermostats' : DataCollector(gateway.get_thermostats, 60),
-                  'pulse_totals' : DataCollector(gateway.get_pulse_counter_status, 300),
+                  'pulse_totals' : BufferingDataCollector(gateway.get_pulse_counter_status, 300),
                   'pulses' : DataCollector(gateway.get_pulse_counter_diff, 60),
                   'outputs' : DataCollector(gateway.get_enabled_outputs, mode='rt'),
                   'power' : DataCollector(gateway.get_real_time_power, mode='rt'),
@@ -469,7 +554,12 @@ def main():
             if data != None:
                 vpn_data[collector_name] = data
 
-        should_open = cloud.should_open_vpn(vpn_data)
+        (success, should_open) = cloud.should_open_vpn(vpn_data)
+
+        for collector_name in vpn_data.keys():
+            collector = collectors[collector_name]
+            if type(collector) == BufferingDataCollector:
+                collector.data_sent_callback(success)
 
         if iterations > 20 and cloud.get_last_connect() < time.time() - REBOOT_TIMEOUT:
             # The cloud is not responding for a while, perhaps the BeagleBone network stack is
