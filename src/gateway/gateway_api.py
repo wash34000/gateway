@@ -1757,13 +1757,21 @@ class GatewayApi(object):
             version = self.__power_controller.get_version(module['id'])
             addr = self.__power_controller.get_address(module['id'])
             if version == power_api.POWER_API_8_PORTS:
+                # 2 = 25A, 3 = 50A
                 self.__power_communicator.do_command(
                     addr, power_api.set_sensor_types(version),
                     *[module['sensor%d' % i] for i in xrange(power_api.NUM_PORTS[version])]
                 )
             elif version == power_api.POWER_API_12_PORTS:
                 def _convert_ccf(key):
-                    return 1 if module[key] == 3 else 0.5
+                    if module[key] == 2:  # 12.5A
+                        return 0.5
+                    if module[key] == 3:  # 25A
+                        return 1
+                    if module[key] == 4:  # 50A
+                        return 2
+                    if module[key] == 5:  # 100A
+                        return 4
                 self.__power_communicator.do_command(
                     addr, power_api.set_current_clamp_factor(version),
                     *[_convert_ccf('sensor%d' % i) for i in xrange(power_api.NUM_PORTS[version])]
