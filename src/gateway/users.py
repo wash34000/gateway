@@ -13,6 +13,7 @@ import uuid
 import time
 import os.path
 
+
 class UserController(object):
     """ The UserController provides methods for the creation and authentication of users. """
 
@@ -149,7 +150,7 @@ class UserController(object):
 
     def check_token(self, token):
         """ Returns True if the token is valid, False if the token is invalid. """
-        if token not in self.__tokens:
+        if token is None or token not in self.__tokens:
             return False
         else:
             return self.__tokens[token][1] >= time.time()
