@@ -286,6 +286,15 @@ class WebInterface(object):
         return self.__wrap(self.__gateway_api.module_discover_stop)
 
     @cherrypy.expose
+    def module_discover_status(self, token):
+        """ Gets the status of the module discover mode on the master.
+
+        :returns 'running': true|false
+        """
+        self.check_token(token)
+        return self.__wrap(self.__gateway_api.module_discover_status)
+
+    @cherrypy.expose
     def get_module_log(self, token):
         """ Get the log messages from the module discovery mode. This returns the current log
         messages and clear the log messages.
