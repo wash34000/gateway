@@ -2,6 +2,7 @@
 if required. On each check the vpn_service sends some status information about the outputs and
 thermostats to the cloud, to keep the status information in the cloud in sync. """
 
+import re
 import requests
 import time
 import subprocess
@@ -562,9 +563,23 @@ def main():
                 collector.data_sent_callback(success)
 
         if iterations > 20 and cloud.get_last_connect() < time.time() - REBOOT_TIMEOUT:
-            # The cloud is not responding for a while, perhaps the BeagleBone network stack is
-            # hanging, reboot the gateway to reset the BeagleBone.
-            reboot_gateway()
+            # The cloud is not responding for a while. Let's see if the default gateway can be reached.
+            try:
+                routes = subprocess.check_output('ip r', shell=True)
+                match_string = r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'
+                gateway = re.search('default via ' + match_string, routes).group(1)
+                success = False
+                for target in [gateway, '8.8.8.8']:
+                    ping_output = subprocess.check_output('ping -c 4 {0} || true'.format(target), shell=True)
+                    if 'unreachable' not in ping_output and '100% packet loss' not in ping_output:
+                        success = True
+                        break
+                if success is False:
+                    # Perhaps the BeagleBone network stack is hanging, reboot the gateway
+                    # to reset the BeagleBone.
+                    reboot_gateway()
+            except Exception as ex:
+                print 'Error verifying connectivity: {0}'.format(ex)
 
         is_open = vpn.check_vpn()
         led_service.set_led('vpn', is_open)
