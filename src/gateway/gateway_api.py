@@ -1982,3 +1982,16 @@ class GatewayApi(object):
             data[str(input_id)] = {'voltage': [voltage[:20], voltage[20:]],
                                    'current': [current[:20], current[20:]]}
         return data
+
+    def do_raw_energy_command(self, address, mode, command, data):
+        """ Perform a raw energy module command, for debugging purposes.
+
+        :param address: The address of the energy module
+        :param mode: 1 char: S or G
+        :param command: 3 char power command
+        :param data: list of bytes
+        :returns: list of bytes
+        """
+        return self.__power_communicator.do_command(address,
+                                                    power_api.raw_command(mode, command, len(data)),
+                                                    *data)

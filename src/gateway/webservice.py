@@ -1622,6 +1622,41 @@ class WebInterface(object):
         return self.__wrap(lambda: self.__gateway_api.get_energy_frequency(module_id, input_id))
 
     @cherrypy.expose
+    def do_raw_energy_command(self, token, address, mode, command, data):
+        """ Perform a raw energy module command, for debugging purposes.
+
+        :param token: The authentication token
+        :type token: str
+        :param address: The address of the energy module
+        :type address: Byte
+        :param mode: 1 char: S or G
+        :type mode: str
+        :param command: 3 char power command
+        :type command: str
+        :param data: comma seperated list of Bytes
+        :type data: str
+        :returns: dict with 'data': comma separated list of Bytes
+        """
+        self.check_token(token)
+
+        address = int(address)
+
+        if mode not in [ 'S', 'G' ]:
+            raise ValueError("mode not in [S, G]: %s" % mode)
+
+        if len(command) != 3:
+            raise ValueError('Command should be 3 chars, got "%s"' % command)
+
+        if data is not None and len(data) > 0:
+            bdata = [ int(c) for c in data.split(",") ]
+        else:
+            bdata = []
+
+        ret = self.__gateway_api.do_raw_energy_command(address, mode, command, bdata)
+
+        return self.__success(data=",".join([ str(d) for d in ret ]))
+
+    @cherrypy.expose
     def get_version(self, token):
         """ Get the version of the openmotics software.
 

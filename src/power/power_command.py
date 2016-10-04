@@ -93,9 +93,11 @@ class PowerCommand(object):
         return header[3:-1] == self.mode + self.type
 
     def read_output(self, data):
-        """ Read the output for a command from the serial port.
+        """ Parse the output using the output_format.
 
-        :param cid: 1 byte, communication id
-        :param serial: serial port interface (instance of pyserial.Serial)
+        :param data: string containing the data.
         """
-        return struct.unpack(self.output_format, data)
+        if self.output_format is None:
+            return struct.unpack('%dB' % len(data), data)
+        else:
+            return struct.unpack(self.output_format, data)
