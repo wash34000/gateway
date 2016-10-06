@@ -50,6 +50,7 @@ class InputConfiguration(EepromModel):
     action = EepromByte(page_per_module(8, 2, 4, 1))
     basic_actions = EepromActions(15, page_per_module(8, 2, 12, 30))
     invert = EepromByte(lambda id: (32, id))
+    can = EepromString(1, lambda id: (2 + id /8, 252), read_only=True)
 
 
 class ShutterConfiguration(EepromModel):
