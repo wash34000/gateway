@@ -677,7 +677,7 @@ class WebInterface(object):
         :type id: Id
         :param fields: The field of the output_configuration to get. (None gets all fields)
         :type fields: Json encoded list of strings
-        :returns: 'config': output_configuration dict: contains 'id' (Id), 'floor' (Byte), 'module_type' (String[1]), 'name' (String[16]), 'timer' (Word), 'type' (Byte)
+        :returns: 'config': output_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'floor' (Byte), 'module_type' (String[1]), 'name' (String[16]), 'timer' (Word), 'type' (Byte)
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -690,7 +690,7 @@ class WebInterface(object):
 
         :param fields: The field of the output_configuration to get. (None gets all fields)
         :type fields: Json encoded list of strings
-        :returns: 'config': list of output_configuration dict: contains 'id' (Id), 'floor' (Byte), 'module_type' (String[1]), 'name' (String[16]), 'timer' (Word), 'type' (Byte)
+        :returns: 'config': list of output_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'floor' (Byte), 'module_type' (String[1]), 'name' (String[16]), 'timer' (Word), 'type' (Byte)
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -702,7 +702,7 @@ class WebInterface(object):
         Set one output_configuration.
 
         :param config: The output_configuration to set
-        :type config: output_configuration dict: contains 'id' (Id), 'floor' (Byte), 'name' (String[16]), 'timer' (Word), 'type' (Byte)
+        :type config: output_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'floor' (Byte), 'name' (String[16]), 'timer' (Word), 'type' (Byte)
         """
         self.check_token(token)
         self.__gateway_api.set_output_configuration(json.loads(config))
@@ -714,7 +714,7 @@ class WebInterface(object):
         Set multiple output_configurations.
 
         :param config: The list of output_configurations to set
-        :type config: list of output_configuration dict: contains 'id' (Id), 'floor' (Byte), 'name' (String[16]), 'timer' (Word), 'type' (Byte)
+        :type config: list of output_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'floor' (Byte), 'name' (String[16]), 'timer' (Word), 'type' (Byte)
         """
         self.check_token(token)
         self.__gateway_api.set_output_configurations(json.loads(config))
@@ -1494,6 +1494,58 @@ class WebInterface(object):
         """
         self.check_token(token)
         self.__gateway_api.set_global_thermostat_configuration(json.loads(config))
+        return self.__success()
+
+    @cherrypy.expose
+    def get_can_led_configuration(self, token, id, fields=None):
+        """
+        Get a specific can_led_configuration defined by its id.
+
+        :param id: The id of the can_led_configuration
+        :type id: Id
+        :param fields: The field of the can_led_configuration to get. (None gets all fields)
+        :type fields: Json encoded list of strings
+        :returns: 'config': can_led_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte)
+        """
+        self.check_token(token)
+        fields = None if fields is None else json.loads(fields)
+        return self.__success(config=self.__gateway_api.get_can_led_configuration(int(id), fields))
+
+    @cherrypy.expose
+    def get_can_led_configurations(self, token, fields=None):
+        """
+        Get all can_led_configurations.
+
+        :param fields: The field of the can_led_configuration to get. (None gets all fields)
+        :type fields: Json encoded list of strings
+        :returns: 'config': list of can_led_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte)
+        """
+        self.check_token(token)
+        fields = None if fields is None else json.loads(fields)
+        return self.__success(config=self.__gateway_api.get_can_led_configurations(fields))
+
+    @cherrypy.expose
+    def set_can_led_configuration(self, token, config):
+        """
+        Set one can_led_configuration.
+
+        :param config: The can_led_configuration to set
+        :type config: can_led_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte)
+        """
+        self.check_token(token)
+        self.__gateway_api.set_can_led_configuration(json.loads(config))
+        return self.__success()
+
+    @cherrypy.expose
+    def set_can_led_configurations(self, token, config):
+        """
+        Set multiple can_led_configurations.
+
+        :param config: The list of can_led_configurations to set
+        :type config: list of can_led_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte)
+        """
+        self.check_token(token)
+        self.__gateway_api.set_can_led_configurations(json.loads(config))
         return self.__success()
 
     ###### End of the the autogenerated configuration api

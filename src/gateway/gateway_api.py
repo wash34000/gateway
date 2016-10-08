@@ -1113,7 +1113,7 @@ class GatewayApi(object):
         :type id: Id
         :param fields: The field of the output_configuration to get. (None gets all fields)
         :type fields: List of strings
-        :returns: output_configuration dict: contains 'id' (Id), 'floor' (Byte), 'module_type' (String[1]), 'name' (String[16]), 'timer' (Word), 'type' (Byte)
+        :returns: output_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'floor' (Byte), 'module_type' (String[1]), 'name' (String[16]), 'timer' (Word), 'type' (Byte)
         """
         return self.__eeprom_controller.read(OutputConfiguration, id, fields).to_dict()
 
@@ -1123,7 +1123,7 @@ class GatewayApi(object):
 
         :param fields: The field of the output_configuration to get. (None gets all fields)
         :type fields: List of strings
-        :returns: list of output_configuration dict: contains 'id' (Id), 'floor' (Byte), 'module_type' (String[1]), 'name' (String[16]), 'timer' (Word), 'type' (Byte)
+        :returns: list of output_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'floor' (Byte), 'module_type' (String[1]), 'name' (String[16]), 'timer' (Word), 'type' (Byte)
         """
         return [ o.to_dict() for o in self.__eeprom_controller.read_all(OutputConfiguration, fields) ]
 
@@ -1132,7 +1132,7 @@ class GatewayApi(object):
         Set one output_configuration.
 
         :param config: The output_configuration to set
-        :type config: output_configuration dict: contains 'id' (Id), 'floor' (Byte), 'name' (String[16]), 'timer' (Word), 'type' (Byte)
+        :type config: output_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'floor' (Byte), 'name' (String[16]), 'timer' (Word), 'type' (Byte)
         """
         self.__eeprom_controller.write(OutputConfiguration.from_dict(config))
 
@@ -1141,7 +1141,7 @@ class GatewayApi(object):
         Set multiple output_configurations.
 
         :param config: The list of output_configurations to set
-        :type config: list of output_configuration dict: contains 'id' (Id), 'floor' (Byte), 'name' (String[16]), 'timer' (Word), 'type' (Byte)
+        :type config: list of output_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'floor' (Byte), 'name' (String[16]), 'timer' (Word), 'type' (Byte)
         """
         self.__eeprom_controller.write_batch([ OutputConfiguration.from_dict(o) for o in config ] )
 
@@ -1740,6 +1740,46 @@ class GatewayApi(object):
         :type config: global_thermostat_configuration dict: contains 'outside_sensor' (Byte), 'pump_delay' (Byte), 'switch_to_cooling_output_0' (Byte), 'switch_to_cooling_output_1' (Byte), 'switch_to_cooling_output_2' (Byte), 'switch_to_cooling_output_3' (Byte), 'switch_to_cooling_value_0' (Byte), 'switch_to_cooling_value_1' (Byte), 'switch_to_cooling_value_2' (Byte), 'switch_to_cooling_value_3' (Byte), 'switch_to_heating_output_0' (Byte), 'switch_to_heating_output_1' (Byte), 'switch_to_heating_output_2' (Byte), 'switch_to_heating_output_3' (Byte), 'switch_to_heating_value_0' (Byte), 'switch_to_heating_value_1' (Byte), 'switch_to_heating_value_2' (Byte), 'switch_to_heating_value_3' (Byte), 'threshold_temp' (Temp)
         """
         self.__eeprom_controller.write(GlobalThermostatConfiguration.from_dict(config))
+
+    def get_can_led_configuration(self, id, fields=None):
+        """
+        Get a specific can_led_configuration defined by its id.
+
+        :param id: The id of the can_led_configuration
+        :type id: Id
+        :param fields: The field of the can_led_configuration to get. (None gets all fields)
+        :type fields: List of strings
+        :returns: can_led_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte)
+        """
+        return self.__eeprom_controller.read(CanLedConfiguration, id, fields).to_dict()
+
+    def get_can_led_configurations(self, fields=None):
+        """
+        Get all can_led_configurations.
+
+        :param fields: The field of the can_led_configuration to get. (None gets all fields)
+        :type fields: List of strings
+        :returns: list of can_led_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte)
+        """
+        return [ o.to_dict() for o in self.__eeprom_controller.read_all(CanLedConfiguration, fields) ]
+
+    def set_can_led_configuration(self, config):
+        """
+        Set one can_led_configuration.
+
+        :param config: The can_led_configuration to set
+        :type config: can_led_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte)
+        """
+        self.__eeprom_controller.write(CanLedConfiguration.from_dict(config))
+
+    def set_can_led_configurations(self, config):
+        """
+        Set multiple can_led_configurations.
+
+        :param config: The list of can_led_configurations to set
+        :type config: list of can_led_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte)
+        """
+        self.__eeprom_controller.write_batch([ CanLedConfiguration.from_dict(o) for o in config ] )
 
     ###### End of auto generated functions
 
