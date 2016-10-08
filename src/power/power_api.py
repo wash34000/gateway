@@ -371,3 +371,10 @@ def bootloader_jump_application():
 def get_version():
     """ Get the current version of the power module firmware """
     return PowerCommand('G', 'FIV', '', '16s')
+
+
+# Below are the debug functions
+
+def raw_command(mode, command, num_bytes):
+    """ Create a PowerCommand for debugging purposes. """
+    return PowerCommand(mode, command, '%dB' % num_bytes, None)

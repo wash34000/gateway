@@ -914,3 +914,30 @@ class EepromIBool(EepromDataType):
     def get_length(self):
         return 1
 
+
+class EepromEnum(EepromDataType):
+    """ A enum value that is encoded into a byte. """
+
+    def __init__(self, addr_gen, enum_values, read_only=False):
+        EepromDataType.__init__(self, addr_gen, read_only)
+        self.__enum_values = enum_values
+
+    def get_name(self):
+        return "Enum"
+
+    def from_bytes(self, bytes):
+        index = ord(bytes[0])
+        if index in self.__enum_values.keys():
+            return self.__enum_values[index]
+        else:
+            return "UNKOWN"
+
+    def to_bytes(self, field):
+        for (key, value) in self.__enum_values.iteritems():
+            if field == value:
+                return str(chr(key))
+
+        return 255
+
+    def get_length(self):
+        return 1

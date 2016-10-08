@@ -7,7 +7,8 @@ Created on Sep 4, 2013
 '''
 from eeprom_controller import EepromModel, EepromAddress, EepromId, EepromString, \
                               EepromWord, EepromByte, EepromActions, EepromTemp, EepromTime, \
-                              EepromCSV, CompositeDataType, EepromSignedTemp, EepromIBool
+                              EepromCSV, CompositeDataType, EepromSignedTemp, EepromIBool, \
+                              EepromEnum
 
 
 def page_per_module(module_size, start_bank, start_offset, field_size):
@@ -28,6 +29,25 @@ def per_module(module_size, func):
     return lambda id: func(id / module_size, id % module_size)
 
 
+def gen_address(start_page, ids_per_page, extra_offset):
+    """ Returns a function that takes an id and returns an address. The returned address starts at
+    the given start_page, has a fixed number of ids_per_page. The extra_offset is added to the
+    offset calculated using the ids_per_page.
+    """
+    page_offset = 256 / ids_per_page
+    return lambda id: (start_page + (id / ids_per_page), (id % ids_per_page) * page_offset + extra_offset)
+
+
+def get_led_functions():
+    """ Get dict describing the enum for the CAN LED functions. """
+    led_functions = {}
+    for brightness in range(16):
+        for function in [(0,'On'), (16,'Fast blink'), (32,'Medium blink'), (48,'Slow blink'), (64,'Swinging')]:
+            for inverted in [(0, ''), (128, ' Inverted')]:
+                led_functions[brightness + function[0] + inverted[0]] = "%s B%d%s" %(function[1], brightness + 1, inverted[1])
+    return led_functions
+
+
 class OutputConfiguration(EepromModel):
     """ Models an output. The maximum number of inputs is 240 (30 modules), the actual number of
     outputs is 8 times the number of output modules (eeprom address 0, 2).
@@ -38,6 +58,14 @@ class OutputConfiguration(EepromModel):
     timer = EepromWord(page_per_module(8, 33, 4, 2))
     floor = EepromByte(page_per_module(8, 33, 157, 1))
     type = EepromByte(page_per_module(8, 33, 149, 1))
+    can_led_1_id = EepromByte(gen_address(221, 32, 0))
+    can_led_1_function = EepromEnum(gen_address(221, 32, 1), get_led_functions())
+    can_led_2_id = EepromByte(gen_address(221, 32, 2))
+    can_led_2_function = EepromEnum(gen_address(221, 32, 3), get_led_functions())
+    can_led_3_id = EepromByte(gen_address(221, 32, 4))
+    can_led_3_function = EepromEnum(gen_address(221, 32, 5), get_led_functions())
+    can_led_4_id = EepromByte(gen_address(221, 32, 6))
+    can_led_4_function = EepromEnum(gen_address(221, 32, 7), get_led_functions())
 
 
 class InputConfiguration(EepromModel):
@@ -51,6 +79,24 @@ class InputConfiguration(EepromModel):
     basic_actions = EepromActions(15, page_per_module(8, 2, 12, 30))
     invert = EepromByte(lambda id: (32, id))
     can = EepromString(1, lambda id: (2 + id /8, 252), read_only=True)
+
+
+class CanLedConfiguration(EepromModel):
+    """ Models a CAN LED configuration. Each configuration defines the CAN LED that will be driven
+    and the the function to drive the LED. The LED function will be activated when:
+    the number of lights on is 0 (id = 0), the number of lights on is greater than 0 (id = 1), ...,
+    the number of lights on is greater than 14 (id = 15), the number of outputs on is 0 (id = 16),
+    ther number of outputs is greater than 0 (id = 17), the number of outputs on is greater than 14
+    (id = 31). """
+    id = EepromId(32)
+    can_led_1_id = EepromByte(gen_address(229, 32, 0))
+    can_led_1_function = EepromEnum(gen_address(229, 32, 1), get_led_functions())
+    can_led_2_id = EepromByte(gen_address(229, 32, 2))
+    can_led_2_function = EepromEnum(gen_address(229, 32, 3), get_led_functions())
+    can_led_3_id = EepromByte(gen_address(229, 32, 4))
+    can_led_3_function = EepromEnum(gen_address(229, 32, 5), get_led_functions())
+    can_led_4_id = EepromByte(gen_address(229, 32, 6))
+    can_led_4_function = EepromEnum(gen_address(229, 32, 7), get_led_functions())
 
 
 class ShutterConfiguration(EepromModel):
