@@ -930,14 +930,14 @@ class EepromEnum(EepromDataType):
         if index in self.__enum_values.keys():
             return self.__enum_values[index]
         else:
-            return "UNKOWN"
+            return "UNKNOWN"
 
     def to_bytes(self, field):
         for (key, value) in self.__enum_values.iteritems():
             if field == value:
                 return str(chr(key))
 
-        return 255
+        return str(chr(255))
 
     def get_length(self):
         return 1
