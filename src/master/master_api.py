@@ -491,6 +491,14 @@ def modules_get_version():
          Field.byte("f1"), Field.byte("f2"), Field.byte("f3"), Field.byte("status"),
          Field.lit('C'), Field.byte('crc0'), Field.byte('crc1'), Field.lit("\r\n")])
 
+def modules_integrity_check():
+    """ Check the integrity of the new code. """
+    return MasterCommandSpec("FE",
+        [Field.str('addr', 4), Field.lit('C'), Field.byte('crc0'), Field.byte('crc1'),
+         Field.padding(6)],
+        [Field.str('addr', 4), Field.byte("error_code"), Field.lit('C'), Field.byte('crc0'),
+         Field.byte('crc1'), Field.padding(5), Field.lit("\r\n")])
+
 def modules_goto_application():
     """ Let the module go to application. """
     return MasterCommandSpec("FG",
