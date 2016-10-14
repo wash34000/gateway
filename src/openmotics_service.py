@@ -78,7 +78,7 @@ def main():
     power_serial_port = config.get('OpenMotics', 'power_serial')
 
     controller_serial = Serial(controller_serial_port, 115200)
-    passthrough_serial = Serial(passthrough_serial_port, 19200)
+    passthrough_serial = Serial(passthrough_serial_port, 115200)
     power_serial = RS485(Serial(power_serial_port, 115200, timeout=None))
 
     master_communicator = MasterCommunicator(controller_serial)
