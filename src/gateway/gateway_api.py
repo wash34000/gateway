@@ -43,6 +43,10 @@ class GatewayApi(object):
 
     def __init__(self, master_communicator, power_communicator, power_controller):
         self.__master_communicator = master_communicator
+        self.__eeprom_controller = EepromController(EepromFile(self.__master_communicator))
+        self.__power_communicator = power_communicator
+        self.__power_controller = power_controller
+        self.__plugin_controller = None
 
         self.__last_maintenance_send_time = 0
         self.__maintenance_timeout_timer = None
@@ -50,25 +54,23 @@ class GatewayApi(object):
         self.__discover_mode_timer = None
 
         self.__output_status = None
+        self.__input_status = InputStatus()
+        self.__module_log = []
+        self.__thermostat_status = None
+        self.__shutter_status = ShutterStatus()
+
         self.__master_communicator.register_consumer(
                     BackgroundConsumer(master_api.output_list(), 0, self.__update_outputs, True))
 
-        self.__input_status = InputStatus()
         self.__master_communicator.register_consumer(
                     BackgroundConsumer(master_api.input_list(), 0, self.__update_inputs))
 
-        self.__module_log = []
         self.__master_communicator.register_consumer(
                     BackgroundConsumer(master_api.module_initialize(), 0, self.__update_modules))
 
         self.__master_communicator.register_consumer(
                     BackgroundConsumer(master_api.event_triggered(), 0, self.__event_triggered, True))
 
-        self.__thermostat_status = None
-
-        self.__eeprom_controller = EepromController(EepromFile(self.__master_communicator))
-
-        self.__shutter_status = ShutterStatus()
         self.__init_shutter_status()
         self.__master_communicator.register_consumer(
                     BackgroundConsumer(master_api.shutter_status(), 0,
@@ -76,11 +78,6 @@ class GatewayApi(object):
 
         self.__extend_method("set_shutter_configuration", self.__init_shutter_status)
         self.__extend_method("set_shutter_configurations", self.__init_shutter_status)
-
-        self.__power_communicator = power_communicator
-        self.__power_controller = power_controller
-
-        self.__plugin_controller = None
 
         self.init_master()
         self.__run_master_timer()
