@@ -430,7 +430,7 @@ class GatewayApi:
         
         thermostats_on = (mode & 128 == 128)
         automatic = (mode & 8 == 8)
-        setpoint = (mode & 7)
+        setpoint = 0 if automatic else (mode & 7)
         
         thermostats = []
         for thermostat_id in range(0, 24):
@@ -509,7 +509,7 @@ class GatewayApi:
         
         thermostats_on = (mode & 128 == 128)
         automatic = (mode & 8 == 8)
-        setpoint = (mode & 7)
+        setpoint = 0 if automatic else (mode & 7)
         
         thermostats = []
         outputs = self.get_outputs()
@@ -575,7 +575,8 @@ class GatewayApi:
         # If we are currently in manual mode and in this setpoint, set the mode to update to the new
         # configuration value.
         mode = self.__master_communicator.do_command(master_api.thermostat_mode())['mode']
-        (on, automatic, csetp) = (mode & 128 == 128, mode & 8 == 8, mode & 7) 
+        (on, automatic) = (mode & 128 == 128, mode & 8 == 8)
+        csetp = 0 if automatic else (mode & 7)
         
         if not automatic and csetp == setpoint:
             self.set_thermostat_mode(on, automatic, csetp)
@@ -644,7 +645,8 @@ class GatewayApi:
         # If we are currently in automatic mode, set the mode to update to the new
         # configuration value.
         mode = self.__master_communicator.do_command(master_api.thermostat_mode())['mode']
-        (on, automatic, csetp) = (mode & 128 == 128, mode & 8 == 8, mode & 7) 
+        (on, automatic) = (mode & 128 == 128, mode & 8 == 8)
+        csetp = 0 if automatic else (mode & 7)
         
         if automatic:
             self.set_thermostat_mode(on, automatic, csetp)
@@ -926,20 +928,23 @@ class GatewayApi:
         
         modules = self.__power_controller.get_power_modules()
         for id in sorted(modules.keys()):
-            addr = modules[id]['address']
-            
-            volt = self.__power_communicator.do_command(addr, power_api.get_voltage())[0]
-            freq = self.__power_communicator.do_command(addr, power_api.get_frequency())[0]
-            current = self.__power_communicator.do_command(addr, power_api.get_current())
-            power = self.__power_communicator.do_command(addr, power_api.get_power())
-            
-            out = []
-            for i in range(0, 8):
-                out.append([ checkNaN(volt), checkNaN(freq), checkNaN(current[i]),
-                             checkNaN(power[i]) ])
-            
-            output[str(id)] = out
-        
+            try:
+                addr = modules[id]['address']
+    
+                volt = self.__power_communicator.do_command(addr, power_api.get_voltage())[0]
+                freq = self.__power_communicator.do_command(addr, power_api.get_frequency())[0]
+                current = self.__power_communicator.do_command(addr, power_api.get_current())
+                power = self.__power_communicator.do_command(addr, power_api.get_power())
+    
+                out = []
+                for i in range(0, 8):
+                    out.append([ checkNaN(volt), checkNaN(freq), checkNaN(current[i]),
+                                 checkNaN(power[i]) ])
+    
+                output[str(id)] = out
+            except Exception as e:
+                LOGGER.exception("Got Exception for power module %s" % id)
+
         return output
     
     def get_total_energy(self):
@@ -951,17 +956,20 @@ class GatewayApi:
         
         modules = self.__power_controller.get_power_modules()
         for id in sorted(modules.keys()):
-            addr = modules[id]['address']
-            
-            day = self.__power_communicator.do_command(addr, power_api.get_day_energy())
-            night = self.__power_communicator.do_command(addr, power_api.get_night_energy())
-            
-            out = []
-            for i in range(0, 8):
-                out.append([ checkNaN(day[i]), checkNaN(night[i]) ])
-            
-            output[str(id)] = out
-        
+            try:
+                addr = modules[id]['address']
+    
+                day = self.__power_communicator.do_command(addr, power_api.get_day_energy())
+                night = self.__power_communicator.do_command(addr, power_api.get_night_energy())
+    
+                out = []
+                for i in range(0, 8):
+                    out.append([ checkNaN(day[i]), checkNaN(night[i]) ])
+    
+                output[str(id)] = out
+            except Exception:
+                LOGGER.error("Got Exception for power module %s" % id)
+
         return output
     
     def start_power_address_mode(self):
