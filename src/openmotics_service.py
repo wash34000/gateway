@@ -1,10 +1,23 @@
-'''
+# Copyright (C) 2016 OpenMotics BVBA
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+"""
 The main module for the OpenMotics
 
-Created on Sep 23, 2012
-
 @author: fryckbos
-'''
+"""
+
 import logging
 import sys
 import time
@@ -78,7 +91,7 @@ def main():
     power_serial_port = config.get('OpenMotics', 'power_serial')
 
     controller_serial = Serial(controller_serial_port, 115200)
-    passthrough_serial = Serial(passthrough_serial_port, 19200)
+    passthrough_serial = Serial(passthrough_serial_port, 115200)
     power_serial = RS485(Serial(power_serial_port, 115200, timeout=None))
 
     master_communicator = MasterCommunicator(controller_serial)
