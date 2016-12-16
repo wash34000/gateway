@@ -6,7 +6,7 @@ Created on Feb 24, 2013
 import unittest
 import time
 
-from thermostats import ThermostatStatus
+from master.thermostats import ThermostatStatus
 
 class ThermostatStatusTest(unittest.TestCase):
     """ Tests for ThermostatStatus. """
@@ -15,10 +15,10 @@ class ThermostatStatusTest(unittest.TestCase):
         """ Test the should_refresh functionality. """
         status = ThermostatStatus([], 100)
         self.assertFalse(status.should_refresh())
-        
+
         status.force_refresh()
         self.assertTrue(status.should_refresh())
-        
+
         status = ThermostatStatus([], 0.001)
         time.sleep(0.01)
         self.assertTrue(status.should_refresh())

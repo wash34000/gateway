@@ -11,20 +11,20 @@ from constants import get_config_file, get_update_script, get_update_output_file
 
 def md5(filename):
     """ Generate the md5 sum of a file.
-    
+
     :param filename: the name of the file to hash.
     :returns: md5sum
     """
     md5_hash = hashlib.md5()
-    with open(filename,'rb') as file_to_hash:
-        for chunk in iter(lambda: file_to_hash.read(128 * md5_hash.block_size), ''): 
+    with open(filename, 'rb') as file_to_hash:
+        for chunk in iter(lambda: file_to_hash.read(128 * md5_hash.block_size), ''):
             md5_hash.update(chunk)
     return md5_hash.hexdigest()
 
 
 def update(version, md5_server):
     """ Execute the actual update: extract the archive and execute the bash update script.
-    
+
     :param version: the new version (after the update).
     :param md5_sum: the md5 sum provided by the server.
     """
@@ -34,15 +34,15 @@ def update(version, md5_server):
     if md5_server != md5_client:
         raise Exception("MD5 of client (" + str(md5_client) + ") and server (" + str(md5_server) +
                         ") don't match")
-    
+
     extract = subprocess.Popen("cd `dirname " + update_file + "`; tar xzf " + update_file,
                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True)
     ret = extract.wait()
     extract_output = extract.stdout.read()
-    
+
     if ret != 0:
         raise Exception("Extraction failed: " + extract_output)
-    
+
     update_script = subprocess.Popen(get_update_script() + " `dirname " + update_file + "`",
                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True)
     ret = update_script.wait()
@@ -61,7 +61,7 @@ def update(version, md5_server):
         config.set('OpenMotics', 'version', version)
         with open(get_config_file(), 'wb') as configfile:
             config.write(configfile)
-        
+
         return extract_output + "\n" + update_output + "\n" + cleanup_output
 
 

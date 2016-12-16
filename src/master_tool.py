@@ -7,7 +7,6 @@ Created on Oct 4, 2012
 '''
 import argparse
 import sys
-import time
 from ConfigParser import ConfigParser
 
 from serial import Serial
@@ -31,21 +30,23 @@ def main():
                         help='reset the master')
     parser.add_argument('--version', dest='version', action='store_true',
                         help='get the version of the master')
-    
+    parser.add_argument('--wipe', dest='wipe', action='store_true',
+                        help='wip the master eeprom')
+
     args = parser.parse_args()
-    
+
     config = ConfigParser()
     config.read(constants.get_config_file())
-    
+
     port = config.get('OpenMotics', 'controller_serial')
-    
+
     if args.port:
         print port
-    elif args.sync or args.version or args.reset:
+    elif args.sync or args.version or args.reset or args.wipe:
         master_serial = Serial(port, 115200)
         master_communicator = MasterCommunicator(master_serial)
         master_communicator.start()
-        
+
         if args.sync:
             try:
                 master_communicator.do_command(master_api.status())
@@ -61,6 +62,18 @@ def main():
         elif args.reset:
             master_communicator.do_command(master_api.reset())
             print "Reset !"
+        elif args.wipe:
+            (num_banks, bank_size, write_size) = (256, 256, 10)
+            print "Wiping the master"
+            for bank in range(0, num_banks):
+                print " Wiping bank %d" % bank
+                for addr in range(0, bank_size, write_size):
+                    master_communicator.do_command(master_api.write_eeprom(),
+                        {'bank': bank, 'address': addr, 'data': '\xff' * write_size})
+
+            master_communicator.do_command(master_api.activate_eeprom(), {'eep' : 0})
+            print "Done wiping the master"
+
     else:
         parser.print_help()
 

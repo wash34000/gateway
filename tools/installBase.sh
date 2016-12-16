@@ -100,29 +100,28 @@ cat << EOF > /usr/bin/ntpsync
 
 SERVER=ntp.ubuntu.com
 DEFAULT_DATE="2013-07-01 00:00"
-INTERVAL=60
+SUCCESS_INTERVAL=3600
+FAIL_INTERVAL=60
 
 systemctl stop ntpd.service
 
 echo "Started ntpsync."
 
 while [ 1 ]; do
-	echo "Starting ntpdate."
-	ntpdate \$SERVER
-	if [ x"\$?" == x"0" ]; then
-		echo "ntpdate was succesfull."
-		echo "Stopping ntpsync."
-		break
-	else
-		echo "ntpdate failed."
-		date | grep 2000 # Check if we are on the default date (1th of Jan 2000)
-		if [ x"\$?" == x"0" ]; then
-			echo "Setting date to \$DEFAULT_DATE"
-			date -s "\$DEFAULT_DATE"
-		fi
-		echo "Trying again in \$INTERVAL seconds"
-		sleep \$INTERVAL
-	fi
+    echo "Starting ntpdate."
+    ntpdate \$SERVER
+    if [ x"\$?" == x"0" ]; then
+        echo "ntpdate was succesfull."
+        sleep \$SUCCESS_INTERVAL
+    else
+        echo "ntpdate failed."
+        date | grep 2000 # Check if we are on the default date (1th of Jan 2000)
+        if [ x"\$?" == x"0" ]; then
+            echo "Setting date to \$DEFAULT_DATE"
+            date -s "\$DEFAULT_DATE"
+        fi
+        sleep \$FAIL_INTERVAL
+    fi
 done
 EOF
 
@@ -132,7 +131,7 @@ cat << EOF > /etc/supervisor/conf.d/ntpsync.conf
 [program:ntpsync]
 command=/usr/bin/ntpsync
 autostart=true
-autorestart=false
+autorestart=true
 startsecs=0
 exitcodes=0
 priority=1
