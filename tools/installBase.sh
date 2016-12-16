@@ -45,7 +45,7 @@ chmod +x /etc/init.d/supervisor
 for i in `seq 0 6`; do ln -s /etc/init.d/supervisor /etc/rc${i}.d/S99supervisor; done
 
 ## Install Qt packages
-PACKAGES="libz1_1.2.6-r1_armv7a.ipk libc6_2.12-r28_armv7a.ipk libgcc1_4.5-r49+svnr184907_armv7a.ipk libglib-2.0-0_2.30.3-r2_armv7a.ipk libffi5_3.0.10-r0_armv7a.ipk libstdc++6_4.5-r49+svnr184907_armv7a.ipk libqtcore4_4.8.0-r48.1_armv7a.ipk libqtsql4_4.8.0-r48.1_armv7a.ipk qt4-plugin-sqldriver-sqlite_4.8.0-r48.1_armv7a.ipk"
+PACKAGES="libffi5_3.0.10-r0_armv7a.ipk libqtcore4_4.8.0-r48.1_armv7a.ipk libqtsql4_4.8.0-r48.1_armv7a.ipk qt4-plugin-sqldriver-sqlite_4.8.0-r48.1_armv7a.ipk"
 for i in $PACKAGES; do wget http://openmotics.com:8100/distro/packages/${i}; done
 opkg install $PACKAGES
 
@@ -65,7 +65,7 @@ EOF
 mkdir /mnt/boot/
 mount /dev/mmcblk0p1 /mnt/boot/
 cat << EOF > /mnt/boot/uEnv.txt
-optargs="run_hardware_tests i2c_bus=2,100 panic=10"
+optargs="run_hardware_tests i2c_bus=2,100 panic=10 softlockup_panic=1"
 EOF
 umount /mnt/boot/
 rm -R /mnt/boot
@@ -90,3 +90,89 @@ EOF
 ## Instal Google public DNS name servers
 echo "nameserver 8.8.8.8" > /etc/resolv.conf
 echo "nameserver 8.8.4.4" >> /etc/resolv.conf
+
+
+## Install ntpsync
+cat << EOF > /usr/bin/ntpsync
+#!/bin/bash
+# Keep trying to ntpdate (1 minute interval), until the ntpdate is succesful.
+# If the ntpdate fails, set the date to a default value.
+
+SERVER=ntp.ubuntu.com
+DEFAULT_DATE="2013-07-01 00:00"
+INTERVAL=60
+
+systemctl stop ntpd.service
+
+echo "Started ntpsync."
+
+while [ 1 ]; do
+	echo "Starting ntpdate."
+	ntpdate \$SERVER
+	if [ x"\$?" == x"0" ]; then
+		echo "ntpdate was succesfull."
+		echo "Stopping ntpsync."
+		break
+	else
+		echo "ntpdate failed."
+		date | grep 2000 # Check if we are on the default date (1th of Jan 2000)
+		if [ x"\$?" == x"0" ]; then
+			echo "Setting date to \$DEFAULT_DATE"
+			date -s "\$DEFAULT_DATE"
+		fi
+		echo "Trying again in \$INTERVAL seconds"
+		sleep \$INTERVAL
+	fi
+done
+EOF
+
+chmod +x /usr/bin/ntpsync
+
+cat << EOF > /etc/supervisor/conf.d/ntpsync.conf 
+[program:ntpsync]
+command=/usr/bin/ntpsync
+autostart=true
+autorestart=false
+startsecs=0
+exitcodes=0
+priority=1
+EOF
+
+
+## Install watchdog
+cat << EOF > /usr/bin/watchdog.py
+'''
+Gives the watchdog a push every 10 seconds.
+
+Created on Oct 24, 2012
+
+@author: fryckbos
+'''
+import time
+
+def main():
+	watchdog = open('/dev/watchdog', 'w')
+
+    while True:
+        watchdog.write("O")
+        watchdog.flush()
+        
+        time.sleep(10)
+    
+    
+if __name__ == '__main__':
+    main()
+EOF
+
+cat << EOF > /etc/supervisor/conf.d/watchdog.conf 
+[program:watchdog]
+command=python /usr/bin/watchdog.py
+autostart=true
+autorestart=false
+priority=1
+EOF
+
+
+## Install BeagleBone Black device tree file
+cp BBB/dts/am335x-boneblack.dtb /boot/
+

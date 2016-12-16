@@ -2,11 +2,12 @@
 if required. On each check the vpn_service sends some status information about the outputs and 
 thermostats to the cloud, to keep the status information in the cloud in sync. """
 
-import urllib, urllib2
+import requests
 import time
 import subprocess
 import os
 
+from threading import Thread
 from ConfigParser import ConfigParser
 from datetime import datetime
 
@@ -19,7 +20,7 @@ import constants
 
 from frontend.physical_frontend import PhysicalFrontend
 
-REBOOT_TIMEOUT = 600
+REBOOT_TIMEOUT = 900
 
 def reboot_gateway():
     """ Reboot the gateway. """
@@ -53,31 +54,52 @@ class VpnController:
 class Cloud:
     """ Connects to the OpenMotics cloud to check if the vpn should be opened. """
 
-    def __init__(self, url, physical_frontend):
+    DEFAULT_SLEEP_TIME = 30
+    DEFAULT_SEND_REAL_TIME_DATA = False
+
+    def __init__(self, url, physical_frontend, action_executor, sleep_time=DEFAULT_SLEEP_TIME,
+                 send_real_time_data=DEFAULT_SEND_REAL_TIME_DATA):
         self.__url = url
         self.__physical_frontend = physical_frontend
+        self.__action_executor = action_executor
         self.__last_connect = time.time()
+        self.__sleep_time = sleep_time
+        self.__send_real_time_data = send_real_time_data
 
     def should_open_vpn(self, extra_data):
         """ Check with the OpenMotics could if we should open a VPN """
-        url_opener = urllib2.build_opener()
         try:
-            handle = url_opener.open(self.__url, urllib.urlencode([("extra_data", extra_data)]),
-                                     timeout=10.0)
-            lines = ''.join(handle.readlines())
-            handle.close()
+            r = requests.post(self.__url, data={'extra_data' : json.dumps(extra_data)}, timeout=10.0, verify=True)
+            data = json.loads(r.text)
+            
+            if 'sleep_time' in data:
+                self.__sleep_time = data['sleep_time']
+            
+            if 'send_real_time_data' in data:
+                self.__send_real_time_data = data['send_real_time_data']
+            
+            if 'actions' in data:
+                self.__action_executor.execute_actions_in_background(data['actions'])
             
             self.__physical_frontend.set_led('cloud', True)
             self.__physical_frontend.toggle_led('alive')
             self.__last_connect = time.time()
             
-            return "true" in lines
+            return data['open_vpn']
         except Exception as exception:
             print "Exception occured during check: ", exception
             self.__physical_frontend.set_led('cloud', False)
             self.__physical_frontend.set_led('alive', False)
             
             return True
+    
+    def get_sleep_time(self):
+        """ Get the time to sleep between two cloud checks. """
+        return self.__sleep_time
+
+    def should_send_real_time_data(self):
+        """ Whether we should send real time data to the cloud. """
+        return self.__send_real_time_data
     
     def get_last_connect(self):
         """ Get the timestamp of the last connection with the cloud. """
@@ -88,14 +110,14 @@ class Gateway:
     
     def __init__(self, host="127.0.0.1"):
         self.__host = host
+        self.__last_pulse_counters = None
 
-    def __do_call(self, uri):
+    def do_call(self, uri):
         """ Do a call to the webservice, returns a dict parsed from the json returned by the
         webserver. """
         try:
-            url = "http://" + self.__host + "/" + uri
-            handler = urllib2.urlopen(url, timeout=60.0)
-            return json.loads(handler.read())
+            r = requests.get("http://" + self.__host + "/" + uri, timeout=15.0)
+            return json.loads(r.text)
         except Exception as exception:
             print "Exception during getting output status: ", exception
             return None
@@ -105,7 +127,7 @@ class Gateway:
         
         :returns: a list of tuples containing the output number and dimmer value. None on error.
         """
-        data = self.__do_call("get_outputs?token=None")
+        data = self.do_call("get_outputs?token=None")
         if data == None or data['success'] == False:
             return None
         else:
@@ -121,7 +143,7 @@ class Gateway:
         :returns: a dict with 'thermostats_on', 'automatic' and an array of dicts in 'thermostats'
         with the following fields: 'thermostat', 'act', 'csetp' and 'mode'. None on error.
         """
-        data = self.__do_call("get_thermostats?token=None")
+        data = self.do_call("get_thermostats_short?token=None")
         if data == None or data['success'] == False:
             return None
         else:
@@ -148,9 +170,18 @@ class Gateway:
         else:
             return None
     
-    def get_realtime_power(self):
+    def get_real_time_power(self):
         """ Get the real time power measurements. """
-        data = self.__do_call("get_realtime_power?token=None")
+        data = self.do_call("get_realtime_power?token=None")
+        if data == None or data['success'] == False:
+            return None
+        else:
+            del data['success']
+            return data
+    
+    def get_total_energy(self):
+        """ Get the total energy. """
+        data = self.do_call("get_total_energy?token=None")
         if data == None or data['success'] == False:
             return None
         else:
@@ -159,23 +190,67 @@ class Gateway:
     
     def get_pulse_counter_values(self):
         """ Get the pulse counter values. """
-        data = self.__do_call("get_pulse_counter_values?token=None")
+        data = self.do_call("get_pulse_counter_values?token=None")
         if data == None or data['success'] == False:
             return None
         else:
-            return data['counters']
+            counters = data['counters']
+            
+            if self.__last_pulse_counters == None:
+                ret = [ 0 for i in range(0, 8) ]
+            else:
+                ret = [ self.__counter_diff(counters[i], self.__last_pulse_counters[i]) 
+                         for i in range(0, 8) ]
+            
+            self.__last_pulse_counters = counters
+            return ret
+    
+    def __counter_diff(self, current, previous):
+        """ Calculate the diff between two counter values. """
+        diff = current - previous
+        return diff if diff >= 0 else 65536 - previous + current
+    
+    def get_errors(self):
+        """ Get the errors on the gateway. """
+        data = self.do_call("get_errors?token=None")
+        if data == None:
+            return None
+        else:
+            if data['errors'] != None:
+                master_errors = sum(map(lambda x: x[1], data['errors']))
+            else:
+                master_errors = 0
+            
+            return { 'master_errors': master_errors,
+                     'master_last_success': data['master_last_success'],
+                     'power_last_success': data['power_last_success'] }
+    
+    def get_local_ip_address(self):
+        """ Get the local ip address. """
+        try:
+            lines = subprocess.check_output("ifconfig eth0", shell=True)
+            return lines.split("\n")[1].strip().split(" ")[1].split(":")[1]
+        except:
+            return None
+
 
 class DataCollector:
     
-    def __init__(self, name, function, period=0):
+    def __init__(self, function, period=0, real_time=False):
         """
-        Create a collector with a name, function to call and period.
+        Create a collector with a function to call, a period and a boolean that indicates whether
+        this collector is real time.
+        
         If the period is 0, the collector will be executed on each call.
         """
-        self.name = name
         self.__function = function
         self.__period = period
+        self.__real_time = real_time
         self.__last_collect = 0
+    
+    def is_real_time(self):
+        """ Check if this is a real_time collector. """
+        return self.__real_time
     
     def __should_collect(self):
         """ Should we execute the collect ? """
@@ -190,12 +265,66 @@ class DataCollector:
         else:
             return None
 
+
+class ActionExecutor:
+    """ Executes actions received from the cloud. """
+
+    def __init__(self, gateway):
+        """ Use a Gateway instance to communicate with the gateway. """
+        self.__gateway = gateway
+    
+    def execute_actions_in_background(self, actions):
+        """ Execute a list of actions in the background. """
+        def run():
+            for action in actions:
+                try:
+                    self.execute(action)
+                except Exception as e:
+                    print "Error wile executing action '" + str(action) + "': " + str(e)
+        
+        thread = Thread(name="Action Executor", target=run)
+        thread.daemon = True
+        thread.start()
+    
+    def execute(self, action):
+        """ Execute an action. """
+        name = action.get('name', None)
+        args = action.get('args', None)
+        
+        if name == 'set_output':
+            self.__gateway.do_call("set_output?output_nr=%s&on=%s&dimmer=%s&timer=%s&token=None" % \
+                                   (args['output_nr'], args['on'], args['dimmer'], args['timer']))
+            
+        elif name == 'set_all_lights_off':
+            self.__gateway.do_call("set_all_lights_off?token=None")
+            
+        elif name == 'set_all_lights_floor_off':
+            self.__gateway.do_call("set_all_lights_floor_off?floor=%s&token=None" % args['floor'])
+
+        elif name == 'set_all_lights_floor_on':
+            self.__gateway.do_call("set_all_lights_floor_on?floor=%s&token=None" % args['floor'])
+            
+        elif name == 'set_current_setpoint':
+            self.__gateway.do_call("set_current_setpoint?thermostat=%s&temperature=%s&token=None" % \
+                                   (args['thermostat'], args['temperature']))
+            
+        elif name == 'set_mode':
+            self.__gateway.do_call("set_mode?on=%s&automatic=%s&setpoint=%s&token=None" % \
+                                   (args['on'], args['automatic'], args['setpoint']))
+            
+        elif name == 'do_group_action':
+            self.__gateway.do_call("do_group_action?group_action_id=%s&token=None" % \
+                                   args['group_action_id'])
+            
+        else:
+            raise Exception("Could not find action '%s'" % name) 
+    
+
 def main():
     """ The main function contains the loop that check if the vpn should be opened every 2 seconds.
     Status data is sent when the vpn is checked. """
     
     physical_frontend = PhysicalFrontend()
-    physical_frontend.set_led('vpn', True)
     
     # Get the configuration
     config = ConfigParser()
@@ -204,28 +333,35 @@ def main():
     check_url = config.get('OpenMotics', 'vpn_check_url') % config.get('OpenMotics', 'uuid')
 
     vpn = VpnController()
-    cloud = Cloud(check_url, physical_frontend)
+    physical_frontend.set_led('vpn', vpn.check_vpn())
+    
     gateway = Gateway()
+    cloud = Cloud(check_url, physical_frontend, ActionExecutor(gateway))
 
-    collectors = [ DataCollector('thermostats', gateway.get_thermostats, 60),
-                   DataCollector('pulses', gateway.get_pulse_counter_values, 60),
-                   DataCollector('outputs', gateway.get_enabled_outputs),
-                   DataCollector('power', gateway.get_realtime_power),
-                   DataCollector('update', gateway.get_update_status) ]
+    collectors = { 'energy' : DataCollector(gateway.get_total_energy, 300),
+                   'thermostats' : DataCollector(gateway.get_thermostats, 60),
+                   'pulses' : DataCollector(gateway.get_pulse_counter_values, 60),
+                   'outputs' : DataCollector(gateway.get_enabled_outputs, real_time=True),
+                   'power' : DataCollector(gateway.get_real_time_power, real_time=True),
+                   'update' : DataCollector(gateway.get_update_status),
+                   'errors': DataCollector(gateway.get_errors, 600),
+                   'local_ip' : DataCollector(gateway.get_local_ip_address, 1800) }
+
+    iterations = 0
 
     # Loop: check vpn and open/close if needed
     while True:
-        monitoring_data = {}
-        for collector in collectors:
-            data = collector.collect()
-            if data != None:
-                monitoring_data[collector.name] = data
+        vpn_data = {}
+        for collector_name in collectors:
+            collector = collectors[collector_name]
+            if cloud.should_send_real_time_data() or not collector.is_real_time():
+                data = collector.collect()
+                if data != None:
+                    vpn_data[collector_name] = data
         
-        extra_data = json.dumps(monitoring_data)
-    
-        should_open = cloud.should_open_vpn(extra_data)
+        should_open = cloud.should_open_vpn(vpn_data)
         
-        if cloud.get_last_connect() < time.time() - REBOOT_TIMEOUT:
+        if iterations > 20 and cloud.get_last_connect() < time.time() - REBOOT_TIMEOUT:
             ''' The cloud is not responding for a while, perhaps the BeagleBone network stack is 
             hanging, reboot the gateway to reset the BeagleBone. '''
             reboot_gateway()
@@ -241,7 +377,10 @@ def main():
             print str(datetime.now()) + ": closing vpn"
             vpn.stop_vpn()
             
-        time.sleep(2)
+        print "Sleeping for %d" % cloud.get_sleep_time()
+        time.sleep(cloud.get_sleep_time())
+
+        iterations += 1
 
 
 if __name__ == '__main__':

@@ -5,6 +5,8 @@ Created on Sep 9, 2012
 
 @author: fryckbos
 """
+import math
+
 import master_api
 from serial_utils import printable
 
@@ -108,7 +110,18 @@ class MasterCommandSpec:
                 
         partial_result.complete = True
         return (index - from_pending, partial_result, True)
+    
+    def output_has_crc(self):
+        """ Check if the MasterCommandSpec output contains a crc field. """
+        for field in self.output_fields:
+            if Field.is_crc(field):
+                return True
         
+        return False
+    
+    def __eq__(self, other):
+        """ Only used for testing, equals by name. """
+        return self.action == other.action
 
 class Result:
     """ Result of a communication with the master. Can be accessed as a dict,
@@ -179,6 +192,17 @@ class Field:
     def dimmer(name):
         """ Dimmer type (byte in [0, 63] converted to integer in [0, 100]. """
         return Field(name, DimmerFieldType())
+    
+    @staticmethod
+    def crc():
+        """ Create a crc field type (3-byte string) """
+        return Field.bytes('crc', 3)
+    
+    @staticmethod
+    def is_crc(field):
+        """ Is the field a crc field ? """
+        return isinstance(field, Field) and field.name == 'crc' \
+                and isinstance(field.field_type, BytesFieldType) and field.field_type.length == 3
     
     def __init__(self, name, field_type):
         """ Create a MasterComandField.
@@ -311,7 +335,7 @@ class BytesFieldType:
     
     def encode(self, byte_arr):
         """ Generates a string of bytes from the byte array. """
-        return [ chr(x) for x in byte_arr ]
+        return ''.join([ chr(x) for x in byte_arr ])
     
     def decode(self, byte_str):
         """ Generates an array of bytes. """
@@ -387,22 +411,26 @@ class VarStringFieldType:
 
 class DimmerFieldType:
     """ The dimmer value is a byte in [0, 63], this is converted to an integer in [0, 100] to
-    provide a consistent interface with the set dimmer method.
+    provide a consistent interface with the set dimmer method. The transfer function is not
+    completely linear: [0, 54] maps to [0, 90] and [54, 63] maps to [92, 100]. 
     """
     def __init__(self):
         pass
     
     def encode(self, field_value):
         """ Encode a dimmer value. """
-        raise Exception("DimmerFieldType is one way !")
+        if field_value <= 90:
+            return chr(int(math.ceil(field_value * 6.0 / 10.0)))
+        else:
+            return chr(int(53 + field_value - 90))
     
     def decode(self, byte_str):
         """ Decode a byte [0, 63] to an integer [0, 100]. """
         dimmer_value = ord(byte_str[0])
-        if dimmer_value == 63:
-            return 100
+        if dimmer_value <= 54:
+            return int(dimmer_value * 10.0 / 6.0)
         else:
-            return dimmer_value * 10 / 6
+            return int(90 + dimmer_value - 53)
     
     def get_min_decode_bytes(self):
         """ The dimmer type is always 1 byte. """
@@ -418,7 +446,7 @@ class OutputFieldType:
         return 1
     
     def decode(self, byte_str):
-        """ Checks if byte_str is the literal """
+        """ Decode a byte string. """
         bytes_required = 1 + (ord(byte_str[0]) * 2)
         
         if len(byte_str) < bytes_required:
@@ -433,4 +461,41 @@ class OutputFieldType:
                 output_nr = ord(byte_str[1 + i*2])
                 dimmer = dimmerFieldType.decode(byte_str[1 + i*2 + 1:1 + i*2 + 2])
                 out.append((output_nr, dimmer))
+            return out
+
+class ErrorListFieldType:
+    """ Field type for el. """
+    def __init__(self):
+        pass
+    
+    def get_min_decode_bytes(self):
+        """ Get the minimal amount of bytes required to start decoding. """
+        return 1
+    
+    def encode(self, field_value):
+        """ Encode to byte string. """
+        bytes = ""
+        bytes += chr(len(field_value))
+        for field in field_value:
+            bytes += "%s%s%s%s" % (field[0][0], chr(int(field[0][1:])), chr(field[1] / 256), chr(field[1] % 256))
+        return bytes
+    
+    def decode(self, byte_str):
+        """ Decode a byte string. """
+        nr_modules = ord(byte_str[0])
+        bytes_required = 1 + (nr_modules * 4)
+        
+        if len(byte_str) < bytes_required:
+            raise NeedMoreBytesException(bytes_required)
+        elif len(byte_str) > bytes_required:
+            raise ValueError("Got more bytes than required: expected %d, got %d",
+                             bytes_required, len(byte_str))
+        else:
+            out = []
+            for i in range(nr_modules):
+                id = "%s%d" % (byte_str[i*4 + 1], ord(byte_str[i*4 + 2]))
+                nr_errors =  ord(byte_str[i*4 + 3]) * 256 + ord(byte_str[i*4 + 4])
+                
+                out.append((id, nr_errors))
+            
             return out

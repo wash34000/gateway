@@ -19,14 +19,18 @@ def get_power_database_file():
     """ Get the filename of the power database file. This file is in sqlite format. """
     return "/opt/openmotics/etc/power.db"
 
+def get_scheduling_database_file():
+    """ Get the filename of the scheduling database file. This file is in sqlite format. """
+    return "/opt/openmotics/etc/sched.db"
+
 
 def get_ssl_certificate_file():
     """ Get the filename of the ssl certificate. """
-    return "/etc/openvpn/client.crt"
+    return "/opt/openmotics/etc/https.crt"
 
 def get_ssl_private_key_file():
     """ Get the filename of the ssl private key. """
-    return "/etc/openvpn/client.key"
+    return "/opt/openmotics/etc/https.key"
 
 
 def get_update_dir():
@@ -48,4 +52,9 @@ def get_update_cmd(version, md5):
 def get_update_script():
     """ Get the bash script that runs the update after the tgz file is extracted. """
     return "/opt/openmotics/Updater/updater.sh"
+
+
+def get_timezone_file():
+    """ Get the path of the timezone file. """
+    return "/opt/openmotics/etc/timezone"
 

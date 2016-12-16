@@ -1,11 +1,12 @@
 '''
 Contains the definition of the Master Api.
+Requires Firmware 3.137.17 -- Caution on update: status api changed (used in update mechanism !)
 
 Created on Sep 9, 2012
 
 @author: fryckbos
 '''
-from master_command import MasterCommandSpec, Field, OutputFieldType, DimmerFieldType
+from master_command import MasterCommandSpec, Field, OutputFieldType, DimmerFieldType, ErrorListFieldType
 
 BA_GROUP_ACTION = 2
 
@@ -79,13 +80,21 @@ def reset():
         [ Field.str("resp", 2), Field.padding(11), Field.lit("\r\n") ])
 
 def status():
-    """ Get the status of the gateway. """
+    """ Get the status of the master. """
     return MasterCommandSpec("ST", 
         [ Field.padding(13) ],
-        [ Field.lit('\x00\x00'), Field.byte('hours'), Field.byte('minutes'), Field.byte('year'),
-          Field.byte('month'), Field.byte('day'), Field.byte('weekday'), Field.byte('mode'),
-          Field.byte('f1'), Field.byte('f2'), Field.byte('f3'), Field.byte('h'),
-          Field.lit('\r\n') ])
+        [ Field.byte('seconds'), Field.byte('minutes'), Field.byte('hours'), Field.byte('weekday'),
+          Field.byte('day'), Field.byte('month'), Field.byte('year'), Field.lit('\x00'),
+          Field.byte('mode'), Field.byte('f1'), Field.byte('f2'), Field.byte('f3'),
+          Field.byte('h'), Field.lit('\r\n') ])
+
+def set_time():
+    """ Set the time on the master. """
+    return MasterCommandSpec("st",
+        [ Field.byte('sec'), Field.byte('min'), Field.byte('hours'), Field.byte('weekday'),
+          Field.byte('day'), Field.byte('month'), Field.byte('year'), Field.padding(6) ],
+        [ Field.byte('sec'), Field.byte('min'), Field.byte('hours'), Field.byte('weekday'),
+          Field.byte('day'), Field.byte('month'), Field.byte('year'), Field.padding(6) ])
 
 def eeprom_list():
     """ List all bytes from a certain eeprom bank """
@@ -118,7 +127,7 @@ def read_output():
         [ Field.byte('output_nr'), Field.str('type', 1), Field.byte('light'), Field.int('timer'),
           Field.int('ctimer'), Field.byte('status'), Field.dimmer('dimmer'),
           Field.byte('controller_out'), Field.byte('max_power'), Field.byte('floor_level'),
-          Field.bytes('menu_position', 3), Field.str('name', 16), Field.bytes('crc', 3),
+          Field.bytes('menu_position', 3), Field.str('name', 16), Field.crc(),
           Field.lit('\r\n\r\n') ])
 
 def read_input():
@@ -126,7 +135,7 @@ def read_input():
     return MasterCommandSpec("ri", 
         [ Field.byte("input_nr"), Field.padding(12) ],
         [ Field.byte('input_nr'), Field.byte('output_action'), Field.bytes('output_list', 30),
-          Field.str('input_name', 8), Field.bytes('crc', 3), Field.lit('\r\n\r\n') ])
+          Field.str('input_name', 8), Field.crc(), Field.lit('\r\n\r\n') ])
 
 def temperature_list():
     """ Read the temperature thermostat sensor list for a series of 12 sensors """
@@ -163,17 +172,24 @@ def read_setpoint():
           Field.svt('outside'), Field.byte('mode'), Field.str('name', 16), Field.byte('pid_p'),
           Field.byte('pid_i'), Field.byte('pid_d'), Field.byte('pid_ithresh'), 
           Field.svt('threshold_temp'), Field.byte('days'), Field.byte('hours'), 
-          Field.byte('minutes'), Field.byte('mon_start_d1'), Field.byte('mon_stop_d1'),
-          Field.byte('mon_start_d2'), Field.byte('mon_stop_d2'), Field.byte('tue_start_d1'),
-          Field.byte('tue_stop_d1'), Field.byte('tue_start_d2'), Field.byte('tue_stop_d2'),
-          Field.byte('wed_start_d1'), Field.byte('wed_stop_d1'), Field.byte('wed_start_d2'),
-          Field.byte('wed_stop_d2'), Field.byte('thu_start_d1'), Field.byte('thu_stop_d1'),
-          Field.byte('thu_start_d2'), Field.byte('thu_stop_d2'), Field.byte('fri_start_d1'),
-          Field.byte('fri_stop_d1'), Field.byte('fri_start_d2'), Field.byte('fri_stop_d2'),
-          Field.byte('sat_start_d1'), Field.byte('sat_stop_d1'), Field.byte('sat_start_d2'),
-          Field.byte('sat_stop_d2'), Field.byte('sun_start_d1'), Field.byte('sun_stop_d1'),
-          Field.byte('sun_start_d2'), Field.byte('sun_stop_d2'), Field.bytes('crc', 3),
-          Field.lit('\r\n\r\n') ])        
+          Field.byte('minutes'), Field.svt('mon_start_d1'), Field.svt('mon_stop_d1'),
+          Field.svt('mon_start_d2'), Field.svt('mon_stop_d2'), Field.svt('tue_start_d1'),
+          Field.svt('tue_stop_d1'), Field.svt('tue_start_d2'), Field.svt('tue_stop_d2'),
+          Field.svt('wed_start_d1'), Field.svt('wed_stop_d1'), Field.svt('wed_start_d2'),
+          Field.svt('wed_stop_d2'), Field.svt('thu_start_d1'), Field.svt('thu_stop_d1'),
+          Field.svt('thu_start_d2'), Field.svt('thu_stop_d2'), Field.svt('fri_start_d1'),
+          Field.svt('fri_stop_d1'), Field.svt('fri_start_d2'), Field.svt('fri_stop_d2'),
+          Field.svt('sat_start_d1'), Field.svt('sat_stop_d1'), Field.svt('sat_start_d2'),
+          Field.svt('sat_stop_d2'), Field.svt('sun_start_d1'), Field.svt('sun_stop_d1'),
+          Field.svt('sun_start_d2'), Field.svt('sun_stop_d2'), Field.lit('T'),
+          Field.svt('mon_temp_d1'), Field.svt('tue_temp_d1'), Field.svt('wed_temp_d1'),
+          Field.svt('thu_temp_d1'), Field.svt('fri_temp_d1'), Field.svt('sat_temp_d1'),
+          Field.svt('sun_temp_d1'), Field.svt('mon_temp_d2'), Field.svt('tue_temp_d2'), 
+          Field.svt('wed_temp_d2'), Field.svt('thu_temp_d2'), Field.svt('fri_temp_d2'),
+          Field.svt('sat_temp_d2'), Field.svt('sun_temp_d2'),  Field.svt('mon_temp_n'),
+          Field.svt('tue_temp_n'), Field.svt('wed_temp_n'), Field.svt('thu_temp_n'),
+          Field.svt('fri_temp_n'), Field.svt('sat_temp_n'), Field.svt('sun_temp_n'),
+          Field.crc(), Field.lit('\r\n\r\n') ])
 
 def write_setpoint():
     """ Write a setpoints of a thermostats """
@@ -182,12 +198,87 @@ def write_setpoint():
         [ Field.byte("thermostat"), Field.byte("config"), Field.svt("temp"), Field.padding(10),
           Field.lit('\r\n')])
 
+def thermostat_list():
+    """ Read the thermostat mode, the outside temperature, the temperature of each thermostat,
+    as well as the setpoint.
+    """
+    return MasterCommandSpec("tl",
+        [ Field.padding(13) ],
+        [ Field.byte('mode'), Field.svt('outside'),
+          Field.svt('tmp0'), Field.svt('tmp1'), Field.svt('tmp2'), Field.svt('tmp3'),
+          Field.svt('tmp4'), Field.svt('tmp5'), Field.svt('tmp6'), Field.svt('tmp7'),
+          Field.svt('tmp8'), Field.svt('tmp9'), Field.svt('tmp10'), Field.svt('tmp11'),
+          Field.svt('tmp12'), Field.svt('tmp13'), Field.svt('tmp14'), Field.svt('tmp15'),
+          Field.svt('tmp16'), Field.svt('tmp17'), Field.svt('tmp18'), Field.svt('tmp19'),
+          Field.svt('tmp20'), Field.svt('tmp21'), Field.svt('tmp22'), Field.svt('tmp23'),
+          Field.svt('setp0'), Field.svt('setp1'), Field.svt('setp2'), Field.svt('setp3'),
+          Field.svt('setp4'), Field.svt('setp5'), Field.svt('setp6'), Field.svt('setp7'),
+          Field.svt('setp8'), Field.svt('setp9'), Field.svt('setp10'), Field.svt('setp11'),
+          Field.svt('setp12'), Field.svt('setp13'), Field.svt('setp14'), Field.svt('setp15'),
+          Field.svt('setp16'), Field.svt('setp17'), Field.svt('setp18'), Field.svt('setp19'),
+          Field.svt('setp20'), Field.svt('setp21'), Field.svt('setp22'), Field.svt('setp23'),
+          Field.crc(), Field.lit('\r\n') ])
+
+def sensor_humidity_list():
+    """ Reads the list humidity values of the 32 (0-31) sensors. """
+    return MasterCommandSpec("hl",
+        [ Field.padding(13) ],
+        [ Field.byte('hum0'), Field.byte('hum1'), Field.byte('hum2'), Field.byte('hum3'),
+          Field.byte('hum4'), Field.byte('hum5'), Field.byte('hum6'), Field.byte('hum7'),
+          Field.byte('hum8'), Field.byte('hum9'), Field.byte('hum10'), Field.byte('hum11'),
+          Field.byte('hum12'), Field.byte('hum13'), Field.byte('hum14'), Field.byte('hum15'),
+          Field.byte('hum16'), Field.byte('hum17'), Field.byte('hum18'), Field.byte('hum19'),
+          Field.byte('hum20'), Field.byte('hum21'), Field.byte('hum22'), Field.byte('hum23'),
+          Field.byte('hum24'), Field.byte('hum25'), Field.byte('hum26'), Field.byte('hum27'),
+          Field.byte('hum28'), Field.byte('hum29'), Field.byte('hum30'), Field.byte('hum31'),
+          Field.crc(), Field.lit('\r\n') ])
+
+def sensor_temperature_list():
+    """ Reads the list temperature values of the 32 (0-31) sensors. """
+    return MasterCommandSpec("cl",
+        [ Field.padding(13) ],
+        [ Field.svt('tmp0'), Field.svt('tmp1'), Field.svt('tmp2'), Field.svt('tmp3'),
+          Field.svt('tmp4'), Field.svt('tmp5'), Field.svt('tmp6'), Field.svt('tmp7'),
+          Field.svt('tmp8'), Field.svt('tmp9'), Field.svt('tmp10'), Field.svt('tmp11'),
+          Field.svt('tmp12'), Field.svt('tmp13'), Field.svt('tmp14'), Field.svt('tmp15'),
+          Field.svt('tmp16'), Field.svt('tmp17'), Field.svt('tmp18'), Field.svt('tmp19'),
+          Field.svt('tmp20'), Field.svt('tmp21'), Field.svt('tmp22'), Field.svt('tmp23'),
+          Field.svt('tmp24'), Field.svt('tmp25'), Field.svt('tmp26'), Field.svt('tmp27'),
+          Field.svt('tmp28'), Field.svt('tmp29'), Field.svt('tmp30'), Field.svt('tmp31'),
+          Field.crc(), Field.lit('\r\n') ])
+
+def sensor_brightness_list():
+    """ Reads the list brightness values of the 32 (0-31) sensors. """
+    return MasterCommandSpec("bl",
+        [ Field.padding(13) ],
+        [ Field.byte('bri0'), Field.byte('bri1'), Field.byte('bri2'), Field.byte('bri3'),
+          Field.byte('bri4'), Field.byte('bri5'), Field.byte('bri6'), Field.byte('bri7'),
+          Field.byte('bri8'), Field.byte('bri9'), Field.byte('bri10'), Field.byte('bri11'),
+          Field.byte('bri12'), Field.byte('bri13'), Field.byte('bri14'), Field.byte('bri15'),
+          Field.byte('bri16'), Field.byte('bri17'), Field.byte('bri18'), Field.byte('bri19'),
+          Field.byte('bri20'), Field.byte('bri21'), Field.byte('bri22'), Field.byte('bri23'),
+          Field.byte('bri24'), Field.byte('bri25'), Field.byte('bri26'), Field.byte('bri27'),
+          Field.byte('bri28'), Field.byte('bri29'), Field.byte('bri30'), Field.byte('bri31'),
+          Field.crc(), Field.lit('\r\n') ]) 
+
 def pulse_list():
     """ List the pulse counter values. """
     return MasterCommandSpec("PL", 
         [ Field.padding(13) ],
         [ Field.int('pv0'), Field.int('pv1'), Field.int('pv2'), Field.int('pv3'), Field.int('pv4'), 
           Field.int('pv5'), Field.int('pv6'), Field.int('pv7'), Field.lit('\r\n') ])
+
+def error_list():
+    """ Get the number of errors for each input and output module. """
+    return MasterCommandSpec("el",
+        [ Field.padding(13) ],
+        [ Field("errors", ErrorListFieldType()), Field.crc(), Field.lit("\r\n\r\n") ])
+
+def clear_error_list():
+    """ Clear the number of errors. """
+    return MasterCommandSpec("ec", 
+        [ Field.padding(13) ],
+        [ Field.str("resp", 2), Field.padding(11), Field.lit("\r\n") ])
 
 def to_cli_mode():
     """ Go to CLI mode """
@@ -199,7 +290,13 @@ def output_list():
     """ The message sent by the master whenever the outputs change. """
     return MasterCommandSpec("OL",
         [],
-        [Field("outputs", OutputFieldType()), Field.lit("\r\n\r\n")])
+        [ Field("outputs", OutputFieldType()), Field.lit("\r\n\r\n") ])
+
+def input_list():
+    """ The message sent by the master whenever an input is enabled. """
+    return MasterCommandSpec("IL", 
+        [],
+        [ Field.byte('input'), Field.byte('output'), Field.lit("\r\n\r\n") ])
 
 class Svt:
     """ Class for the system value type, this can be either a time or a temperature. """

@@ -21,6 +21,7 @@ I2C_DEVICE = '/dev/i2c-2'
 IOCTL_I2C_SLAVE = 0x0703
 I2C_SLAVE_ADDRESS = None # Read from config file
 CODES = { 'uart4':64, 'uart5':128, 'vpn':16, 'stat1':0, 'stat2':0, 'alive':1, 'cloud':4 }
+AUTH_CODE = 1 + 4 + 16 + 64 + 128
 
 HOME = 75
 
@@ -45,7 +46,7 @@ class StatusObject(dbus.service.Object):
 
         self.__times_pressed = 0
         self.__master_leds_thread = None
-        self.__master_leds_turn_on = False
+        self.__master_leds_turn_on = True
         self.__master_leds_on = False
         self.__master_leds_timeout = 0
         
@@ -97,6 +98,10 @@ class StatusObject(dbus.service.Object):
         for led in CODES:
             if self.__enabled_leds[led] == True:
                 code |= CODES[led]
+        
+        if self.__authorized_mode: # Light all leds in authorized mode
+            code |= AUTH_CODE
+        
         return (~ code) & 255
 
     def __set_output(self):
@@ -175,12 +180,16 @@ class StatusObject(dbus.service.Object):
         fh_inp.close()
         button_pressed = (int(line) == 0)
         if button_pressed:
-            self.__master_leds_turn_on = True
+            if not self.__master_leds_on:
+                self.__master_leds_turn_on = True
+            
             self.__times_pressed += 1
             if self.__times_pressed == 50:
                 self.__authorized_mode = True
                 self.__authorized_timeout = time.time() + 60
                 gobject.timeout_add(100, self.__authorized)
+            else:
+                gobject.timeout_add(100, self.input)
         else:
             self.__times_pressed = 0
             gobject.timeout_add(100, self.input)
@@ -209,15 +218,10 @@ class StatusObject(dbus.service.Object):
         """ Turns the master LEDs on or off if required. """
         while True:
             if self.__master_leds_turn_on:
-                self.__master_leds_turn_on = False
-                self.__master_leds_timeout = time.time() + 120
-                
                 if self.__master_leds_on == False:
-                    self.__master_leds_on = True
                     self.__master_set_leds(True)
             else:
                 if self.__master_leds_on == True and time.time() > self.__master_leds_timeout:
-                    self.__master_leds_on = False
                     self.__master_set_leds(False)
             
             time.sleep(0.2)
@@ -229,6 +233,12 @@ class StatusObject(dbus.service.Object):
             handler = urllib2.urlopen(uri, timeout=60.0)
             _ = handler.read()
             handler.close()
+            
+            self.__master_leds_on = status
+            if status == True:
+                self.__master_leds_turn_on = False
+                self.__master_leds_timeout = time.time() + 120
+            
         except Exception as exception:
             print "Exception during setting leds : ", exception
 

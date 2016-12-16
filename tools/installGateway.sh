@@ -10,6 +10,7 @@ echo Copy OpenMotics software
 
 cp -R python /opt/openmotics/
 cp -R Updater /opt/openmotics/
+cp -R static /opt/openmotics/
 
 ## Copy the bootloader
 cp binaries/AN1310cl /opt/openmotics/bin/
@@ -144,6 +145,10 @@ cat << EOF > /etc/dbus-1/system.d/com.openmotics.status.conf
 
 </busconfig>
 EOF
+
+rm /etc/localtime
+cp /usr/share/zoneinfo/UTC /opt/openmotics/etc/timezone
+ln -s /opt/openmotics/etc/timezone /etc/localtime
 
 mount -o remount,ro /
 

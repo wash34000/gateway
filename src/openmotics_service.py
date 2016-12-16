@@ -41,16 +41,22 @@ def setup_logger():
     handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
     logger.addHandler(handler)
 
-def led_driver(physical_frontend, master_communicator):
+def led_driver(physical_frontend, master_communicator, power_communicator):
     """ Blink the serial leds if necessary. """
-    read = 0
-    written = 0
+    master = (0, 0)
+    power = (0, 0)
+    
     while True:
-        if read != master_communicator.get_bytes_read() \
-                or written != master_communicator.get_bytes_written():
-            physical_frontend.serial_activity(5) # TODO Get the real port number !
-        read = master_communicator.get_bytes_read()
-        written = master_communicator.get_bytes_written()
+        if master[0] != master_communicator.get_bytes_read() \
+                or master[1] != master_communicator.get_bytes_written():
+            physical_frontend.serial_activity(5)
+        
+        if power[0] != power_communicator.get_bytes_read() \
+                or power[1] != power_communicator.get_bytes_written():
+            physical_frontend.serial_activity(4)
+        
+        master = (master_communicator.get_bytes_read(), master_communicator.get_bytes_written())
+        power = (power_communicator.get_bytes_read(), power_communicator.get_bytes_written())
         time.sleep(0.100)
 
 def main():
@@ -89,13 +95,14 @@ def main():
     passthrough_service = PassthroughService(master_communicator, passthrough_serial)
     passthrough_service.start()
     
-    web_service = WebService(user_controller, gateway_api, maintenance_service,
-                             physical_frontend.in_authorized_mode)
+    web_service = WebService(user_controller, gateway_api, constants.get_scheduling_database_file(),
+                             maintenance_service, physical_frontend.in_authorized_mode)
     web_service.start()
     
     physical_frontend.set_led('stat2', True)
     
-    led_thread = threading.Thread(target=led_driver, args=(physical_frontend, master_communicator))
+    led_thread = threading.Thread(target=led_driver, args=(physical_frontend,
+                                                           master_communicator, power_communicator))
     led_thread.setName("Serial led driver thread")
     led_thread.daemon = True
     led_thread.start()

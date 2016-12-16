@@ -1,5 +1,7 @@
 from power_command import PowerCommand
 
+BROADCAST_ADDRESS = 255
+
 NIGHT = 0
 DAY = 1
 
@@ -43,7 +45,7 @@ def get_normal_energy():
     return PowerCommand('G', 'ENO', '', '8L')
 
 def get_day_energy():
-    """ Get the energy measured durig the day by the power module (8x in Wh) """
+    """ Get the energy measured during the day by the power module (8x in Wh) """
     return PowerCommand('G', 'EDA', '', '8L')
 
 def get_night_energy():
@@ -64,15 +66,15 @@ def get_display_screen_menu():
 
 def set_display_screen_menu():
     """ Set the index of the displayed menu on the power module display. """
-    return PowerCommand('S', 'DSM', 'b', 'b')
+    return PowerCommand('S', 'DSM', 'b', '')
 
 def set_day_night():
     """ Set the power module in night (0) or day (1) mode. """
-    return PowerCommand('S', 'SDN', 'b', 'b')
+    return PowerCommand('S', 'SDN', '8b', '')
 
 def set_addressmode():
     """ Set the address mode of the power module, 1 = address mode, 0 = normal mode"""
-    return PowerCommand('S', 'AGT', 'b', 'b')
+    return PowerCommand('S', 'AGT', 'b', '')
 
 def want_an_address():
     """ The Want An Address command, send by the power modules in address mode. """
@@ -80,4 +82,58 @@ def want_an_address():
 
 def set_address():
     """ Reply on want_an_address, setting a new address for the power module. """
-    return PowerCommand('S', 'SAD', 'b', 'b')
+    return PowerCommand('S', 'SAD', 'b', '')
+
+def get_sensor_types():
+    """ Get the sensor types used on the power modules (8x sensor type) """
+    return PowerCommand('G', 'CSU', '', '8b')
+
+def set_sensor_types():
+    """ Set the sensor types used on the power modules (8x sensor type) """
+    return PowerCommand('S', 'CSU', '8b', '')
+
+def get_sensor_names():
+    """ Get the names of the available sensor types. """
+    return PowerCommand('G', 'CSN', '', '16s16s16s16s16s16s16s16s16s16s')
+
+def set_voltage():
+    """ Calibrate the voltage of the power module. """
+    return PowerCommand('S', 'SVO', 'f', '')
+
+
+## Below are the function to reset the kwh counters
+
+def reset_normal_energy():
+    """ Reset the total energy measured by the power module. """
+    return PowerCommand('S', 'ENE', '9B', '')
+
+def reset_day_energy():
+    """ Reset the energy measured during the day by the power module. """
+    return PowerCommand('S', 'EDA', '9B', '')
+
+def reset_night_energy():
+    """ Reset the energy measured during the night by the power module. """
+    return PowerCommand('S', 'ENI', '9B', '')
+
+
+## Below are the bootloader functions
+
+def bootloader_goto():
+    """ Go to bootloader and wait for a number of seconds (b parameter) """
+    return PowerCommand('S', 'BGT', 'B', '')
+
+def bootloader_read_id():
+    """ Get the device id """
+    return PowerCommand('G', 'BRI', '', '8B')
+
+def bootloader_write_code():
+    """ Write code """
+    return PowerCommand('S', 'BWC', '195B', '')
+
+def bootloader_write_configuration():
+    """ Write configuration """
+    return PowerCommand('S', 'BWF', '24B', '')
+
+def bootloader_jump_application():
+    """ Go from bootloader to applications """
+    return PowerCommand('S', 'BJA', '', '')

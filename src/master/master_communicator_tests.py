@@ -4,13 +4,13 @@ Tests for MasterCommunicator module.
 Created on Sep 10, 2012
 
 @author: fryckbos
-'''
+''' 
 import unittest
 import threading
 import time
 
 from master_communicator import MasterCommunicator
-from master_communicator import InMaintenanceModeException, BackgroundConsumer
+from master_communicator import InMaintenanceModeException, BackgroundConsumer, CrcCheckFailedException
 import master_api
 
 from serial_test import SerialMock, sin, sout
@@ -220,10 +220,10 @@ class MasterCommunicatorTest(unittest.TestCase):
         def callback(output):
             """ Callback that check if the correct result was returned for OL. """
             if got_output["phase"] == 1:
-                self.assertEquals([ (3, 12 * 10 / 6) ], output["outputs"])
+                self.assertEquals([ (3, int(12 * 10.0 / 6.0)) ], output["outputs"])
                 got_output["phase"] = 2
             elif got_output["phase"] == 2:
-                self.assertEquals([ (3, 12 * 10 / 6), (5, 6 * 10 / 6) ], output["outputs"])
+                self.assertEquals([ (3, int(12 * 10.0 / 6.0)), (5, int(6 * 10.0 / 6.0)) ], output["outputs"])
                 got_output["phase"] = 3
         
         comm.register_consumer(BackgroundConsumer(master_api.output_list(), 0, callback))
@@ -299,7 +299,35 @@ class MasterCommunicatorTest(unittest.TestCase):
         
         self.assertTrue(timeout)
         self.assertTrue('done' in watchdog)
+
+    def test_crc_checking(self):
+        """ Test the crc checking in the MasterCommunciator. """
+        action = master_api.sensor_humidity_list()
         
+        out_fields = {}
+        for i in range(0, 32):
+            out_fields['hum%d' % i] = i
+        out_fields['crc'] = [ ord('C'), 1, 240 ]
+        
+        out_fields2 = {}
+        for i in range(0, 32):
+            out_fields2['hum%d' % i] = 2 * i
+        out_fields2['crc'] = [ ord('C'), 0, 0 ]
+        
+        serial_mock = SerialMock([ sin(action.create_input(1)),
+                                   sout(action.create_output(1, out_fields)),
+                                   sin(action.create_input(2)),
+                                   sout(action.create_output(2, out_fields2)) ])
+        
+        comm = MasterCommunicator(serial_mock, init_master=False)
+        comm.start()
+        
+        output = comm.do_command(action)
+        self.assertEquals(0, output['hum0'])
+        self.assertEquals(1, output['hum1'])
+        
+        self.assertRaises(CrcCheckFailedException, lambda: comm.do_command(action))
+
 
 if __name__ == "__main__":
     #import sys;sys.argv = ['', 'Test.testName']

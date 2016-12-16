@@ -8,10 +8,11 @@ Created on Oct 24, 2012
 import time
 
 def main():
+    watchdog = open('/dev/watchdog', 'w')
+
     while True:
-        watchdog = open('/dev/watchdog', 'w')
-        watchdog.write("OM")
-        watchdog.close()
+        watchdog.write("O")
+        watchdog.flush()
         
         time.sleep(10)
     

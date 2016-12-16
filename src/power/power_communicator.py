@@ -10,20 +10,18 @@ LOGGER = logging.getLogger("openmotics")
 
 import traceback
 
-import os
-import sys
 import time
-from threading import Thread, Lock, Event
-from Queue import Queue, Empty
+from threading import Thread, Lock
 
 import power_api
 from power_command import crc7
 from serial_utils import printable, CommunicationTimedOutException
+from time_keeper import TimeKeeper
 
 class PowerCommunicator:
     """ Uses a serial port to communicate with the power modules. """
     
-    def __init__(self, serial, power_controller, verbose=False):
+    def __init__(self, serial, power_controller, verbose=False, time_keeper_period=60, address_mode_timeout=300):
         """ Default constructor.
         
         :param serial: Serial port to communicate with 
@@ -40,13 +38,22 @@ class PowerCommunicator:
         self.__address_mode = False
         self.__address_mode_stop = False
         self.__address_thread = None
+        self.__address_mode_timeout = address_mode_timeout
         self.__power_controller = power_controller
+        
+        self.__last_success = 0
+        
+        if time_keeper_period != 0:
+            self.__time_keeper = TimeKeeper(self, power_controller, time_keeper_period)
+        else:
+            self.__time_keeper = None
         
         self.__verbose = verbose
     
     def start(self):
         """ Start the power communicator. """
-        pass
+        if self.__time_keeper != None:
+            self.__time_keeper.start()
     
     def get_bytes_written(self):
         """ Get the number of bytes written to the power modules. """
@@ -55,6 +62,10 @@ class PowerCommunicator:
     def get_bytes_read(self):
         """ Get the number of bytes read from the power modules. """
         return self.__serial_bytes_read
+    
+    def get_seconds_since_last_success(self):
+        """ Get the number of seconds since the last successful communication. """
+        return time.time() - self.__last_success
     
     def __get_cid(self):
         """ Get a communication id """
@@ -89,17 +100,31 @@ class PowerCommunicator:
         if self.__address_mode:
             raise InAddressModeException()
         
-        with self.__serial_lock:
+        def do_once(address, cmd, *data):
             cid = self.__get_cid()
             bytes = cmd.create_input(address, cid, *data)
             
             self.__write_to_serial(bytes)
-            (header, data) = self.__read_from_serial()
             
-            if not cmd.check_header(header, address, cid):
-                raise Exception("Header did not match command")
-            
-            return cmd.read_output(data)
+            if address == power_api.BROADCAST_ADDRESS:
+                return None # No reply on broadcast messages !
+            else:
+                (header, data) = self.__read_from_serial()
+                
+                if not cmd.check_header(header, address, cid):
+                    raise Exception("Header did not match command")
+                
+                self.__last_success = time.time()
+                return cmd.read_output(data)
+        
+        with self.__serial_lock:
+            try:
+                return do_once(address, cmd, *data)
+            except:
+                # Communication timed out, or header did not match, try again in 100 ms.
+                print "First communication timed out !"
+                time.sleep(0.1)
+                return do_once(address, cmd, *data)
     
     def start_address_mode(self):
         """ Start address mode.
@@ -120,23 +145,25 @@ class PowerCommunicator:
     
     def __do_address_mode(self):
         """ This code is running in a thread when in address mode. """
+        expire = time.time() + self.__address_mode_timeout
         address_mode = power_api.set_addressmode()
         want_an_address = power_api.want_an_address()
         set_address = power_api.set_address()
         
         # AGT start
-        bytes = address_mode.create_input('E\xff', self.__get_cid(), power_api.ADDRESS_MODE)
+        bytes = address_mode.create_input(power_api.BROADCAST_ADDRESS, self.__get_cid(),
+                                          power_api.ADDRESS_MODE)
         self.__write_to_serial(bytes)
         
         # Wait for WAA and answer.
-        while not self.__address_mode_stop:
+        while not self.__address_mode_stop and time.time() < expire:
             try:
                 (header, _) = self.__read_from_serial()
                 
                 if not want_an_address.check_header_partial(header):
                     LOGGER.warning("Received non WAA message in address mode")
                 else:
-                    (old_address, cid) = (header[:2], header[2:3])
+                    (old_address, cid) = (ord(header[:2][1]), header[2:3])
                     # Ask power_controller for new address, and register it.
                     new_address = self.__power_controller.get_free_address()
                     
@@ -146,7 +173,7 @@ class PowerCommunicator:
                         self.__power_controller.register_power_module(new_address)
                     
                     # Send new address to power module 
-                    bytes = set_address.create_input(old_address, ord(cid), ord(new_address[1]))
+                    bytes = set_address.create_input(old_address, ord(cid), new_address)
                     self.__write_to_serial(bytes)
                 
             except CommunicationTimedOutException:
@@ -156,8 +183,12 @@ class PowerCommunicator:
                 LOGGER.warning("Got exception in address mode: " + str(e))
         
         # AGT stop
-        bytes = address_mode.create_input('E\xff', self.__get_cid(), power_api.NORMAL_MODE)
+        bytes = address_mode.create_input(power_api.BROADCAST_ADDRESS, self.__get_cid(),
+                                          power_api.NORMAL_MODE)
         self.__write_to_serial(bytes)
+    
+        self.__address_mode = False
+        self.__address_thread = None
     
     def stop_address_mode(self):
         """ Stop address mode. """
@@ -166,8 +197,6 @@ class PowerCommunicator:
         
         self.__address_mode_stop = True
         self.__address_thread.join()
-        self.__address_thread = None
-        self.__address_mode = False
     
     def in_address_mode(self):
         """ Returns whether the PowerCommunicator is in address mode. """
@@ -198,8 +227,8 @@ class PowerCommunicator:
                 print "%.3f read from power: %s" % (time.time(), printable(bytes))
 
             for byte in bytes:
-                if phase == 0:         ## Skip non 'S' bytes
-                    if byte == 'S':
+                if phase == 0:         ## Skip non 'R' bytes
+                    if byte == 'R':
                         phase = 1
                     else:
                         phase = 0

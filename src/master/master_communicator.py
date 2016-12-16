@@ -15,7 +15,7 @@ from threading import Thread, Lock, Event
 from Queue import Queue, Empty
 
 import master_api
-from master_command import printable
+from master_command import Field, printable
 from serial_utils import CommunicationTimedOutException
 
 class MasterCommunicator:
@@ -66,6 +66,8 @@ class MasterCommunicator:
         self.__passthrough_queue = Queue()
         self.__passthrough_done = Event()
     
+        self.__last_success = 0
+    
         self.__stop = False
         
         self.__read_thread = Thread(target=self.__read, name="MasterCommunicator read thread")
@@ -107,6 +109,10 @@ class MasterCommunicator:
     def get_bytes_read(self):
         """ Get the number of bytes read from the Master. """
         return self.__serial_bytes_read
+    
+    def get_seconds_since_last_success(self):
+        """ Get the number of seconds since the last successful communication. """
+        return time.time() - self.__last_success
     
     def __get_cid(self):
         """ Get a communication id """
@@ -157,10 +163,32 @@ class MasterCommunicator:
             self.__consumers.append(consumer)
             self.__write_to_serial(inp)
             try:
-                return consumer.get(timeout).fields
+                result = consumer.get(timeout).fields
+                if cmd.output_has_crc() and not self.__check_crc(cmd, result):
+                    raise CrcCheckFailedException()
+                else:
+                    self.__last_success = time.time()
+                    return result
             except CommunicationTimedOutException:
                 self.__timeouts += 1
                 raise
+
+    def __check_crc(self, cmd, result):
+        """ Check the CRC of the result of a certain master command.
+            
+        :param masterCommandSpec: instance of MasterCommandSpec.
+        :param result: A dict containing the result of the master command.
+        :returns: boolean
+        """
+        crc = 0
+        for field in cmd.output_fields:
+            if Field.is_crc(field):
+                break
+            else:
+                for byte in field.encode(result[field.name]):
+                    crc += ord(byte)
+        
+        return result['crc'] == [ 67, (crc / 256), (crc % 256) ]
 
     def __passthrough_wait(self):
         """ Waits until the passthrough is done or a timeout is reached. """
@@ -374,7 +402,12 @@ class MasterCommunicator:
 
 
 class InMaintenanceModeException(Exception):
-    """ An excpetion that is raised when the master is in maintenance mode. """
+    """ An exception that is raised when the master is in maintenance mode. """
+    def __init__(self):
+        Exception.__init__(self)
+
+class CrcCheckFailedException(Exception):
+    """ This exception is raised if we receive a bad message. """
     def __init__(self):
         Exception.__init__(self)
 

@@ -1,4 +1,7 @@
 """ Includes the WebService class """
+import logging
+LOGGER = logging.getLogger("openmotics")
+
 import threading
 import random
 import ConfigParser
@@ -6,6 +9,11 @@ import subprocess
 import os
 from types import MethodType
 import traceback
+import inspect
+import time
+import requests
+
+from gateway.scheduling import SchedulingController
 
 try:
     import json
@@ -31,7 +39,19 @@ def limit_floats(struct):
     else:
         return struct
 
+def boolean(object):
+    """ Convert object (bool, int, float, str) to bool (True of False). """
+    if type(object) == bool:
+        return object
+    elif type(object) == int:
+        return object != 0
+    elif type(object) == float:
+        return object != 0.0
+    elif type(object) == str or type(object) == unicode:
+        return object.lower() == 'true'
+
 import cherrypy
+from cherrypy.lib.static import serve_file
 
 import constants
 from master.master_communicator import InMaintenanceModeException
@@ -63,16 +83,29 @@ class GatewayApiWrapper:
             raise cherrypy.HTTPError(503, "In maintenance mode")
 
 
+def timestampFilter():
+    """ If the request parameters contain a "fe_time" variable, remove it from the parameters.
+    This parameter is used by the gateway frontend to bypass caching by certain browsers.
+    """
+    if "fe_time" in cherrypy.request.params:
+        del cherrypy.request.params["fe_time"]
+
+cherrypy.tools.timestampFilter = cherrypy.Tool('before_handler', timestampFilter)
+
+
 class WebInterface:
     """ This class defines the web interface served by cherrypy. """
 
-    def __init__(self, user_controller, gateway_api, maintenance_service, authorized_check):
+    def __init__(self, user_controller, gateway_api, scheduling_filename, maintenance_service,
+                 authorized_check):
         """ Constructor for the WebInterface.
         
         :param user_controller: used to create and authenticate users.
         :type user_controller: instance of :class`UserController`.
         :param gateway_api: used to communicate with the master.
         :type gateway_api: instance of :class`GatewayApi`.
+        :param scheduling_filename: the filename of the scheduling controller database.
+        :type scheduling_filename: string.
         :param maintenance_service: used when opening maintenance mode.
         :type maintenance_server: instance of :class`MaintenanceService`.
         :param authorized_check: check if the gateway is in authorized mode.
@@ -80,6 +113,11 @@ class WebInterface:
         """
         self.__user_controller = user_controller
         self.__gateway_api = GatewayApiWrapper(gateway_api)
+        
+        self.__scheduling_controller = SchedulingController(scheduling_filename,
+                                                            self.__exec_scheduled_action)
+        self.__scheduling_controller.start()
+        
         self.__maintenance_service = maintenance_service
         self.__authorized_check = authorized_check
 
@@ -105,7 +143,7 @@ class WebInterface:
         
         :returns: msg (String)
         """
-        return self.__success(msg="OpenMotics is up and running !")
+        return serve_file('/opt/openmotics/static/index.html', content_type='text/html')
     
     @cherrypy.expose
     def login(self, username, password):
@@ -121,9 +159,29 @@ class WebInterface:
 
     @cherrypy.expose
     def create_user(self, username, password):
-        """ Create a new user using a username and a password. """
+        """ Create a new user using a username and a password. Only possible in authorized mode. """
         if self.__authorized_check():
             self.__user_controller.create_user(username, password, 'admin', True)
+            return self.__success()
+        else:
+            raise cherrypy.HTTPError(401, "Unauthorized")
+
+    @cherrypy.expose
+    def get_usernames(self):
+        """ Get the names of the users on the gateway. Only possible in authorized mode.
+        
+        :returns: dict with key 'usernames' (array of strings).
+        """
+        if self.__authorized_check():
+            return self.__success(usernames=self.__user_controller.get_usernames())
+        else:
+            raise cherrypy.HTTPError(401, "Unauthorized")
+
+    @cherrypy.expose
+    def remove_user(self, username):
+        """ Remove a user. Only possible in authorized mode. """
+        if self.__authorized_check():
+            self.__user_controller.remove_user(username)
             return self.__success()
         else:
             raise cherrypy.HTTPError(401, "Unauthorized")
@@ -195,6 +253,42 @@ class WebInterface:
                                         int(output_nr), int(floor_level)))
     
     @cherrypy.expose
+    def set_all_lights_off(self, token):
+        """ Turn all lights off.
+        
+        :returns: empty dict.
+        """
+        self.__check_token(token)
+        return self.__wrap(lambda: self.__gateway_api.set_all_lights_off())
+    
+    @cherrypy.expose
+    def set_all_lights_floor_off(self, token, floor):
+        """ Turn all lights on a given floor off.
+        
+        :returns: empty dict.
+        """
+        self.__check_token(token)
+        return self.__wrap(lambda: self.__gateway_api.set_all_lights_floor_off(int(floor)))
+    
+    @cherrypy.expose
+    def set_all_lights_floor_on(self, token, floor):
+        """ Turn all lights on a given floor on.
+        
+        :returns: empty dict.
+        """
+        self.__check_token(token)
+        return self.__wrap(lambda: self.__gateway_api.set_all_lights_floor_on(int(floor)))
+    
+    @cherrypy.expose
+    def get_last_inputs(self, token):
+        """ Get the 5 last pressed inputs during the last 5 minutes. 
+        
+        :returns: dict with 'inputs' key containing a list of tuples (input, output).
+        """
+        self.__check_token(token)
+        return self.__success(inputs=self.__gateway_api.get_last_inputs())
+    
+    @cherrypy.expose
     def get_thermostats(self, token):
         """ Get the configuration of the thermostats.
         
@@ -209,11 +303,27 @@ class WebInterface:
         'wed_start_d2', 'wed_stop_d2', 'thu_start_d1', 'thu_stop_d1', 'thu_start_d2', \
         'thu_stop_d2', 'fri_start_d1', 'fri_stop_d1', 'fri_start_d2', 'fri_stop_d2', \
         'sat_start_d1', 'sat_stop_d1', 'sat_start_d2', 'sat_stop_d2', 'sun_start_d1', \
-        'sun_stop_d1', 'sun_start_d2', 'sun_stop_d2' and 'crc'.
+        'sun_stop_d1', 'sun_start_d2', 'sun_stop_d2', 'mon_temp_d1', 'tue_temp_d1', \
+        'wed_temp_d1', 'thu_temp_d1', 'fri_temp_d1', 'sat_temp_d1', 'sun_temp_d1', 'mon_temp_d2', \
+        'tue_temp_d2', 'wed_temp_d2', 'thu_temp_d2', 'fri_temp_d2', 'sat_temp_d2', 'sun_temp_d2', \
+        'mon_temp_n', 'tue_temp_n', 'wed_temp_n', 'thu_temp_n', 'fri_temp_n', 'sat_temp_n', \
+        'sun_temp_n'.
         """
         self.__check_token(token)
         return self.__wrap(self.__gateway_api.get_thermostats)
+    
+    @cherrypy.expose
+    def get_thermostats_short(self, token):
+        """ Get the short configuration of the thermostats.
         
+        :returns: dict with global status information about the thermostats: 'thermostats_on',
+        'automatic' and 'setpoint' and a list ('thermostats') with status information for all
+        thermostats, each element in the list is a dict with the following keys:
+        'thermostat', 'act', 'csetp', 'output0', 'output1', 'outside', 'mode'.
+        """
+        self.__check_token(token)
+        return self.__wrap(self.__gateway_api.get_thermostats_short)
+    
     @cherrypy.expose
     def set_programmed_setpoint(self, token, thermostat, setpoint, temperature):
         """ Set a programmed setpoint of a thermostat.
@@ -245,69 +355,53 @@ class WebInterface:
                                             int(thermostat), float(temperature)))
     
     @cherrypy.expose
-    def set_setpoint_start_time(self, token, thermostat, day_of_week, setpoint, time):
-        """ Set the start time of setpoint 0 or 2 for a certain day of the week and thermostat.
+    def set_thermostat_automatic_configuration(self, token, thermostat, day_of_week,
+                temperature_night, start_time_day1, stop_time_day1, temperature_day1,
+                start_time_day2, stop_time_day2, temperature_day2):
+        """ Set the configuration for automatic mode for a certain thermostat for a given day of 
+        the week. This contains the night and 2 day temperatures and the start and stop times for
+        the 2 day periods.
         
         :param thermostat: The id of the thermostat to set
         :type thermostat: Integer [0, 24]
         :param day_of_week: The day of the week
         :type day_of_week: Integer [1, 7]
-        :param setpoint: The id of the setpoint to set
-        :type setpoint: Integer: 0 or 2
-        :param time: The start or end (see start) time of the interval
-        :type time: String HH:MM format
-        
-        :return: dict with 'thermostat', 'config' and 'temp'
+        :param temperature_night: The low temperature (in degrees Celcius)
+        :type temperature_night: float
+        :param start_time_day1: The start time of the first high period.
+        :type start_time_day1: String HH:MM format
+        :param stop_time_day1: The stop time of the first high period.
+        :type stop_time_day1: String HH:MM format
+        :param temperature_day1: The temperature for the first high interval (in degrees Celcius)
+        :type temperature_day1: float
+        :param start_time_day2: The start time of the second high period.
+        :type start_time_day2: String HH:MM format
+        :param stop_time_day2: The stop time of the second high period.
+        :type stop_time_day2: String HH:MM format
+        :param temperature_day2: The temperature for the second high interval (in degrees Celcius)
+        :type temperature_day2: float
+        :return: empty dict
         """
         self.__check_token(token)
-        return self.__wrap(lambda: self.__gateway_api.set_setpoint_start_time(
-                                            int(thermostat), int(day_of_week), int(setpoint), time))
-    
+        return self.__wrap(
+            lambda: self.__gateway_api.set_thermostat_automatic_configuration(
+                int(thermostat), int(day_of_week), float(temperature_night),
+                start_time_day1, stop_time_day1, float(temperature_day1),
+                start_time_day2, stop_time_day2, float(temperature_day2)))
+
     @cherrypy.expose
-    def set_all_lights_off(self, token):
-        """ Turn all lights off.
+    def set_thermostat_automatic_configuration_batch(self, token, batch):
+        """ Set a batch of automatic configurations. For more info see
+        set_thermostat_automatic_configuration.
         
-        :returns: empty dict.
+        :param batch: Json encoded array of dictionaries with keys 'thermostat', 'day_of_week', \
+        'temperature_night', 'start_time_day1', 'stop_time_day1', 'temperature_day1', \
+        'start_time_day2', 'stop_time_day2', 'temperature_day2'.
+        :return: empty dict
         """
         self.__check_token(token)
-        return self.__wrap(lambda: self.__gateway_api.set_all_lights_off())
-    
-    @cherrypy.expose
-    def set_all_lights_floor_off(self, token, floor):
-        """ Turn all lights on a given floor off.
-        
-        :returns: empty dict.
-        """
-        self.__check_token(token)
-        return self.__wrap(lambda: self.__gateway_api.set_all_lights_floor_off(int(floor)))
-    
-    @cherrypy.expose
-    def set_all_lights_floor_on(self, token, floor):
-        """ Turn all lights on a given floor on.
-        
-        :returns: empty dict.
-        """
-        self.__check_token(token)
-        return self.__wrap(lambda: self.__gateway_api.set_all_lights_floor_on(int(floor)))
-    
-    @cherrypy.expose
-    def set_setpoint_stop_time(self, token, thermostat, day_of_week, setpoint, time):
-        """ Set the stop time of setpoint 0 or 2 for a certain day of the week and thermostat.
-        
-        :param thermostat: The id of the thermostat to set
-        :type thermostat: Integer [0, 24]
-        :param day_of_week: The day of the week
-        :type day_of_week: Integer [1, 7]
-        :param setpoint: The id of the setpoint to set
-        :type setpoint: Integer: 0 or 2
-        :param time: The start or end (see start) time of the interval
-        :type time: String HH:MM format
-        
-        :return: dict with 'thermostat', 'config' and 'temp'
-        """
-        self.__check_token(token)
-        return self.__wrap(lambda: self.__gateway_api.set_setpoint_stop_time(
-                                            int(thermostat), int(day_of_week), int(setpoint), time))
+        return self.__wrap(
+            lambda: self.__gateway_api.set_thermostat_automatic_configuration_batch(json.loads(batch)))
 
     @cherrypy.expose
     def set_thermostat_mode(self, token, thermostat_on, automatic, setpoint):
@@ -325,7 +419,7 @@ class WebInterface:
         """
         self.__check_token(token)
         return self.__wrap(lambda: self.__gateway_api.set_thermostat_mode(
-                       thermostat_on.lower() == 'true', automatic.lower() == 'true', int(setpoint)))
+                       boolean(thermostat_on), boolean(automatic), int(setpoint)))
     
     @cherrypy.expose
     def set_thermostat_threshold(self, token, threshold):
@@ -393,26 +487,61 @@ class WebInterface:
         return self.__wrap(lambda: self.__gateway_api.master_restore(data))
     
     @cherrypy.expose
-    def get_power_modules(self, token):
-        """ Get information on the power modules.
+    def get_errors(self, token):
+        """ Get the number of seconds since the last successul communication with the master and
+        power modules (master_last_success, power_last_success) and the error list per module
+        (input and output modules). The modules are identified by O1, O2, I1, I2, ... 
         
-        :returns: dict with key 'modules' (List of dictionaries with the following keys: id', \
-        'name', 'address', 'input0', 'input1', 'input2', 'input3', 'input4', 'input5', \
-        'input6', 'input7'.
+        :returns: dict with 'errors' key (contains list of tuples (module, nr_errors)), \
+        'master_last_success' and 'power_last_success'.
+        """
+        self.__check_token(token)
+        try:
+            errors = self.__gateway_api.master_error_list()
+        except Exception:
+            # In case of communications problems with the master.
+            errors = []
+        
+        master_last = self.__gateway_api.master_last_success()
+        power_last = self.__gateway_api.power_last_success()
+        
+        return self.__success(errors=errors, master_last_success=master_last, power_last_success=power_last)
+    
+    @cherrypy.expose
+    def master_clear_error_list(self, token):
+        """ Clear the number of errors.
+        
+        :returns: empty dict.
+        """
+        self.__check_token(token)
+        return self.__wrap(lambda: self.__gateway_api.master_clear_error_list())
+    
+    @cherrypy.expose
+    def get_power_modules(self, token):
+        """ Get information on the power modules. The times format is a comma seperated list of 
+        HH:MM formatted times times (index 0 = start Monday, index 1 = stop Monday,
+        index 2 = start Tuesday, ...).
+        
+        :returns: List of dictionaries with the following keys: 'id', 'name', 'address', \
+        'input0', 'input1', 'input2', 'input3', 'input4', 'input5', 'input6', 'input7', 'sensor0', \
+        'sensor1', 'sensor2', 'sensor3', 'sensor4', 'sensor5', 'sensor6', 'sensor7', 'times0', \
+        'times1', 'times2', 'times3', 'times4', 'times5', 'times6', 'times7'.
         """
         self.__check_token(token)
         return self.__success(modules=self.__gateway_api.get_power_modules())
     
     @cherrypy.expose
     def set_power_modules(self, token, modules):
-        """ Set information (module and input names) for the power modules.
+        """ Set information for the power modules.
         
-        :param modules: list of dicts with keys: 'id', 'name', 'input0', 'input1', 'input2', \
-        'input3', 'input4', 'input5', 'input6', 'input7'.
+        :param modules: list of dicts with keys: 'id', 'name', 'input0', 'input1', \
+        'input2', 'input3', 'input4', 'input5', 'input6', 'input7', 'sensor0', 'sensor1', \
+        'sensor2', 'sensor3', 'sensor4', 'sensor5', 'sensor6', 'sensor7', 'times0', 'times1', \
+        'times2', 'times3', 'times4', 'times5', 'times6', 'times7'.
         :returns: empty dict.
         """
         self.__check_token(token)
-        return self.__wrap(lambda: self.__gateway_api.set_power_modules(modules))
+        return self.__wrap(lambda: self.__gateway_api.set_power_modules(json.loads(modules)))
     
     @cherrypy.expose
     def get_realtime_power(self, token):
@@ -422,7 +551,16 @@ class WebInterface:
         [voltage, frequency, current, power].
         """
         self.__check_token(token)
-        return self.__wrap(lambda: self.__gateway_api.get_realtime_power())
+        return self.__wrap(self.__gateway_api.get_realtime_power)
+    
+    @cherrypy.expose
+    def get_total_energy(self, token):
+        """ Get the total energy (kWh) consumed by the power modules.
+        
+        :returns: dict with the module id as key and the following array as value: [day, night]. 
+        """
+        self.__check_token(token)
+        return self.__wrap(self.__gateway_api.get_total_energy)
     
     @cherrypy.expose
     def start_power_address_mode(self, token):
@@ -431,7 +569,7 @@ class WebInterface:
         :returns: empty dict.
         """
         self.__check_token(token)
-        return self.__wrap(lambda: self.__gateway_api.start_power_address_mode())
+        return self.__wrap(self.__gateway_api.start_power_address_mode)
     
     @cherrypy.expose
     def stop_power_address_mode(self, token):
@@ -440,7 +578,68 @@ class WebInterface:
         :returns: empty dict.
         """
         self.__check_token(token)
-        return self.__wrap(lambda: self.__gateway_api.stop_power_address_mode())
+        return self.__wrap(self.__gateway_api.stop_power_address_mode)
+    
+    @cherrypy.expose
+    def in_power_address_mode(self, token):
+        """ Check if the power modules are in address mode
+        
+        :returns: dict with key 'address_mode' and value True or False.
+        """
+        self.__check_token(token)
+        return self.__wrap(self.__gateway_api.in_power_address_mode)
+    
+    @cherrypy.expose
+    def get_power_peak_times(self, token):
+        """ Get the start and stop times of the peak time of the day.
+        
+        :returns: dict with key 'times' and value array containing 7 tuples (start time, stop time)
+        for Monday-Sunday.
+        """
+        self.__check_token(token)
+        return self.__wrap(self.__gateway_api.get_power_peak_times)
+    
+    @cherrypy.expose
+    def set_power_peak_times(self, token, times):
+        """ Set the start and stop times of the peak time configuration.
+        
+        :type times: string
+        :param times: comma seperated string containing: hour of start of peak time on Monday, \
+        hour of end of peak time on Monday, hour of start of peak time on Tuesday, ... 
+        :returns: empty dict
+        """
+        self.__check_token(token)
+        
+        parts = times.split(",")
+        times_parsed = [ ( int(parts[0]),  int(parts[1]) ), ( int(parts[2]),  int(parts[3]) ),
+                         ( int(parts[4]),  int(parts[5]) ), ( int(parts[6]),  int(parts[7]) ),
+                         ( int(parts[8]),  int(parts[9]) ), ( int(parts[10]), int(parts[11]) ),
+                         ( int(parts[12]), int(parts[13]) ) ]
+        
+        return self.__wrap(lambda: self.__gateway_api.set_power_peak_times(times_parsed)) 
+    
+    @cherrypy.expose
+    def set_power_voltage(self, token, module_id, voltage):
+        """ Set the voltage for a given module.
+        
+        :param module_id: The id of the power module.
+        :type module_id: int
+        :param voltage: The voltage to set for the power module.
+        :type voltage: float
+        :returns: empty dict
+        """
+        self.__check_token(token)
+        return self.__wrap(lambda: self.__gateway_api.set_power_voltage(int(module_id), float(voltage)))
+    
+    @cherrypy.expose
+    def get_pulse_counters(self, token):
+        """ Get the id, name, linked input and count value of the pulse counters.
+        
+        :returns: dict with key 'counters' (value is array with dicts containing 'id', 'name', \
+        'input' and 'count'.) 
+        """
+        self.__check_token(token)
+        return self.__success(counters=self.__gateway_api.get_pulse_counters())
     
     @cherrypy.expose
     def get_pulse_counter_values(self, token):
@@ -507,6 +706,165 @@ class WebInterface:
         
         return self.__success(output=output)
     
+    @cherrypy.expose
+    def set_timezone(self, token, timezone):
+        """ Set the timezone for the gateway.
+        
+        :type timezone: string
+        :param timezone: in format 'Continent/City'.
+        :returns: dict with 'msg' key.
+        """
+        self.__check_token(token)
+        
+        timezone_file_path = "/usr/share/zoneinfo/" + timezone
+        if os.path.isfile(timezone_file_path):
+            if os.path.exists(constants.get_timezone_file()):
+                os.remove(constants.get_timezone_file())
+            
+            os.symlink(timezone_file_path, constants.get_timezone_file())
+            
+            self.__gateway_api.sync_master_time()
+            return self.__success(msg='Timezone set successfully')
+        else:
+            return self.__error("Could not find timezone '" + timezone + "'")
+    
+    @cherrypy.expose
+    def get_timezone(self, token):
+        """ Get the timezone for the gateway.
+        
+        :returns: dict with 'timezone' key containing the timezone in 'Continent/City' format.
+        """
+        self.__check_token(token)
+        
+        path = os.path.realpath(constants.get_timezone_file())
+        if path.startswith("/usr/share/zoneinfo/"):
+            return self.__success(timezone=path[20:])
+        else:
+            return self.__error("Could not determine timezone.")
+    
+    @cherrypy.expose
+    def do_url_action(self, token, url, method='GET', headers=None, data=None, auth=None, timeout=10):
+        """ Execute an url action.
+        
+        :param url: The url to fetch.
+        :param method: (optional) The http method (defaults to GET).
+        :param headers: (optional) The http headers to send (format: json encoded dict)
+        :param data: (optional) Bytes to send in the body of the request.
+        :param auth: (optional) Json encoded tuple (username, password).
+        :param timeout: (optional) Timeout in seconds for the http request (default = 10 sec).
+        :returns: dict with 'headers' and 'data' keys.
+        """
+        self.__check_token(token)
+        
+        try:
+            headers = json.loads(headers) if headers != None else None
+            auth = json.loads(auth) if auth != None else None
+            
+            r = requests.request(method, url, headers=headers, data=data, auth=auth, timeout=timeout)
+            
+            if r.status_code == requests.codes.ok:
+                return self.__success(headers=r.headers._store, data=r.text)  
+            else:
+                return self.__error("Got bad resonse code: %d" % r.status_code)
+        except Exception as e:
+            return self.__error("Got exception '%s'" % str(e))
+    
+    @cherrypy.expose
+    def schedule_action(self, token, timestamp, action):
+        """ Schedule an action at a given point in the future. An action can be any function of the
+        OpenMotics webservice. The action is JSON encoded dict with keys: 'type', 'action', 'params'
+        and 'description'. At the moment 'type' can only be 'basic'. 'action' contains the name of
+        the function on the webservice. 'params' is a dict maps the names of the parameters given to
+        the function to their desired values. 'description' can be used to identify the scheduled
+        action.
+         
+        :param timestamp: UNIX timestamp.
+        :type timestamp: integer.
+        :param action: JSON encoded dict.
+        :type action: string.
+        """
+        self.__check_token(token)
+        timestamp = int(timestamp)
+        action = json.loads(action)
+        
+        if not ('type' in action and action['type'] == 'basic' and 'action' in action):
+            self.__error("action does not contain the required keys 'type' and 'action'")
+        else:
+            func_name = action['action']
+            if func_name in WebInterface.__dict__:
+                func = WebInterface.__dict__[func_name]
+                if 'exposed' in func.__dict__ and func.exposed == True:
+                    params = action.get('params', {})
+                    
+                    args = inspect.getargspec(func).args
+                    args = [ arg for arg in args if arg != "token" and arg != "self" ]
+                    
+                    if len(args) != len(params):
+                        return self.__error("The number of params (%d) does not match the number "
+                                            "of arguments (%d) for function %s" %
+                                            (len(params), len(args), func_name))
+                    
+                    bad_args = [ arg for arg in args if arg not in params ]
+                    if len(bad_args) > 0:
+                        return self.__error("The following param are missing for function %s: %s" %
+                                            (func_name, str(bad_args)))
+                    else:
+                        description = action.get('description', '')
+                        action = json.dumps({ 'type' : 'basic', 'action': func_name,
+                                              'params': params })
+                        
+                        self.__scheduling_controller.schedule_action(timestamp, description, action)
+                        
+                        return self.__success()
+                    
+            return self.__error("Could not find function WebInterface.%s" % func_name)
+                    
+    @cherrypy.expose
+    def list_scheduled_actions(self, token):
+        """ Get a list of all scheduled actions.
+        :returns: dict with key 'actions' containing a list of dicts with keys: 'timestamp',
+        'from_now', 'id', 'description' and 'action'. 'timestamp' is the UNIX timestamp when the 
+        action will be executed. 'from_now' is the number of seconds until the action will be
+        scheduled. 'id' is a unique integer for the scheduled action. 'description' contains a
+        user set description for the action. 'action' contains the function and params that will be 
+        used to execute the scheduled action. 
+        """
+        self.__check_token(token)
+        now = time.time()
+        actions = self.__scheduling_controller.list_scheduled_actions()
+        for action in actions:
+            action['from_now'] = action['timestamp'] - now
+        
+        return self.__success(actions=actions)
+    
+    @cherrypy.expose
+    def remove_scheduled_action(self, token, id):
+        """ Remove a scheduled action when the id of the action is given.
+        :param id: the id of the scheduled action to remove.
+        :returns: { 'success' : True }
+        """
+        self.__check_token(token)
+        self.__scheduling_controller.remove_scheduled_action(id)
+        return self.__success() 
+    
+    def __exec_scheduled_action(self, action):
+        """ Callback for the SchedulingController executing a scheduled actions.
+        :param action: JSON encoded action.
+        """
+        action = json.loads(action)
+        func_name = action['action']
+        kwargs = action['params']
+        kwargs['self'] = self
+        kwargs['token'] = None
+        
+        if func_name in WebInterface.__dict__:
+            try:
+                WebInterface.__dict__[func_name](**kwargs)
+            except:
+                LOGGER.exception("Exception while executing scheduled action")
+        else:
+            LOGGER.error("Could not find function WebInterface.%s" % func_name)
+        
     def __wrap(self, func):
         """ Wrap a gateway_api function and catches a possible ValueError. 
         
@@ -516,25 +874,36 @@ class WebInterface:
             ret = func()
         except ValueError:
             return self.__error(traceback.format_exc())
+        except:
+            traceback.print_exc()
+            raise
         else:
             return self.__success(**ret)
-
+    
 
 class WebService:
     """ The web service serves the gateway api over http. """
     
     name = 'web'
 
-    def __init__(self, user_controller, gateway_api, maintenance_service, authorized_check):
+    def __init__(self, user_controller, gateway_api, scheduling_filename, maintenance_service,
+                 authorized_check):
         self.__user_controller = user_controller
         self.__gateway_api = gateway_api
+        self.__scheduling_filename = scheduling_filename 
         self.__maintenance_service = maintenance_service
         self.__authorized_check = authorized_check
 
     def run(self):
         """ Run the web service: start cherrypy. """
         cherrypy.tree.mount(WebInterface(self.__user_controller, self.__gateway_api,
-                                         self.__maintenance_service, self.__authorized_check))
+                                         self.__scheduling_filename, self.__maintenance_service,
+                                         self.__authorized_check),
+                            config={'/static' : {'tools.staticdir.on' : True,
+                                                 'tools.staticdir.dir' : '/opt/openmotics/static'},
+                                    '/' : { 'tools.timestampFilter.on' : True }
+                                    }
+                            )
         
         cherrypy.server.unsubscribe()
 
