@@ -562,7 +562,7 @@ class WebInterface(object):
     @cherrypy.expose
     def do_basic_action(self, token, action_type, action_number):
         """ Execute a basic action.
-        
+
         :param action_type: The type of the action as defined by the master api.
         :type action_type: Integer [0, 254]
         :param action_number: The number provided to the basic action, its meaning depends on the \
@@ -1565,6 +1565,42 @@ class WebInterface(object):
         """
         self.check_token(token)
         return self.__success(counters=self.__gateway_api.get_pulse_counter_status())
+
+    @cherrypy.expose
+    def get_energy_time(self, token, module_id, input_id=None):
+        """ Gets 1 period of given module and optional input (no input means all).
+
+        :param token: The authentication token
+        :type token: str
+        :param module_id: The id of the power module.
+        :type module_id: Byte
+        :param input_id: The id of the input on the given power module
+        :type input_id: Byte or None
+        :returns: A dict with the input_id(s) as key, and as value another dict with
+                  (up to 80) voltage and current samples.
+        """
+        self.check_token(token)
+        module_id = int(module_id)
+        input_id = int(input_id) if input_id is not None else None
+        return self.__wrap(lambda: self.__gateway_api.get_energy_time(module_id, input_id))
+
+    @cherrypy.expose
+    def get_energy_frequency(self, token, module_id, input_id=None):
+        """ Gets the frequency components for a given module and optional input (no input means all)
+
+        :param token: The authentication token
+        :type token: str
+        :param module_id: The id of the power module
+        :type module_id: Byte
+        :param input_id: The id of the input on the given power module
+        :type input_id: Byte or None
+        :returns: A dict with the input_id(s) as key, and as value another dict with for
+                  voltage and current the 20 frequency components
+        """
+        self.check_token(token)
+        module_id = int(module_id)
+        input_id = int(input_id) if input_id is not None else None
+        return self.__wrap(lambda: self.__gateway_api.get_energy_frequency(module_id, input_id))
 
     @cherrypy.expose
     def get_version(self, token):
