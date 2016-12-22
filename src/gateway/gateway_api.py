@@ -369,7 +369,7 @@ class GatewayApi(object):
     def module_discover_status(self):
         """ Gets the status of the module discover mode on the master.
 
-        :returns diict with 'running': True|False
+        :returns dict with 'running': True|False
         """
         return {'running': self.__discover_mode_timer is not None}
 
