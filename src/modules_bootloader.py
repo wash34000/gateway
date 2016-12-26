@@ -119,15 +119,17 @@ def pretty_address(address):
     return "%s.%d.%d.%d" % (address[0], ord(address[1]), ord(address[2]), ord(address[3]))
 
 
-def calc_crc(ihex):
+def calc_crc(ihex, blocks):
     """ Calculate the crc for a hex file.
 
     :param ihex: intelhex file.
     :type ihex: IntelHex
+    :param blocks: the number of blocks.
+    :type blocks: Integer
     :returns: tuple containing 4 crc bytes.
     """
     sum = 0
-    for i in range(64 * 384 - 8):
+    for i in range(64 * blocks - 8):
         sum += ihex[i]
 
     crc0 = (sum & (255 << 24)) >> 24
@@ -169,7 +171,7 @@ def do_command(master_communicator, action, retry=True):
         else:
             raise exception
 
-def bootload(master_communicator, address, version, ihex, crc):
+def bootload(master_communicator, address, version, ihex, crc, blocks):
     """ Bootload 1 module.
 
     :param master_communicator: Used to communicate with the master.
@@ -182,6 +184,8 @@ def bootload(master_communicator, address, version, ihex, crc):
     :type ihex: IntelHex
     :param crc: The crc for the hex file
     :type crc: tuple of 4 bytes
+    :param blocks: The number of blocks to write
+    :type blocks:
     """
     print "Going to bootloader"
     try:
@@ -208,10 +212,10 @@ def bootload(master_communicator, address, version, ihex, crc):
         master_communicator.do_command(master_api.change_communication_mode_to_long())
 
         print "Writing firmware data"
-        for i in range(384):
+        for i in range(blocks):
             bytes = ""
             for j in range(64):
-                if i == 383 and j >= 56:
+                if i == blocks - 1 and j >= 56:
                     # The first 8 bytes (the jump) is placed at the end of the code.
                     bytes += chr(ihex[j - 56])
                 else: 
@@ -243,7 +247,7 @@ def bootload(master_communicator, address, version, ihex, crc):
 def bootload_modules(type, filename, version, verbose=False):
     """ Bootload all modules of the given type with the firmware in the given filename.
 
-    :param type: Type of the modules (o, d, i, t)
+    :param type: Type of the modules (o, d, i, t, c)
     :type type: chr
     :param filename: The filename for the hex file to load
     :type filename: string
@@ -265,12 +269,13 @@ def bootload_modules(type, filename, version, verbose=False):
 
     print addresses
 
+    blocks = 896 if type == 'c' else 384
     ihex = intelhex.IntelHex(filename)
-    crc = calc_crc(ihex)
+    crc = calc_crc(ihex, blocks)
 
     for address in addresses:
         print "Bootloading module %s" % pretty_address(address)
-        bootload(master_communicator, address, version, ihex, crc)
+        bootload(master_communicator, address, version, ihex, crc, blocks)
 
 
 def main():
@@ -278,8 +283,8 @@ def main():
     parser = argparse.ArgumentParser(description='Tool to bootload the slave modules '
                                                  '(output, dimmer, input and temperature).')
 
-    parser.add_argument('-t', '--type', dest='type', choices=['o', 'd', 'i', 't'],
-                        required=True, help='the type of module to bootload (choices: o, d, i, t)')
+    parser.add_argument('-t', '--type', dest='type', choices=['o', 'd', 'i', 't', 'c'],
+                        required=True, help='the type of module to bootload (choices: o, d, i, t, c)')
     parser.add_argument('-f', '--file', dest='file', required=True,
                         help='the filename of the hex file to bootload')
     parser.add_argument('-v', '--version', dest='version', required=True,
