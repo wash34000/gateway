@@ -21,7 +21,7 @@ Contains the EepromModels.
 from eeprom_controller import EepromModel, EepromAddress, EepromId, EepromString, \
                               EepromWord, EepromByte, EepromActions, EepromTemp, EepromTime, \
                               EepromCSV, CompositeDataType, EepromSignedTemp, EepromIBool, \
-                              EepromEnum
+                              EepromEnum, EextByte, EextString
 
 
 def page_per_module(module_size, start_bank, start_offset, field_size):
@@ -61,6 +61,19 @@ def get_led_functions():
     return led_functions
 
 
+class FloorConfiguration(EepromModel):
+    """ Models a floor. A floor has a name. """
+    id = EepromId(10)
+    name = EextString()
+
+
+class RoomConfiguration(EepromModel):
+    """ Models a room. A room has a name and is located on a floor. """
+    id = EepromId(100)
+    name = EextString()
+    floor = EextByte()
+
+
 class OutputConfiguration(EepromModel):
     """ Models an output. The maximum number of inputs is 240 (30 modules), the actual number of
     outputs is 8 times the number of output modules (eeprom address 0, 2).
@@ -79,6 +92,7 @@ class OutputConfiguration(EepromModel):
     can_led_3_function = EepromEnum(gen_address(221, 32, 5), get_led_functions())
     can_led_4_id = EepromByte(gen_address(221, 32, 6))
     can_led_4_function = EepromEnum(gen_address(221, 32, 7), get_led_functions())
+    room = EextByte()
 
 
 class InputConfiguration(EepromModel):
@@ -91,6 +105,7 @@ class InputConfiguration(EepromModel):
     action = EepromByte(page_per_module(8, 2, 4, 1))
     basic_actions = EepromActions(15, page_per_module(8, 2, 12, 30))
     invert = EepromByte(lambda id: (32, id))
+    room = EextByte()
 
 
 class CanLedConfiguration(EepromModel):
@@ -109,6 +124,7 @@ class CanLedConfiguration(EepromModel):
     can_led_3_function = EepromEnum(gen_address(229, 32, 5), get_led_functions())
     can_led_4_id = EepromByte(gen_address(229, 32, 6))
     can_led_4_function = EepromEnum(gen_address(229, 32, 7), get_led_functions())
+    room = EextByte()
 
 
 class ShutterConfiguration(EepromModel):
@@ -122,6 +138,7 @@ class ShutterConfiguration(EepromModel):
     name = EepromString(16, page_per_module(4, 33, 189, 16))
     group_1 = EepromByte(lambda id: (63, (id * 2) + 0))
     group_2 = EepromByte(lambda id: (63, (id * 2) + 1))
+    room = EextByte()
 
 
 class ShutterGroupConfiguration(EepromModel):
@@ -129,6 +146,7 @@ class ShutterGroupConfiguration(EepromModel):
     id = EepromId(30)
     timer_up = EepromByte(lambda id: (64, (id * 2) + 0))
     timer_down = EepromByte(lambda id: (64, (id * 2) + 1))
+    room = EextByte()
 
 
 class ThermostatConfiguration(EepromModel):
@@ -212,12 +230,14 @@ class ThermostatConfiguration(EepromModel):
          ('stop_d2', EepromTime(lambda id: (192, (4*id)+3))),
          ('temp_d2', EepromTemp(lambda id: (197, id + 192)))
         ])
+    room = EextByte()
 
 
 class PumpGroupConfiguration(EepromModel):
     """ Models a pump group. The maximum number of pump groups is 8. """
     id = EepromId(8)
     outputs = EepromCSV(32, lambda id: (143, id * 32))
+    room = EextByte()
 
 
 class CoolingConfiguration(EepromModel):
@@ -301,12 +321,14 @@ class CoolingConfiguration(EepromModel):
          ('stop_d2', EepromTime(lambda id: (209, (4*id)+3))),
          ('temp_d2', EepromTemp(lambda id: (211, id + 192)))
         ])
+    room = EextByte()
 
 
 class CoolingPumpGroupConfiguration(EepromModel):
     """ Models a pump group for cooling. The maximum number of pump groups is 8. """
     id = EepromId(8)
     outputs = EepromCSV(32, lambda id: (202, id * 32))
+    room = EextByte()
 
 
 class RTD10HeatingConfiguration(EepromModel):
@@ -320,6 +342,7 @@ class RTD10HeatingConfiguration(EepromModel):
     on_off_output = EepromByte(lambda id: (215, 100 + id))
     poke_angle_output = EepromByte(lambda id: (216, id))
     poke_angle_value = EepromByte(lambda id: (216, 24 + id))
+    room = EextByte()
 
 
 class RTD10CoolingConfiguration(EepromModel):
@@ -333,6 +356,7 @@ class RTD10CoolingConfiguration(EepromModel):
     on_off_output = EepromByte(lambda id: (219, 100 + id))
     poke_angle_output = EepromByte(lambda id: (220, id))
     poke_angle_value = EepromByte(lambda id: (220, 24 + id))
+    room = EextByte()
 
 
 class GlobalRTD10Configuration(EepromModel):
@@ -379,6 +403,7 @@ class SensorConfiguration(EepromModel):
     name = EepromString(16, lambda id: (193 + (id / 16), (id % 16) * 16))
     offset = EepromSignedTemp(lambda id: (0, 60 + id))
     virtual = EepromIBool(lambda id: (195, id))
+    room = EextByte()
 
 
 class GroupActionConfiguration(EepromModel):
@@ -404,6 +429,7 @@ class PulseCounterConfiguration(EepromModel):
     id = EepromId(24)
     name = EepromString(16, lambda id: (98 + (id / 16), 16 * (id % 16)))
     input = EepromByte(lambda id: (0, 160+id))
+    room = EextByte()
 
 
 class StartupActionConfiguration(EepromModel):
