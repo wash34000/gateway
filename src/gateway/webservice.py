@@ -14,26 +14,29 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """ Includes the WebService class """
 
-import logging
-LOGGER = logging.getLogger("openmotics")
 
 import threading
 import random
 import ConfigParser
 import subprocess
 import os
-from types import MethodType
 import traceback
 import inspect
 import time
 import requests
-
+import logging
+import cherrypy
+import constants
+from cherrypy.lib.static import serve_file
+from master.master_communicator import InMaintenanceModeException
 from gateway.scheduling import SchedulingController
-
 try:
     import json
 except ImportError:
     import simplejson as json
+
+LOGGER = logging.getLogger("openmotics")
+
 
 class FloatWrapper(float):
     """ Wrapper for float value that limits the number of digits when printed. """
@@ -41,9 +44,11 @@ class FloatWrapper(float):
     def __repr__(self):
         return '%.2f' % self
 
+
 def limit_floats(struct):
-    """ Usage: json.dumps(limit_floats(struct)). This limits the number of digits in the json
-    string.
+    """
+    Usage: json.dumps(limit_floats(struct)). This limits the number of digits in the json string.
+    :param struct: Structure of which floats will be shortended
     """
     if isinstance(struct, (list, tuple)):
         return [limit_floats(element) for element in struct]
@@ -54,25 +59,25 @@ def limit_floats(struct):
     else:
         return struct
 
+
 def boolean(instance):
-    """ Convert object (bool, int, float, str) to bool (True of False). """
+    """
+    Convert object (bool, int, float, str) to bool (True of False).
+    :param instance: Instance to convert to bool
+    """
     if type(instance) == bool:
         return instance
     elif type(instance) == int:
         return instance != 0
     elif type(instance) == float:
         return instance != 0.0
-    elif type(instance) == str or type(instance) == unicode:
+    elif type(instance) == str or type(instance) == unicode or type(instance) == basestring:
         return instance.lower() == 'true'
 
-import cherrypy
-from cherrypy.lib.static import serve_file
-
-import constants
-from master.master_communicator import InMaintenanceModeException
 
 class GatewayApiWrapper(object):
-    """ Wraps the GatewayApi, catches the InMaintenanceModeException and converts
+    """
+    Wraps the GatewayApi, catches the InMaintenanceModeException and converts
     the exception in a HttpError(503).
     """
 
@@ -82,26 +87,45 @@ class GatewayApiWrapper(object):
     def __getattr__(self, name):
         if hasattr(self.__gateway_api, name):
             return lambda *args, **kwargs: \
-                    self._wrap(getattr(self.__gateway_api, name), args, kwargs)
+                GatewayApiWrapper._wrap(getattr(self.__gateway_api, name), args, kwargs)
         else:
             raise AttributeError(name)
 
-    def _wrap(self, func, args, kwargs):
+    @staticmethod
+    def _wrap(func, args, kwargs):
         """ Wrap a function, convert the InMaintenanceModeException to a HttpError(503). """
         try:
-            return func(*args, **kwargs) #pylint: disable=W0142
+            return func(*args, **kwargs)  # pylint: disable=W0142
         except InMaintenanceModeException:
-            raise cherrypy.HTTPError(503, "In maintenance mode")
+            raise cherrypy.HTTPError(503, "maintenance_mode")
 
 
-def timestampFilter():
+def timestamp_filter():
     """ If the request parameters contain a "fe_time" variable, remove it from the parameters.
     This parameter is used by the gateway frontend to bypass caching by certain browsers.
     """
     if "fe_time" in cherrypy.request.params:
         del cherrypy.request.params["fe_time"]
 
-cherrypy.tools.timestampFilter = cherrypy.Tool('before_handler', timestampFilter)
+cherrypy.tools.timestampFilter = cherrypy.Tool('before_handler', timestamp_filter)
+
+
+def error_generic(status, message, *args, **kwargs):
+    _ = args, kwargs
+    cherrypy.response.headers["Content-Type"] = "application/json"
+    cherrypy.response.status = status
+    return json.dumps({"success": False, "msg": message})
+
+
+def error_unexpected():
+    cherrypy.response.headers["Content-Type"] = "application/json"
+    cherrypy.response.status = 500
+    return json.dumps({"success": False, "msg": "unknown_error"})
+
+cherrypy.config.update({'error_page.404': error_generic,
+                        'error_page.401': error_generic,
+                        'error_page.503': error_generic,
+                        'request.error_response': error_unexpected})
 
 
 class DummyToken(object):
@@ -124,7 +148,7 @@ class WebInterface(object):
         :param scheduling_filename: the filename of the scheduling controller database.
         :type scheduling_filename: string.
         :param maintenance_service: used when opening maintenance mode.
-        :type maintenance_server: instance of :class`MaintenanceService`.
+        :type maintenance_service: instance of :class`MaintenanceService`.
         :param authorized_check: check if the gateway is in authorized mode.
         :type authorized_check: function (called without arguments).
         """
@@ -147,35 +171,29 @@ class WebInterface(object):
 
     def check_token(self, token):
         """ Check if the token is valid, raises HTTPError(401) if invalid. """
-        if cherrypy.request.remote.ip == '127.0.0.1' or token is self.dummy_token:
-            # Don't check tokens for localhost
+        if cherrypy.request.remote.ip == "127.0.0.1" or token is self.dummy_token:
             return
 
-        if token is None or token == "None":
-            # Get the token from the session if no token is provided.
-            token = cherrypy.session.get("token", None)
-
         if not self.__user_controller.check_token(token):
-            raise cherrypy.HTTPError(401, "Unauthorized")
+            raise cherrypy.HTTPError(401, "invalid_token")
 
     def __error(self, msg):
         """ Returns a dict with 'success' = False and a 'msg' in json format. """
+        cherrypy.response.headers["Content-Type"] = "application/json"
         return json.dumps({"success": False, "msg": msg})
 
     def __success(self, **kwargs):
         """ Returns a dict with 'success' = True and the keys and values in **kwargs. """
+        cherrypy.response.headers["Content-Type"] = "application/json"
         return json.dumps(limit_floats(dict({"success" : True}.items() + kwargs.items())))
 
     @cherrypy.expose
     def index(self):
-        """ Index page of the web service.
-
+        """
+        Index page of the web service (Gateway GUI)
         :returns: msg (String)
         """
-        if cherrypy.session.get("token", None) is None:
-            return serve_file('/opt/openmotics/static/login.html', content_type='text/html')
-        else:
-            return serve_file('/opt/openmotics/static/index.html', content_type='text/html')
+        return serve_file('/opt/openmotics/static/index.html', content_type='text/html')
 
     @cherrypy.expose
     def login(self, username, password):
@@ -189,12 +207,9 @@ class WebInterface(object):
         :returns: 'token' : String
         """
         token = self.__user_controller.login(username, password)
-        if token == None:
-            raise cherrypy.HTTPError(401, "Unauthorized")
+        if token is None:
+            raise cherrypy.HTTPError(401, "invalid_credentials")
         else:
-            # Store the token in the session
-            cherrypy.session.regenerate()
-            cherrypy.session['token'] = token
             return self.__success(token=token)
 
     @cherrypy.expose
@@ -204,7 +219,6 @@ class WebInterface(object):
         :returns: 'status': 'OK'
         """
         self.__user_controller.logout(token)
-        cherrypy.session.clear()
         return self.__success(status='OK')
 
     @cherrypy.expose
@@ -220,7 +234,7 @@ class WebInterface(object):
             self.__user_controller.create_user(username, password, 'admin', True)
             return self.__success()
         else:
-            raise cherrypy.HTTPError(401, "Unauthorized")
+            raise cherrypy.HTTPError(401, "unauthorized")
 
     @cherrypy.expose
     def get_usernames(self):
@@ -231,7 +245,7 @@ class WebInterface(object):
         if self.__authorized_check():
             return self.__success(usernames=self.__user_controller.get_usernames())
         else:
-            raise cherrypy.HTTPError(401, "Unauthorized")
+            raise cherrypy.HTTPError(401, "unauthorized")
 
     @cherrypy.expose
     def remove_user(self, username):
@@ -244,7 +258,7 @@ class WebInterface(object):
             self.__user_controller.remove_user(username)
             return self.__success()
         else:
-            raise cherrypy.HTTPError(401, "Unauthorized")
+            raise cherrypy.HTTPError(401, "unauthorized")
 
     @cherrypy.expose
     def open_maintenance(self, token):
@@ -287,6 +301,15 @@ class WebInterface(object):
         return self.__wrap(self.__gateway_api.module_discover_stop)
 
     @cherrypy.expose
+    def module_discover_status(self, token):
+        """ Gets the status of the module discover mode on the master.
+
+        :returns 'running': true|false
+        """
+        self.check_token(token)
+        return self.__wrap(self.__gateway_api.module_discover_status)
+
+    @cherrypy.expose
     def get_module_log(self, token):
         """ Get the log messages from the module discovery mode. This returns the current log
         messages and clear the log messages.
@@ -300,8 +323,8 @@ class WebInterface(object):
     def get_modules(self, token):
         """ Get a list of all modules attached and registered with the master.
 
-        :returns: 'output': list of module types (O,R,D) and 'input': list of input module \
-        types (I,T,L).
+        :returns: 'outputs': list of output module types (O,R,D), 'inputs': list of input module \
+        types (I,T,L) and 'shutters': list of shutter module types (S).
         """
         self.check_token(token)
         return self.__wrap(self.__gateway_api.get_modules)
@@ -2019,7 +2042,7 @@ class WebInterface(object):
             subprocess.Popen(constants.get_self_test_cmd(), close_fds=True)
             return self.__success()
         else:
-            raise cherrypy.HTTPError(401, "Unauthorized")
+            raise cherrypy.HTTPError(401, "unauthorized")
 
 
 class WebService(object):
@@ -2035,15 +2058,10 @@ class WebService(object):
     def run(self):
         """ Run the web service: start cherrypy. """
         cherrypy.tree.mount(self.__webinterface,
-                            config={'/static' :
-                                          {'tools.staticdir.on' : True,
-                                           'tools.staticdir.dir' : '/opt/openmotics/static'},
+                            config={'/static': {'tools.staticdir.on' : True,
+                                                'tools.staticdir.dir' : '/opt/openmotics/static'},
                                     '/' : {'tools.timestampFilter.on' : True,
-                                           'tools.sessions.on' : True,
-                                           'tools.sessions.storage_type' : 'ram',
-                                           'tools.sessions.timeout' : 60}
-                                   }
-                            )
+                                           'tools.sessions.on' : False}})
 
         cherrypy.config.update({'engine.autoreload.on': False})
         cherrypy.server.unsubscribe()
@@ -2077,7 +2095,7 @@ class WebService(object):
 
     def stop(self):
         """ Stop the web service. """
-        cherrypy.engine.exit() ## Shutdown the cherrypy server: no new requests
+        cherrypy.engine.exit()  # Shutdown the cherrypy server: no new requests
         if self.__https_server is not None:
             self.__https_server.stop()
         if self.__http_server is not None:
