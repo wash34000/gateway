@@ -1,10 +1,23 @@
-'''
+# Copyright (C) 2016 OpenMotics BVBA
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+"""
 Contains controller from reading and writing to the Master EEPROM.
 
-Created on Sep 2, 2013
-
 @author: fryckbos
-'''
+"""
+
 import inspect
 import types
 
@@ -894,3 +907,50 @@ class EepromActions(EepromDataType):
     def get_length(self):
         return 2 * self.__length
 
+
+class EepromIBool(EepromDataType):
+    """ A boolean that is encoded in a byte where value 255 is False and values < 255 are True. """
+
+    def __init__(self, addr_gen, read_only=False):
+        EepromDataType.__init__(self, addr_gen, read_only)
+
+    def get_name(self):
+        return "Boolean"
+
+    def from_bytes(self, bytes):
+        return ord(bytes[0]) < 255
+
+    def to_bytes(self, field):
+        value = 0 if field is True else 255
+        return str(chr(value))
+
+    def get_length(self):
+        return 1
+
+
+class EepromEnum(EepromDataType):
+    """ A enum value that is encoded into a byte. """
+
+    def __init__(self, addr_gen, enum_values, read_only=False):
+        EepromDataType.__init__(self, addr_gen, read_only)
+        self.__enum_values = enum_values
+
+    def get_name(self):
+        return "Enum"
+
+    def from_bytes(self, bytes):
+        index = ord(bytes[0])
+        if index in self.__enum_values.keys():
+            return self.__enum_values[index]
+        else:
+            return "UNKNOWN"
+
+    def to_bytes(self, field):
+        for (key, value) in self.__enum_values.iteritems():
+            if field == value:
+                return str(chr(key))
+
+        return str(chr(255))
+
+    def get_length(self):
+        return 1

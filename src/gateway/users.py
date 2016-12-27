@@ -1,17 +1,30 @@
-'''
+# Copyright (C) 2016 OpenMotics BVBA
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+"""
 The users module contains the UserController class, which provides methods for creating
 and authenticating users.
 
-Created on Sep 16, 2012
-
 @author: fryckbos
-'''
+"""
 
 import sqlite3
 import hashlib
 import uuid
 import time
 import os.path
+
 
 class UserController(object):
     """ The UserController provides methods for the creation and authentication of users. """
@@ -149,7 +162,7 @@ class UserController(object):
 
     def check_token(self, token):
         """ Returns True if the token is valid, False if the token is invalid. """
-        if token not in self.__tokens:
+        if token is None or token not in self.__tokens:
             return False
         else:
             return self.__tokens[token][1] >= time.time()

@@ -1,11 +1,24 @@
-'''
+# Copyright (C) 2016 OpenMotics BVBA
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+"""
 Contains the definition of the Master Api.
 Requires Firmware 3.137.17 -- Caution on update: status api changed (used in update mechanism !)
 
-Created on Sep 9, 2012
-
 @author: fryckbos
-'''
+"""
+
 from master_command import MasterCommandSpec, Field, OutputFieldType, DimmerFieldType, \
                            ErrorListFieldType
 
@@ -22,6 +35,8 @@ BA_SHUTTER_GROUP_STOP = 106
 
 BA_SET_HEATING_MODE = 80
 BA_SET_AIRCO_STATUS = 81
+BA_SET_PERMANENT_MANUAL_MODE = 82
+BA_CLEAR_PERMANENT_MANUAL_MODE = 83
 
 BA_ONE_SETPOINT_0 = 128
 BA_ONE_SETPOINT_1 = 129
@@ -77,13 +92,13 @@ BA_LIGHT_TOGGLE_DIMMER_90 = 193
 BA_LIGHT_TOGGLE_DIMMER_100 = 194
 BA_LIGHT_ON_TIMER_150_OVERRULE = 195
 BA_LIGHT_ON_TIMER_450_OVERRULE = 196
-BA_LIGHT_ONT_TIMER_900_OVERRULE = 197
+BA_LIGHT_ON_TIMER_900_OVERRULE = 197
 BA_LIGHT_ON_TIMER_1500_OVERRULE = 198
 BA_LIGHT_ON_TIMER_2220_OVERRULE = 199
 BA_LIGHT_ON_TIMER_3120_OVERRULE = 200
 BA_LIGHT_ON_TIMER_150_NO_OVERRULE = 201
 BA_LIGHT_ON_TIMER_450_NO_OVERRULE = 202
-BA_LIGHT_ONT_TIMER_900_NO_OVERRULE = 203
+BA_LIGHT_ON_TIMER_900_NO_OVERRULE = 203
 BA_LIGHT_ON_TIMER_1500_NO_OVERRULE = 204
 BA_LIGHT_ON_TIMER_2220_NO_OVERRULE = 205
 BA_LIGHT_ON_TIMER_3120_NO_OVERRULE = 206
@@ -235,6 +250,18 @@ def write_setpoint():
         [Field.byte("thermostat"), Field.byte("config"), Field.svt("temp"), Field.padding(10),
          Field.lit('\r\n')])
 
+def permanent_manual_thermostat_list():
+    """ Read the permanent manual bytes, 1 per thermostat. """
+    return MasterCommandSpec("pL",
+        [Field.padding(13)],
+        [Field.byte('tm'), Field.byte('pmt0'), Field.byte('pmt1'), Field.byte('pmt2'),
+         Field.byte('pmt3'), Field.byte('pmt4'), Field.byte('pmt5'), Field.byte('pmt6'),
+         Field.byte('pmt7'), Field.byte('pmt8'), Field.byte('pmt9'), Field.byte('pmt10'),
+         Field.byte('pmt11'), Field.byte('pmt12'), Field.byte('pmt13'), Field.byte('pmt14'),
+         Field.byte('pmt15'), Field.byte('pmt16'), Field.byte('pmt17'), Field.byte('pmt18'),
+         Field.byte('pmt19'), Field.byte('pmt20'), Field.byte('pmt21'), Field.byte('pmt22'),
+         Field.byte('pmt23'), Field.crc(), Field.lit('\r\n')])
+
 def thermostat_list():
     """ Read the thermostat mode, the outside temperature, the temperature of each thermostat,
     as well as the setpoint.
@@ -297,6 +324,28 @@ def sensor_brightness_list():
          Field.byte('bri24'), Field.byte('bri25'), Field.byte('bri26'), Field.byte('bri27'),
          Field.byte('bri28'), Field.byte('bri29'), Field.byte('bri30'), Field.byte('bri31'),
          Field.crc(), Field.lit('\r\n')])
+
+def virtual_sensor_list():
+    """ Read the list with virtual values of the 32 (0-31) sensors. """
+    return MasterCommandSpec("VL",
+        [Field.padding(13)],
+        [Field.byte('vir0'), Field.byte('vir1'), Field.byte('vir2'), Field.byte('vir3'),
+         Field.byte('vir4'), Field.byte('vir5'), Field.byte('vir6'), Field.byte('vir7'),
+         Field.byte('vir8'), Field.byte('vir9'), Field.byte('vir10'), Field.byte('vir11'),
+         Field.byte('vir12'), Field.byte('vir13'), Field.byte('vir14'), Field.byte('vir15'),
+         Field.byte('vir16'), Field.byte('vir17'), Field.byte('vir18'), Field.byte('vir19'),
+         Field.byte('vir20'), Field.byte('vir21'), Field.byte('vir22'), Field.byte('vir23'),
+         Field.byte('vir24'), Field.byte('vir25'), Field.byte('vir26'), Field.byte('vir27'),
+         Field.byte('vir28'), Field.byte('vir29'), Field.byte('vir30'), Field.byte('vir31'),
+         Field.crc(), Field.lit('\r\n')])
+
+def set_virtual_sensor():
+    """ Set the values (temperature, humidity, brightness) of a virtual sensor. """
+    return MasterCommandSpec("VS",
+        [Field.byte('sensor'), Field.svt('tmp'), Field.hum('hum'), Field.byte('bri'),
+         Field.padding(9)],
+        [Field.byte('sensor'), Field.svt('tmp'), Field.hum('hum'), Field.byte('bri'),
+         Field.padding(9), Field.lit('\r\n')])
 
 def pulse_list():
     """ List the pulse counter values. """
@@ -454,6 +503,14 @@ def modules_get_version():
         [Field.str('addr', 4), Field.byte("error_code"), Field.byte("hw_version"),
          Field.byte("f1"), Field.byte("f2"), Field.byte("f3"), Field.byte("status"),
          Field.lit('C'), Field.byte('crc0'), Field.byte('crc1'), Field.lit("\r\n")])
+
+def modules_integrity_check():
+    """ Check the integrity of the new code. """
+    return MasterCommandSpec("FE",
+        [Field.str('addr', 4), Field.lit('C'), Field.byte('crc0'), Field.byte('crc1'),
+         Field.padding(6)],
+        [Field.str('addr', 4), Field.byte("error_code"), Field.lit('C'), Field.byte('crc0'),
+         Field.byte('crc1'), Field.padding(5), Field.lit("\r\n")])
 
 def modules_goto_application():
     """ Let the module go to application. """

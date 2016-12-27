@@ -1,14 +1,28 @@
-'''
+# Copyright (C) 2016 OpenMotics BVBA
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+"""
 Tests for the eeprom_controller module.
-Created on Sep 2, 2013
 
 @author: fryckbos
-'''
+"""
+
 import unittest
 
 from master.eeprom_controller import EepromController, EepromFile, EepromModel, EepromAddress, \
                                      EepromData, EepromId, EepromString, EepromByte, EepromWord, \
-                                     CompositeDataType, EepromActions, EepromSignedTemp
+                                     CompositeDataType, EepromActions, EepromSignedTemp, EepromIBool
 import master.master_api as master_api
 
 
@@ -1057,6 +1071,24 @@ class EepromSignedTempTest(unittest.TestCase):
             self.fail("Expected ValueError.")
         except ValueError:
             pass
+
+
+class EepromIBoolTest(unittest.TestCase):
+    """ Tests for EepromIBool. """
+
+    def test_from_bytes(self):
+        """ Test from_bytes. """
+        temp = EepromIBool((0, 0))
+        self.assertEquals(False, temp.from_bytes("\xff"))
+        self.assertEquals(True, temp.from_bytes("\x00"))
+        self.assertEquals(True, temp.from_bytes("\x0f"))
+
+    def test_to_bytes(self):
+        """ Test to_bytes. """
+        temp = EepromIBool((0, 0))
+        self.assertEquals("\x00", temp.to_bytes(True))
+        self.assertEquals("\xff", temp.to_bytes(False))
+
 
 
 if __name__ == "__main__":

@@ -1,4 +1,19 @@
+# Copyright (C) 2016 OpenMotics BVBA
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """ The OpenMotics plugin decorators, base class and controller. """
+
 import logging
 LOGGER = logging.getLogger("openmotics")
 
@@ -17,6 +32,7 @@ except ImportError:
 from datetime import datetime
 
 import cherrypy
+
 
 def om_expose(method=None, auth=True):
     """ Decorator to expose a method of the plugin class through the
@@ -44,10 +60,12 @@ def om_expose(method=None, auth=True):
             def _exposed(self, token, *args, **kwargs):
                 """ Exposed with token. """
                 self.webinterface.check_token(token)
+                cherrypy.response.headers["Content-Type"] = "application/json"
                 return method(self, *args, **kwargs)
         else:
             def _exposed(*args, **kwargs):
                 """ Exposed without token. """
+                cherrypy.response.headers["Content-Type"] = "application/json"
                 return method(*args, **kwargs)
 
         _exposed.exposed = True
@@ -485,7 +503,7 @@ else:
         """ Expose the plugins using cherrypy. """
         cherrypy.tree.mount(plugin,
                             "/plugins/%s" % plugin.name,
-                            { "/" : { 'tools.sessions.on' : True }})
+                            {"/": {'tools.sessions.on' : False}})
 
     def process_input_status(self, input_status_inst):
         """ Should be called when the input status changes, notifies all plugins. """
@@ -605,14 +623,14 @@ class PluginConfigChecker(object):
                 if 'name' not in item:
                     raise PluginException(
                             "The configuration item '%s' does not contain a 'name' key." % item)
-                if not isinstance(item['name'], str):
+                if not isinstance(item['name'], basestring):
                     raise PluginException(
                             "The key 'name' of configuration item '%s' is not a string." % item)
 
                 if 'type' not in item:
                     raise PluginException(
                             "The configuration item '%s' does not contain a 'type' key." % item)
-                if not isinstance(item['type'], str):
+                if not isinstance(item['type'], basestring):
                     raise PluginException(
                             "The key 'type' of configuration item '%s' is not a string." % item)
 
@@ -643,7 +661,7 @@ class PluginConfigChecker(object):
                     "The key 'choices' of configuration item '%s' is not a list." % item)
 
         for choice in item['choices']:
-            if not isinstance(choice, str):
+            if not isinstance(choice, basestring):
                 raise PluginException("An element of the 'choices' list of configuration item"
                                       " '%s' is not a string." % item)
 
@@ -720,7 +738,7 @@ class PluginConfigChecker(object):
                 raise PluginException("The config does not contain key '%s'" % name)
 
             if item['type'] == 'str':
-                if not isinstance(config[name], str):
+                if not isinstance(config[name], basestring):
                     raise PluginException("Config '%s': '%s' is not a string" %
                                           (name, config[name]))
             elif item['type'] == 'int':
@@ -730,7 +748,7 @@ class PluginConfigChecker(object):
                 if not isinstance(config[name], bool):
                     raise PluginException("Config '%s': '%s' is not a bool" % (name, config[name]))
             elif item['type'] == 'password':
-                if not isinstance(config[name], str):
+                if not isinstance(config[name], basestring):
                     raise PluginException("Config '%s': '%s' is not a str" % (name, config[name]))
             elif item['type'] == 'enum':
                 if config[name] not in item['choices']:

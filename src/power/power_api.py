@@ -1,8 +1,22 @@
-'''
+# Copyright (C) 2016 OpenMotics BVBA
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+"""
 Contains the definition of the power modules Api.
 
 @author: fryckbos
-'''
+"""
 
 from power.power_command import PowerCommand
 
@@ -371,3 +385,10 @@ def bootloader_jump_application():
 def get_version():
     """ Get the current version of the power module firmware """
     return PowerCommand('G', 'FIV', '', '16s')
+
+
+# Below are the debug functions
+
+def raw_command(mode, command, num_bytes):
+    """ Create a PowerCommand for debugging purposes. """
+    return PowerCommand(mode, command, '%dB' % num_bytes, None)

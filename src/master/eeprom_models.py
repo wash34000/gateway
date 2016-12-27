@@ -1,13 +1,27 @@
-'''
+# Copyright (C) 2016 OpenMotics BVBA
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+"""
 Contains the EepromModels.
 
-Created on Sep 4, 2013
-
 @author: fryckbos
-'''
+"""
+
 from eeprom_controller import EepromModel, EepromAddress, EepromId, EepromString, \
                               EepromWord, EepromByte, EepromActions, EepromTemp, EepromTime, \
-                              EepromCSV, CompositeDataType, EepromSignedTemp
+                              EepromCSV, CompositeDataType, EepromSignedTemp, EepromIBool, \
+                              EepromEnum
 
 
 def page_per_module(module_size, start_bank, start_offset, field_size):
@@ -28,6 +42,25 @@ def per_module(module_size, func):
     return lambda id: func(id / module_size, id % module_size)
 
 
+def gen_address(start_page, ids_per_page, extra_offset):
+    """ Returns a function that takes an id and returns an address. The returned address starts at
+    the given start_page, has a fixed number of ids_per_page. The extra_offset is added to the
+    offset calculated using the ids_per_page.
+    """
+    page_offset = 256 / ids_per_page
+    return lambda id: (start_page + (id / ids_per_page), (id % ids_per_page) * page_offset + extra_offset)
+
+
+def get_led_functions():
+    """ Get dict describing the enum for the CAN LED functions. """
+    led_functions = {}
+    for brightness in range(16):
+        for function in [(0,'On'), (16,'Fast blink'), (32,'Medium blink'), (48,'Slow blink'), (64,'Swinging')]:
+            for inverted in [(0, ''), (128, ' Inverted')]:
+                led_functions[brightness + function[0] + inverted[0]] = "%s B%d%s" %(function[1], brightness + 1, inverted[1])
+    return led_functions
+
+
 class OutputConfiguration(EepromModel):
     """ Models an output. The maximum number of inputs is 240 (30 modules), the actual number of
     outputs is 8 times the number of output modules (eeprom address 0, 2).
@@ -38,6 +71,14 @@ class OutputConfiguration(EepromModel):
     timer = EepromWord(page_per_module(8, 33, 4, 2))
     floor = EepromByte(page_per_module(8, 33, 157, 1))
     type = EepromByte(page_per_module(8, 33, 149, 1))
+    can_led_1_id = EepromByte(gen_address(221, 32, 0))
+    can_led_1_function = EepromEnum(gen_address(221, 32, 1), get_led_functions())
+    can_led_2_id = EepromByte(gen_address(221, 32, 2))
+    can_led_2_function = EepromEnum(gen_address(221, 32, 3), get_led_functions())
+    can_led_3_id = EepromByte(gen_address(221, 32, 4))
+    can_led_3_function = EepromEnum(gen_address(221, 32, 5), get_led_functions())
+    can_led_4_id = EepromByte(gen_address(221, 32, 6))
+    can_led_4_function = EepromEnum(gen_address(221, 32, 7), get_led_functions())
 
 
 class InputConfiguration(EepromModel):
@@ -50,6 +91,25 @@ class InputConfiguration(EepromModel):
     action = EepromByte(page_per_module(8, 2, 4, 1))
     basic_actions = EepromActions(15, page_per_module(8, 2, 12, 30))
     invert = EepromByte(lambda id: (32, id))
+    can = EepromString(1, lambda id: (2 + id /8, 252), read_only=True)
+
+
+class CanLedConfiguration(EepromModel):
+    """ Models a CAN LED configuration. Each configuration defines the CAN LED that will be driven
+    and the the function to drive the LED. The LED function will be activated when:
+    the number of lights on is 0 (id = 0), the number of lights on is greater than 0 (id = 1), ...,
+    the number of lights on is greater than 14 (id = 15), the number of outputs on is 0 (id = 16),
+    ther number of outputs is greater than 0 (id = 17), the number of outputs on is greater than 14
+    (id = 31). """
+    id = EepromId(32)
+    can_led_1_id = EepromByte(gen_address(229, 32, 0))
+    can_led_1_function = EepromEnum(gen_address(229, 32, 1), get_led_functions())
+    can_led_2_id = EepromByte(gen_address(229, 32, 2))
+    can_led_2_function = EepromEnum(gen_address(229, 32, 3), get_led_functions())
+    can_led_3_id = EepromByte(gen_address(229, 32, 4))
+    can_led_3_function = EepromEnum(gen_address(229, 32, 5), get_led_functions())
+    can_led_4_id = EepromByte(gen_address(229, 32, 6))
+    can_led_4_function = EepromEnum(gen_address(229, 32, 7), get_led_functions())
 
 
 class ShutterConfiguration(EepromModel):
@@ -89,6 +149,7 @@ class ThermostatConfiguration(EepromModel):
     pid_i = EepromByte(lambda id: (141, (4*id)+1))
     pid_d = EepromByte(lambda id: (141, (4*id)+2))
     pid_int = EepromByte(lambda id: (141, (4*id)+3))
+    permanent_manual = EepromIBool(lambda id: (195, 32+id))
     auto_mon = CompositeDataType(
         [('temp_n', EepromTemp(lambda id: (198, id + 0))),
          ('start_d1', EepromTime(lambda id: (189, (4*id)+0))),
@@ -177,6 +238,7 @@ class CoolingConfiguration(EepromModel):
     pid_i = EepromByte(lambda id: (200, (4*id)+1))
     pid_d = EepromByte(lambda id: (200, (4*id)+2))
     pid_int = EepromByte(lambda id: (200, (4*id)+3))
+    permanent_manual = EepromIBool(lambda id: (195, 64+id))
     auto_mon = CompositeDataType(
         [('temp_n', EepromTemp(lambda id: (212, id + 0))),
          ('start_d1', EepromTime(lambda id: (206, (4*id)+0))),
@@ -317,6 +379,7 @@ class SensorConfiguration(EepromModel):
     id = EepromId(32)
     name = EepromString(16, lambda id: (193 + (id / 16), (id % 16) * 16))
     offset = EepromSignedTemp(lambda id: (0, 60 + id))
+    virtual = EepromIBool(lambda id: (195, id))
 
 
 class GroupActionConfiguration(EepromModel):

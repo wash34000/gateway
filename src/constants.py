@@ -1,10 +1,22 @@
-'''
+# Copyright (C) 2016 OpenMotics BVBA
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+""""
 The constants modules contains static definitions for filenames.
 
-Created on Sep 23, 2012
-
 @author: fryckbos
-'''
+"""
 
 def get_config_file():
     """ Get the filename of the OpenMotics config file. This file is in ini format. """
@@ -62,3 +74,8 @@ def get_timezone_file():
 def get_self_test_cmd():
     """ Get the path of the bash script that executes the self test. """
     return "/opt/openmotics/bin/self_test.sh"
+
+
+def get_buffer_file(name):
+    """ Get the path of a buffer file. """
+    return "/opt/openmotics/%s.buffer" % name

@@ -1,3 +1,17 @@
+# Copyright (C) 2016 OpenMotics BVBA
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """ Contains PowerCommandClass that describes a command to the power modules. The PowerCommand
 class is used to create the power_api.
 
@@ -93,9 +107,11 @@ class PowerCommand(object):
         return header[3:-1] == self.mode + self.type
 
     def read_output(self, data):
-        """ Read the output for a command from the serial port.
+        """ Parse the output using the output_format.
 
-        :param cid: 1 byte, communication id
-        :param serial: serial port interface (instance of pyserial.Serial)
+        :param data: string containing the data.
         """
-        return struct.unpack(self.output_format, data)
+        if self.output_format is None:
+            return struct.unpack('%dB' % len(data), data)
+        else:
+            return struct.unpack(self.output_format, data)

@@ -1,24 +1,42 @@
+# Copyright (C) 2016 OpenMotics BVBA
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """ Includes the WebService class """
-import logging
-LOGGER = logging.getLogger("openmotics")
+
 
 import threading
 import random
 import ConfigParser
 import subprocess
 import os
-from types import MethodType
 import traceback
 import inspect
 import time
 import requests
-
+import logging
+import cherrypy
+import constants
+from cherrypy.lib.static import serve_file
+from master.master_communicator import InMaintenanceModeException
 from gateway.scheduling import SchedulingController
-
 try:
     import json
 except ImportError:
     import simplejson as json
+
+LOGGER = logging.getLogger("openmotics")
+
 
 class FloatWrapper(float):
     """ Wrapper for float value that limits the number of digits when printed. """
@@ -26,9 +44,11 @@ class FloatWrapper(float):
     def __repr__(self):
         return '%.2f' % self
 
+
 def limit_floats(struct):
-    """ Usage: json.dumps(limit_floats(struct)). This limits the number of digits in the json
-    string.
+    """
+    Usage: json.dumps(limit_floats(struct)). This limits the number of digits in the json string.
+    :param struct: Structure of which floats will be shortended
     """
     if isinstance(struct, (list, tuple)):
         return [limit_floats(element) for element in struct]
@@ -39,25 +59,25 @@ def limit_floats(struct):
     else:
         return struct
 
+
 def boolean(instance):
-    """ Convert object (bool, int, float, str) to bool (True of False). """
+    """
+    Convert object (bool, int, float, str) to bool (True of False).
+    :param instance: Instance to convert to bool
+    """
     if type(instance) == bool:
         return instance
     elif type(instance) == int:
         return instance != 0
     elif type(instance) == float:
         return instance != 0.0
-    elif type(instance) == str or type(instance) == unicode:
+    elif type(instance) == str or type(instance) == unicode or type(instance) == basestring:
         return instance.lower() == 'true'
 
-import cherrypy
-from cherrypy.lib.static import serve_file
-
-import constants
-from master.master_communicator import InMaintenanceModeException
 
 class GatewayApiWrapper(object):
-    """ Wraps the GatewayApi, catches the InMaintenanceModeException and converts
+    """
+    Wraps the GatewayApi, catches the InMaintenanceModeException and converts
     the exception in a HttpError(503).
     """
 
@@ -67,26 +87,45 @@ class GatewayApiWrapper(object):
     def __getattr__(self, name):
         if hasattr(self.__gateway_api, name):
             return lambda *args, **kwargs: \
-                    self._wrap(getattr(self.__gateway_api, name), args, kwargs)
+                GatewayApiWrapper._wrap(getattr(self.__gateway_api, name), args, kwargs)
         else:
             raise AttributeError(name)
 
-    def _wrap(self, func, args, kwargs):
+    @staticmethod
+    def _wrap(func, args, kwargs):
         """ Wrap a function, convert the InMaintenanceModeException to a HttpError(503). """
         try:
-            return func(*args, **kwargs) #pylint: disable=W0142
+            return func(*args, **kwargs)  # pylint: disable=W0142
         except InMaintenanceModeException:
-            raise cherrypy.HTTPError(503, "In maintenance mode")
+            raise cherrypy.HTTPError(503, "maintenance_mode")
 
 
-def timestampFilter():
+def timestamp_filter():
     """ If the request parameters contain a "fe_time" variable, remove it from the parameters.
     This parameter is used by the gateway frontend to bypass caching by certain browsers.
     """
     if "fe_time" in cherrypy.request.params:
         del cherrypy.request.params["fe_time"]
 
-cherrypy.tools.timestampFilter = cherrypy.Tool('before_handler', timestampFilter)
+cherrypy.tools.timestampFilter = cherrypy.Tool('before_handler', timestamp_filter)
+
+
+def error_generic(status, message, *args, **kwargs):
+    _ = args, kwargs
+    cherrypy.response.headers["Content-Type"] = "application/json"
+    cherrypy.response.status = status
+    return json.dumps({"success": False, "msg": message})
+
+
+def error_unexpected():
+    cherrypy.response.headers["Content-Type"] = "application/json"
+    cherrypy.response.status = 500
+    return json.dumps({"success": False, "msg": "unknown_error"})
+
+cherrypy.config.update({'error_page.404': error_generic,
+                        'error_page.401': error_generic,
+                        'error_page.503': error_generic,
+                        'request.error_response': error_unexpected})
 
 
 class DummyToken(object):
@@ -109,7 +148,7 @@ class WebInterface(object):
         :param scheduling_filename: the filename of the scheduling controller database.
         :type scheduling_filename: string.
         :param maintenance_service: used when opening maintenance mode.
-        :type maintenance_server: instance of :class`MaintenanceService`.
+        :type maintenance_service: instance of :class`MaintenanceService`.
         :param authorized_check: check if the gateway is in authorized mode.
         :type authorized_check: function (called without arguments).
         """
@@ -132,35 +171,29 @@ class WebInterface(object):
 
     def check_token(self, token):
         """ Check if the token is valid, raises HTTPError(401) if invalid. """
-        if cherrypy.request.remote.ip == '127.0.0.1' or token is self.dummy_token:
-            # Don't check tokens for localhost
+        if cherrypy.request.remote.ip == "127.0.0.1" or token is self.dummy_token:
             return
 
-        if token is None or token == "None":
-            # Get the token from the session if no token is provided.
-            token = cherrypy.session.get("token", None)
-
         if not self.__user_controller.check_token(token):
-            raise cherrypy.HTTPError(401, "Unauthorized")
+            raise cherrypy.HTTPError(401, "invalid_token")
 
     def __error(self, msg):
         """ Returns a dict with 'success' = False and a 'msg' in json format. """
+        cherrypy.response.headers["Content-Type"] = "application/json"
         return json.dumps({"success": False, "msg": msg})
 
     def __success(self, **kwargs):
         """ Returns a dict with 'success' = True and the keys and values in **kwargs. """
+        cherrypy.response.headers["Content-Type"] = "application/json"
         return json.dumps(limit_floats(dict({"success" : True}.items() + kwargs.items())))
 
     @cherrypy.expose
     def index(self):
-        """ Index page of the web service.
-
+        """
+        Index page of the web service (Gateway GUI)
         :returns: msg (String)
         """
-        if cherrypy.session.get("token", None) is None:
-            return serve_file('/opt/openmotics/static/login.html', content_type='text/html')
-        else:
-            return serve_file('/opt/openmotics/static/index.html', content_type='text/html')
+        return serve_file('/opt/openmotics/static/index.html', content_type='text/html')
 
     @cherrypy.expose
     def login(self, username, password):
@@ -174,12 +207,9 @@ class WebInterface(object):
         :returns: 'token' : String
         """
         token = self.__user_controller.login(username, password)
-        if token == None:
-            raise cherrypy.HTTPError(401, "Unauthorized")
+        if token is None:
+            raise cherrypy.HTTPError(401, "invalid_credentials")
         else:
-            # Store the token in the session
-            cherrypy.session.regenerate()
-            cherrypy.session['token'] = token
             return self.__success(token=token)
 
     @cherrypy.expose
@@ -189,7 +219,6 @@ class WebInterface(object):
         :returns: 'status': 'OK'
         """
         self.__user_controller.logout(token)
-        cherrypy.session.clear()
         return self.__success(status='OK')
 
     @cherrypy.expose
@@ -205,7 +234,7 @@ class WebInterface(object):
             self.__user_controller.create_user(username, password, 'admin', True)
             return self.__success()
         else:
-            raise cherrypy.HTTPError(401, "Unauthorized")
+            raise cherrypy.HTTPError(401, "unauthorized")
 
     @cherrypy.expose
     def get_usernames(self):
@@ -216,7 +245,7 @@ class WebInterface(object):
         if self.__authorized_check():
             return self.__success(usernames=self.__user_controller.get_usernames())
         else:
-            raise cherrypy.HTTPError(401, "Unauthorized")
+            raise cherrypy.HTTPError(401, "unauthorized")
 
     @cherrypy.expose
     def remove_user(self, username):
@@ -229,7 +258,7 @@ class WebInterface(object):
             self.__user_controller.remove_user(username)
             return self.__success()
         else:
-            raise cherrypy.HTTPError(401, "Unauthorized")
+            raise cherrypy.HTTPError(401, "unauthorized")
 
     @cherrypy.expose
     def open_maintenance(self, token):
@@ -272,6 +301,15 @@ class WebInterface(object):
         return self.__wrap(self.__gateway_api.module_discover_stop)
 
     @cherrypy.expose
+    def module_discover_status(self, token):
+        """ Gets the status of the module discover mode on the master.
+
+        :returns 'running': true|false
+        """
+        self.check_token(token)
+        return self.__wrap(self.__gateway_api.module_discover_status)
+
+    @cherrypy.expose
     def get_module_log(self, token):
         """ Get the log messages from the module discovery mode. This returns the current log
         messages and clear the log messages.
@@ -285,8 +323,8 @@ class WebInterface(object):
     def get_modules(self, token):
         """ Get a list of all modules attached and registered with the master.
 
-        :returns: 'output': list of module types (O,R,D) and 'input': list of input module \
-        types (I,T,L).
+        :returns: 'outputs': list of output module types (O,R,D), 'inputs': list of input module \
+        types (I,T,L) and 'shutters': list of shutter module types (S).
         """
         self.check_token(token)
         return self.__wrap(self.__gateway_api.get_modules)
@@ -560,6 +598,25 @@ class WebInterface(object):
         return self.__success(status=self.__gateway_api.get_sensor_brightness_status())
 
     @cherrypy.expose
+    def set_virtual_sensor(self, token, sensor_id, temperature, humidity, brightness):
+        """ Set the temperature, humidity and brightness value of a virtual sensor.
+
+        :param sensor_id: The id of the sensor.
+        :type sensor_id: Integer [0, 31]
+        :param temperature: The temperature to set in degrees Celcius
+        :type temperature: float
+        :param humidity: The humidity to set in percentage
+        :type humidity: float
+        :param brightness: The brightness to set in percentage
+        :type brightness: int
+        :returns: dict with 'status'.
+        """
+        self.check_token(token)
+        return self.__wrap(lambda: self.__gateway_api.set_virtual_sensor(
+                                        int(sensor_id), float(temperature), float(humidity),
+                                        int(brightness)))
+
+    @cherrypy.expose
     def do_basic_action(self, token, action_type, action_number):
         """ Execute a basic action.
 
@@ -658,7 +715,7 @@ class WebInterface(object):
         :type id: Id
         :param fields: The field of the output_configuration to get. (None gets all fields)
         :type fields: Json encoded list of strings
-        :returns: 'config': output_configuration dict: contains 'id' (Id), 'floor' (Byte), 'module_type' (String[1]), 'name' (String[16]), 'timer' (Word), 'type' (Byte)
+        :returns: 'config': output_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'floor' (Byte), 'module_type' (String[1]), 'name' (String[16]), 'timer' (Word), 'type' (Byte)
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -671,7 +728,7 @@ class WebInterface(object):
 
         :param fields: The field of the output_configuration to get. (None gets all fields)
         :type fields: Json encoded list of strings
-        :returns: 'config': list of output_configuration dict: contains 'id' (Id), 'floor' (Byte), 'module_type' (String[1]), 'name' (String[16]), 'timer' (Word), 'type' (Byte)
+        :returns: 'config': list of output_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'floor' (Byte), 'module_type' (String[1]), 'name' (String[16]), 'timer' (Word), 'type' (Byte)
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -683,7 +740,7 @@ class WebInterface(object):
         Set one output_configuration.
 
         :param config: The output_configuration to set
-        :type config: output_configuration dict: contains 'id' (Id), 'floor' (Byte), 'name' (String[16]), 'timer' (Word), 'type' (Byte)
+        :type config: output_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'floor' (Byte), 'name' (String[16]), 'timer' (Word), 'type' (Byte)
         """
         self.check_token(token)
         self.__gateway_api.set_output_configuration(json.loads(config))
@@ -695,7 +752,7 @@ class WebInterface(object):
         Set multiple output_configurations.
 
         :param config: The list of output_configurations to set
-        :type config: list of output_configuration dict: contains 'id' (Id), 'floor' (Byte), 'name' (String[16]), 'timer' (Word), 'type' (Byte)
+        :type config: list of output_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'floor' (Byte), 'name' (String[16]), 'timer' (Word), 'type' (Byte)
         """
         self.check_token(token)
         self.__gateway_api.set_output_configurations(json.loads(config))
@@ -866,7 +923,7 @@ class WebInterface(object):
         :type id: Id
         :param fields: The field of the thermostat_configuration to get. (None gets all fields)
         :type fields: Json encoded list of strings
-        :returns: 'config': thermostat_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
+        :returns: 'config': thermostat_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -879,7 +936,7 @@ class WebInterface(object):
 
         :param fields: The field of the thermostat_configuration to get. (None gets all fields)
         :type fields: Json encoded list of strings
-        :returns: 'config': list of thermostat_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
+        :returns: 'config': list of thermostat_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -891,7 +948,7 @@ class WebInterface(object):
         Set one thermostat_configuration.
 
         :param config: The thermostat_configuration to set
-        :type config: thermostat_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
+        :type config: thermostat_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
         """
         self.check_token(token)
         self.__gateway_api.set_thermostat_configuration(json.loads(config))
@@ -903,7 +960,7 @@ class WebInterface(object):
         Set multiple thermostat_configurations.
 
         :param config: The list of thermostat_configurations to set
-        :type config: list of thermostat_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
+        :type config: list of thermostat_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
         """
         self.check_token(token)
         self.__gateway_api.set_thermostat_configurations(json.loads(config))
@@ -918,7 +975,7 @@ class WebInterface(object):
         :type id: Id
         :param fields: The field of the sensor_configuration to get. (None gets all fields)
         :type fields: Json encoded list of strings
-        :returns: 'config': sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees))
+        :returns: 'config': sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees)), 'virtual' (Boolean)
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -931,7 +988,7 @@ class WebInterface(object):
 
         :param fields: The field of the sensor_configuration to get. (None gets all fields)
         :type fields: Json encoded list of strings
-        :returns: 'config': list of sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees))
+        :returns: 'config': list of sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees)), 'virtual' (Boolean)
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -943,7 +1000,7 @@ class WebInterface(object):
         Set one sensor_configuration.
 
         :param config: The sensor_configuration to set
-        :type config: sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees))
+        :type config: sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees)), 'virtual' (Boolean)
         """
         self.check_token(token)
         self.__gateway_api.set_sensor_configuration(json.loads(config))
@@ -955,7 +1012,7 @@ class WebInterface(object):
         Set multiple sensor_configurations.
 
         :param config: The list of sensor_configurations to set
-        :type config: list of sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees))
+        :type config: list of sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees)), 'virtual' (Boolean)
         """
         self.check_token(token)
         self.__gateway_api.set_sensor_configurations(json.loads(config))
@@ -1022,7 +1079,7 @@ class WebInterface(object):
         :type id: Id
         :param fields: The field of the cooling_configuration to get. (None gets all fields)
         :type fields: Json encoded list of strings
-        :returns: 'config': cooling_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
+        :returns: 'config': cooling_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -1035,7 +1092,7 @@ class WebInterface(object):
 
         :param fields: The field of the cooling_configuration to get. (None gets all fields)
         :type fields: Json encoded list of strings
-        :returns: 'config': list of cooling_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
+        :returns: 'config': list of cooling_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -1047,7 +1104,7 @@ class WebInterface(object):
         Set one cooling_configuration.
 
         :param config: The cooling_configuration to set
-        :type config: cooling_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
+        :type config: cooling_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
         """
         self.check_token(token)
         self.__gateway_api.set_cooling_configuration(json.loads(config))
@@ -1059,7 +1116,7 @@ class WebInterface(object):
         Set multiple cooling_configurations.
 
         :param config: The list of cooling_configurations to set
-        :type config: list of cooling_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
+        :type config: list of cooling_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
         """
         self.check_token(token)
         self.__gateway_api.set_cooling_configurations(json.loads(config))
@@ -1477,6 +1534,58 @@ class WebInterface(object):
         self.__gateway_api.set_global_thermostat_configuration(json.loads(config))
         return self.__success()
 
+    @cherrypy.expose
+    def get_can_led_configuration(self, token, id, fields=None):
+        """
+        Get a specific can_led_configuration defined by its id.
+
+        :param id: The id of the can_led_configuration
+        :type id: Id
+        :param fields: The field of the can_led_configuration to get. (None gets all fields)
+        :type fields: Json encoded list of strings
+        :returns: 'config': can_led_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte)
+        """
+        self.check_token(token)
+        fields = None if fields is None else json.loads(fields)
+        return self.__success(config=self.__gateway_api.get_can_led_configuration(int(id), fields))
+
+    @cherrypy.expose
+    def get_can_led_configurations(self, token, fields=None):
+        """
+        Get all can_led_configurations.
+
+        :param fields: The field of the can_led_configuration to get. (None gets all fields)
+        :type fields: Json encoded list of strings
+        :returns: 'config': list of can_led_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte)
+        """
+        self.check_token(token)
+        fields = None if fields is None else json.loads(fields)
+        return self.__success(config=self.__gateway_api.get_can_led_configurations(fields))
+
+    @cherrypy.expose
+    def set_can_led_configuration(self, token, config):
+        """
+        Set one can_led_configuration.
+
+        :param config: The can_led_configuration to set
+        :type config: can_led_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte)
+        """
+        self.check_token(token)
+        self.__gateway_api.set_can_led_configuration(json.loads(config))
+        return self.__success()
+
+    @cherrypy.expose
+    def set_can_led_configurations(self, token, config):
+        """
+        Set multiple can_led_configurations.
+
+        :param config: The list of can_led_configurations to set
+        :type config: list of can_led_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte)
+        """
+        self.check_token(token)
+        self.__gateway_api.set_can_led_configurations(json.loads(config))
+        return self.__success()
+
     ###### End of the the autogenerated configuration api
 
     @cherrypy.expose
@@ -1601,6 +1710,41 @@ class WebInterface(object):
         module_id = int(module_id)
         input_id = int(input_id) if input_id is not None else None
         return self.__wrap(lambda: self.__gateway_api.get_energy_frequency(module_id, input_id))
+
+    @cherrypy.expose
+    def do_raw_energy_command(self, token, address, mode, command, data):
+        """ Perform a raw energy module command, for debugging purposes.
+
+        :param token: The authentication token
+        :type token: str
+        :param address: The address of the energy module
+        :type address: Byte
+        :param mode: 1 char: S or G
+        :type mode: str
+        :param command: 3 char power command
+        :type command: str
+        :param data: comma seperated list of Bytes
+        :type data: str
+        :returns: dict with 'data': comma separated list of Bytes
+        """
+        self.check_token(token)
+
+        address = int(address)
+
+        if mode not in [ 'S', 'G' ]:
+            raise ValueError("mode not in [S, G]: %s" % mode)
+
+        if len(command) != 3:
+            raise ValueError('Command should be 3 chars, got "%s"' % command)
+
+        if data is not None and len(data) > 0:
+            bdata = [ int(c) for c in data.split(",") ]
+        else:
+            bdata = []
+
+        ret = self.__gateway_api.do_raw_energy_command(address, mode, command, bdata)
+
+        return self.__success(data=",".join([ str(d) for d in ret ]))
 
     @cherrypy.expose
     def get_version(self, token):
@@ -1898,7 +2042,7 @@ class WebInterface(object):
             subprocess.Popen(constants.get_self_test_cmd(), close_fds=True)
             return self.__success()
         else:
-            raise cherrypy.HTTPError(401, "Unauthorized")
+            raise cherrypy.HTTPError(401, "unauthorized")
 
 
 class WebService(object):
@@ -1914,15 +2058,10 @@ class WebService(object):
     def run(self):
         """ Run the web service: start cherrypy. """
         cherrypy.tree.mount(self.__webinterface,
-                            config={'/static' :
-                                          {'tools.staticdir.on' : True,
-                                           'tools.staticdir.dir' : '/opt/openmotics/static'},
+                            config={'/static': {'tools.staticdir.on' : True,
+                                                'tools.staticdir.dir' : '/opt/openmotics/static'},
                                     '/' : {'tools.timestampFilter.on' : True,
-                                           'tools.sessions.on' : True,
-                                           'tools.sessions.storage_type' : 'ram',
-                                           'tools.sessions.timeout' : 60}
-                                   }
-                            )
+                                           'tools.sessions.on' : False}})
 
         cherrypy.config.update({'engine.autoreload.on': False})
         cherrypy.server.unsubscribe()
@@ -1956,7 +2095,7 @@ class WebService(object):
 
     def stop(self):
         """ Stop the web service. """
-        cherrypy.engine.exit() ## Shutdown the cherrypy server: no new requests
+        cherrypy.engine.exit()  # Shutdown the cherrypy server: no new requests
         if self.__https_server is not None:
             self.__https_server.stop()
         if self.__http_server is not None:
