@@ -25,6 +25,15 @@ from master_command import MasterCommandSpec, Field, OutputFieldType, DimmerFiel
 BA_GROUP_ACTION = 2
 
 BA_TRIGGER_EVENT = 60
+BA_STATUS_LEDS = 64
+
+BA_THERMOSTAT_COOLING_HEATING = 80
+BA_THERMOSTAT_AIRCO_STATUS = 81
+BA_SET_PERMANENT_MANUAL_MODE = 82
+BA_CLEAR_PERMANENT_MANUAL_MODE = 83
+
+BA_THERMOSTAT_TENANT_AUTO = 90
+BA_THERMOSTAT_TENANT_MANUAL = 91
 
 BA_SHUTTER_UP = 100
 BA_SHUTTER_DOWN = 101
@@ -32,11 +41,6 @@ BA_SHUTTER_STOP = 102
 BA_SHUTTER_GROUP_UP = 104
 BA_SHUTTER_GROUP_DOWN = 105
 BA_SHUTTER_GROUP_STOP = 106
-
-BA_SET_HEATING_MODE = 80
-BA_SET_AIRCO_STATUS = 81
-BA_SET_PERMANENT_MANUAL_MODE = 82
-BA_CLEAR_PERMANENT_MANUAL_MODE = 83
 
 BA_ONE_SETPOINT_0 = 128
 BA_ONE_SETPOINT_1 = 129
@@ -54,8 +58,6 @@ BA_ALL_SETPOINT_5 = 139
 
 BA_THERMOSTAT_MODE = 140
 BA_THERMOSTAT_AUTOMATIC = 141
-BA_THERMOSTAT_COOLING_HEATING = 80
-BA_THERMOSTAT_AIRCO_STATUS = 81
 
 BA_LIGHT_OFF = 160
 BA_LIGHT_ON = 161
@@ -103,7 +105,6 @@ BA_LIGHT_ON_TIMER_1500_NO_OVERRULE = 204
 BA_LIGHT_ON_TIMER_2220_NO_OVERRULE = 205
 BA_LIGHT_ON_TIMER_3120_NO_OVERRULE = 206
 
-BA_STATUS_LEDS = 64
 
 def basic_action():
     """ Basic actions. """
@@ -281,6 +282,18 @@ def thermostat_list():
          Field.svt('setp12'), Field.svt('setp13'), Field.svt('setp14'), Field.svt('setp15'),
          Field.svt('setp16'), Field.svt('setp17'), Field.svt('setp18'), Field.svt('setp19'),
          Field.svt('setp20'), Field.svt('setp21'), Field.svt('setp22'), Field.svt('setp23'),
+         Field.crc(), Field.lit('\r\n')])
+
+def thermostat_mode_list():
+    """ Read the thermostat mode for each thermostat. """
+    return MasterCommandSpec("ml",
+        [Field.padding(13)],
+        [Field.svt('mode0'), Field.svt('mode1'), Field.svt('mode2'), Field.svt('mode3'),
+         Field.svt('mode4'), Field.svt('mode5'), Field.svt('mode6'), Field.svt('mode7'),
+         Field.svt('mode8'), Field.svt('mode9'), Field.svt('mode10'), Field.svt('mode11'),
+         Field.svt('mode12'), Field.svt('mode13'), Field.svt('mode14'), Field.svt('mode15'),
+         Field.svt('mode16'), Field.svt('mode17'), Field.svt('mode18'), Field.svt('mode19'),
+         Field.svt('mode20'), Field.svt('mode21'), Field.svt('mode22'), Field.svt('mode23'),
          Field.crc(), Field.lit('\r\n')])
 
 def sensor_humidity_list():

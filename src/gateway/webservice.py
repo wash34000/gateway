@@ -500,17 +500,22 @@ class WebInterface(object):
                                             int(thermostat), float(temperature)))
 
     @cherrypy.expose
-    def set_thermostat_mode(self, token, thermostat_on, automatic, setpoint, cooling_mode=False,
-                            cooling_on=False):
-        """ Set the mode of the thermostats. Thermostats can be on or off, automatic or manual
-        and is set to one of the 6 setpoints.
+    def set_thermostat_mode(self, token, thermostat_on, automatic=None, setpoint=None,
+                            cooling_mode=False, cooling_on=False):
+        """ Set the global mode of the thermostats. Thermostats can be on or off (thermostat_on),
+        can be in cooling or heating (cooling_mode), cooling can be turned on or off (cooling_on).
+        The automatic and setpoint parameters are here for backwards compatibility and will be
+        applied to all thermostats. To control the automatic and setpoint parameters per thermostat
+        use the set_per_thermostat_mode call instead.
 
         :param thermostat_on: Whether the thermostats are on
         :type thermostat_on: Boolean
-        :param automatic: Automatic mode (True) or Manual mode (False)
-        :type automatic: Boolean
-        :param setpoint: The current setpoint
-        :type setpoint: Integer [0, 5]
+        :param automatic: Automatic mode (True) or Manual mode (False).  This parameter is here for
+        backwards compatibility, use set_per_thermostat_mode instead.
+        :type automatic: Boolean (optional)
+        :param setpoint: The current setpoint.  This parameter is here for backwards compatibility,
+        use set_per_thermostat_mode instead.
+        :type setpoint: Integer [0, 5] (optional)
         :param cooling_mode: Cooling mode (True) of Heating mode (False)
         :type cooling_mode: boolean (optional)
         :param cooling_on: Turns cooling ON when set to true.
@@ -519,9 +524,31 @@ class WebInterface(object):
         :return: 'status': 'OK'.
         """
         self.check_token(token)
-        return self.__wrap(lambda: self.__gateway_api.set_thermostat_mode(
-                       boolean(thermostat_on), boolean(automatic), int(setpoint),
-                       boolean(cooling_mode), boolean(cooling_on)))
+
+        self.__gateway_api.set_thermostat_mode(boolean(thermostat_on), boolean(cooling_mode),
+            boolean(cooling_on))
+
+        if automatic is not None and setpoint is not None:
+            for t in range(24):
+                self.__gateway_api.set_per_thermostat_mode(t, automatic, setpoint)
+
+        return {'status': 'OK'}
+
+    @cherrypy.expose
+    def set_per_thermostat_mode(self, token, thermostat_id, automatic, setpoint):
+        """ Set the thermostat mode of a given thermostat. Thermostats can be set to automatic or
+        manual, in case of manual a setpoint (0 to 5) can be provided.
+
+        :param thermostat_id: The thermostat id
+        :type thermostat_id: Integer [0, 23]
+        :param automatic: Automatic mode (True) or Manual mode (False).
+        :type automatic: Boolean
+        :param setpoint: The current setpoint.
+        :type setpoint: Integer [0, 5]
+        """
+        self.check_token(token)
+        return self.__wrap(lambda: self.__gateway_api.set_per_thermostat_mode(
+                       int(thermostat_id), boolean(automatic), int(setpoint)))
 
     @cherrypy.expose
     def get_airco_status(self, token):
