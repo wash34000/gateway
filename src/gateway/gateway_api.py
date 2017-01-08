@@ -359,7 +359,7 @@ class GatewayApi(object):
         """
         ret = self.__master_communicator.do_command(master_api.module_discover_start())
 
-        if self.__discover_mode_timer != None:
+        if self.__discover_mode_timer is not None:
             self.__discover_mode_timer.cancel()
 
         self.__discover_mode_timer = Timer(timeout, self.module_discover_stop)
@@ -367,7 +367,7 @@ class GatewayApi(object):
 
         self.__module_log = []
 
-        return {'status' : ret['resp']}
+        return {'status': ret['resp']}
 
     def module_discover_stop(self):
         """ Stop the module discover mode on the master.
@@ -376,13 +376,20 @@ class GatewayApi(object):
         """
         ret = self.__master_communicator.do_command(master_api.module_discover_stop())
 
-        if self.__discover_mode_timer != None:
+        if self.__discover_mode_timer is not None:
             self.__discover_mode_timer.cancel()
             self.__discover_mode_timer = None
 
         self.__module_log = []
 
-        return {'status' : ret['resp']}
+        return {'status': ret['resp']}
+
+    def module_discover_status(self):
+        """ Gets the status of the module discover mode on the master.
+
+        :returns dict with 'running': True|False
+        """
+        return {'running': self.__discover_mode_timer is not None}
 
     def get_module_log(self):
         """ Get the log messages from the module discovery mode. This returns the current log

@@ -106,6 +106,7 @@ class InputConfiguration(EepromModel):
     basic_actions = EepromActions(15, page_per_module(8, 2, 12, 30))
     invert = EepromByte(lambda id: (32, id))
     room = EextByte()
+    can = EepromString(1, lambda id: (2 + id /8, 252), read_only=True)
 
 
 class CanLedConfiguration(EepromModel):
