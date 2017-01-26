@@ -656,6 +656,30 @@ class WebInterface(object):
                     lambda: self.__gateway_api.set_master_status_leds(status.lower() == "true"))
 
     @cherrypy.expose
+    def get_full_backup(self, token):
+        """ Get a backup (tar) of the master eeprom and the sqlite databases.
+
+        :returns: Tar containing 4 files: master.eep, config.db, scheduled.db, power.db and
+        eeprom_extensions.db as a string of bytes.
+        """
+        self.check_token(token)
+        cherrypy.response.headers['Content-Type'] = 'application/octet-stream'
+        return self.__gateway_api.get_full_backup()
+
+    @cherrypy.expose
+    def restore_full_backup(self, token, data):
+        """ Restore a full backup containing the master eeprom and the sqlite databases.
+
+        :param data: The full backup to restore: tar containing 4 files: master.eep, config.db, \
+        scheduled.db, power.db and eeprom_extensions.db as a string of bytes.
+        :type data: multipart/form-data encoded bytes.
+        :returns: dict with 'output' key.
+        """
+        self.check_token(token)
+        data = data.file.read()
+        return self.__wrap(lambda: self.__gateway_api.restore_full_backup(data))
+
+    @cherrypy.expose
     def get_master_backup(self, token):
         """ Get a backup of the eeprom of the master.
 

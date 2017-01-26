@@ -26,6 +26,7 @@ import time as pytime
 import datetime
 import traceback
 import math
+import sqlite3
 from threading import Timer
 
 import constants
@@ -1043,6 +1044,95 @@ class GatewayApi(object):
         return dict()
 
     ###### Backup and restore functions
+
+    def get_full_backup(self):
+        """ Get a backup (tar) of the master eeprom and the sqlite databases.
+
+        :returns: Tar containing 4 files: master.eep, users.db, scheduled.db, power.db and
+        eeprom_extensions.db as a string of bytes.
+        """
+        import shutil
+        import tempfile
+        import subprocess
+
+        def backup_sqlite_db(input_db_path, backup_db_path):
+            """ Backup an sqlite db provided the path to the db to backup and the backup db. """
+            # Connect to database
+            connection = sqlite3.connect(input_db_path)
+            cursor = connection.cursor()
+
+            # Lock database before making a backup
+            cursor.execute('begin immediate')
+
+            # Make new backup file
+            shutil.copyfile(input_db_path, backup_db_path)
+
+            # Unlock database
+            connection.rollback()
+
+        tmp_dir = tempfile.mkdtemp()
+        try:
+            with eeprom_file = open("%s/master.eep" % tmp_dir, "w"):
+                eeprom_file.write(self.get_master_backup())
+
+            backup_sqlite_db(constants.get_user_database_file(),
+                             "%s/users.db" % tmp_dir)
+            backup_sqlite_db(constants.get_scheduling_database_file(),
+                             "%s/scheduled.db" % tmp_dir)
+            backup_sqlite_db(constants.get_power_database_file(),
+                             "%s/power.db" % tmp_dir)
+            backup_sqlite_db(constants.get_eeprom_extension_database_file(),
+                             "%s/eeprom_extensions.db" % tmp_dir)
+
+            retcode = subprocess.call("cd %s; tar cf backup.tar *" % tmp_dir, shell=True)
+            if retcode != 0:
+                raise Exception("The backup tar could not be created.")
+
+            with backup_file = open("%s/backup.tar" % tmp_dir, "r"):
+                return backup_file.read()
+
+        finally:
+            shutil.rmtree(tmp_dir)
+
+    def restore_full_backup(self, data):
+        """ Restore a full backup containing the master eeprom and the sqlite databases.
+
+        :param data: The eeprom backup to restore.
+        :type data: tar containing 4 files: master.eep, users.db, scheduled.db, power.db and\
+        eeprom_extensions.db as a string of bytes.
+        :returns: dict with 'output' key.
+        """
+        import shutil
+        import tempfile
+        import subprocess
+
+        tmp_dir = tempfile.mkdtemp()
+        try:
+            with backup_file = open("%s/backup.tar" % tmp_dir, "w"):
+                backup_file.write(data)
+
+            retcode = subprocess.call("cd %s; tar xf backup.tar" % tmp_dir, shell=True)
+            if retcode != 0:
+                raise Exception("The backup tar could not be extracted.")
+
+            with eeprom_file = open("%s/backup.tar" % tmp_dir, "r"):
+                eeprom_content = eeprom_file.read()
+                self.master_restore(eeprom_content)
+
+            shutil.copyfile("%s/users.db" % tmp_dir,
+                              constants.get_user_database_file())
+            shutil.copyfile("%s/scheduled.db" % tmp_dir,
+                              constants.get_scheduling_database_file())
+            shutil.copyfile("%s/power.db" % tmp_dir,
+                              constants.get_power_database_file())
+            shutil.copyfile("%s/eeprom_extensions.db" % tmp_dir,
+                              constants.get_eeprom_extension_database_file())
+
+        finally:
+            shutil.rmtree(tmp_dir)
+
+            # Restart the Cherrypy server after 1 second. Lets the current request terminate.
+            threading.Timer(1, lambda: os._exit(0)).start()
 
     def get_master_backup(self):
         """ Get a backup of the eeprom of the master.
