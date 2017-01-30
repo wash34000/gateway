@@ -31,6 +31,7 @@ from master.eeprom_controller import EepromFile, EepromAddress
 
 import intelhex
 import time
+import sys
 
 
 def create_bl_action(cmd, input):
@@ -171,7 +172,7 @@ def do_command(master_communicator, action, retry=True):
         else:
             raise exception
 
-def bootload(master_communicator, address, version, ihex, crc, blocks):
+def bootload(master_communicator, address, version, ihex, crc, blocks, logger):
     """ Bootload 1 module.
 
     :param master_communicator: Used to communicate with the master.
@@ -187,7 +188,7 @@ def bootload(master_communicator, address, version, ihex, crc, blocks):
     :param blocks: The number of blocks to write
     :type blocks:
     """
-    print "Going to bootloader"
+    logger("Going to bootloader")
     try:
         do_command(master_communicator, create_bl_action(master_api.modules_goto_bootloader(),
                                                          {"addr" : address, "sec" : 5}), False)
@@ -196,22 +197,22 @@ def bootload(master_communicator, address, version, ihex, crc, blocks):
 
     time.sleep(1)
 
-    print "Setting the firmware crc"
+    logger("Setting the firmware crc")
     do_command(master_communicator,
                create_bl_action(master_api.modules_new_crc(),
                                 {"addr" : address, "ccrc0": crc[0], "ccrc1": crc[1],
                                  "ccrc2": crc[2], "ccrc3": crc[3]}))
 
-    print "Setting new firmware version"
+    logger("Setting new firmware version")
     do_command(master_communicator, create_bl_action(master_api.modules_new_firmware_version(),
                                                      {"addr" : address, "f1n": version[0],
                                                       "f2n": version[1], "f3n": version[2]}))
 
     try:
-        print "Going to long mode"
+        logger("Going to long mode")
         master_communicator.do_command(master_api.change_communication_mode_to_long())
 
-        print "Writing firmware data"
+        logger("Writing firmware data")
         for i in range(blocks):
             bytes = ""
             for j in range(64):
@@ -226,25 +227,25 @@ def bootload(master_communicator, address, version, ihex, crc, blocks):
                        create_bl_action(master_api.modules_update_firmware_block(),
                                         {"addr" : address, "block" : i, "bytes": bytes}))
     finally:
-        print "Going to short mode"
+        logger("Going to short mode")
         master_communicator.do_command(master_api.change_communication_mode_to_short())
 
-    print "Integrity check"
+    logger("Integrity check")
     do_command(master_communicator, create_bl_action(master_api.modules_integrity_check(),
                                                      {"addr" : address}))
 
-    print "Going to application"
+    logger("Going to application")
     do_command(master_communicator, create_bl_action(master_api.modules_goto_application(),
                                                      {"addr" : address}))
 
     time.sleep(2)
 
-    print "Verifying firmware"
+    logger("Verifying firmware")
     do_command(master_communicator, create_bl_action(master_api.modules_get_version(),
                                                      {"addr": address}))
 
 
-def bootload_modules(type, filename, version, verbose=False):
+def bootload_modules(type, filename, version, verbose, logger):
     """ Bootload all modules of the given type with the firmware in the given filename.
 
     :param type: Type of the modules (o, d, i, t, c)
@@ -267,15 +268,13 @@ def bootload_modules(type, filename, version, verbose=False):
 
     addresses = get_module_addresses(master_communicator, type)
 
-    print addresses
-
-    blocks = 896 if type == 'c' else 384
+    blocks = 922 if type == 'c' else 410
     ihex = intelhex.IntelHex(filename)
     crc = calc_crc(ihex, blocks)
 
     for address in addresses:
-        print "Bootloading module %s" % pretty_address(address)
-        bootload(master_communicator, address, version, ihex, crc, blocks)
+        logger("Bootloading module %s" % pretty_address(address))
+        bootload(master_communicator, address, version, ihex, crc, blocks, logger)
 
 
 def main():
@@ -290,6 +289,8 @@ def main():
     parser.add_argument('-v', '--version', dest='version', required=True,
                         help='the version number for the new firmware (format: x.y.z)')
 
+    parser.add_argument('-l', '--log', dest='log', required=False)
+
     parser.add_argument('-V', '--verbose', dest='verbose', action='store_true',
                         help='show the serial output')
 
@@ -297,7 +298,17 @@ def main():
 
     version = [int(x) for x in args.version.split(".")]
 
-    bootload_modules(args.type, args.file, version, args.verbose)
+    log_file = None
+    if log is not None:
+        log_file = open(log, 'a')
+        logger = lambda msg: log_file.write('%s\n' % msg)
+    else:
+        logger = lambda msg: sys.stdout.write('%s\n' % msg)
+
+    bootload_modules(args.type, args.file, version, args.verbose, logger)
+
+    if log_file is not None:
+        log_file.close()
 
 
 if __name__ == '__main__':
