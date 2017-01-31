@@ -21,24 +21,26 @@ data is stored in a sqlite database on the gateways filesystem.
 
 import sqlite3
 import os.path
+from threading import Lock
 
 class EepromExtension(object):
     """ Provides the interface for reading and writing EepromExtension objects to the sqlite
     database. """
 
     def __init__(self, db_filename):
-        new_database = not os.path.exists(db_filename)
+        self.__lock = Lock()
         self.__connection = sqlite3.connect(db_filename, detect_types=sqlite3.PARSE_DECLTYPES,
                                             check_same_thread=False, isolation_level=None)
         self.__cursor = self.__connection.cursor()
-        if new_database:
+        if not os.path.exists(db_filename):
             self.__create_tables()
 
     def __create_tables(self):
         """ Create the extensions table. """
-        self.__cursor.execute("CREATE TABLE extensions (id INTEGER PRIMARY KEY, model TEXT, "
-                              "model_id INTEGER, field TEXT, value TEXT, "
-                              "UNIQUE(model, model_id, field) ON CONFLICT REPLACE);")
+        with self.__lock:
+            self.__cursor.execute("CREATE TABLE extensions (id INTEGER PRIMARY KEY, model TEXT, "
+                                  "model_id INTEGER, field TEXT, value TEXT, "
+                                  "UNIQUE(model, model_id, field) ON CONFLICT REPLACE);")
 
     def read_model(self, eeprom_model, model_id, fields=None):
         """ Read all eext data for the given eeprom model. Returns dict with all specified
@@ -52,7 +54,7 @@ class EepromExtension(object):
 
         field_dict = {}
         for (field_name, field_type) in eeprom_model.get_fields(include_eext=True):
-            if fields is None or field in fields:
+            if fields is None or field_name in fields:
                 field_value = self.read_extension_data(eeprom_model_name, model_id,
                                                        field_type, field_name)
                 field_dict[field_name] = field_value
@@ -63,10 +65,11 @@ class EepromExtension(object):
         """ Read data for a specific eext field. """
         model_id = 0 if model_id is None else model_id
 
-        for row in self.__cursor.execute("SELECT value FROM extensions WHERE "
-                                         "model=? AND model_id=? AND field=?",
-                                         (eeprom_model_name, model_id, field_name)):
-            return field_type.decode(row[0])
+        with self.__lock:
+            for row in self.__cursor.execute("SELECT value FROM extensions WHERE "
+                                              "model=? AND model_id=? AND field=?",
+                                              (eeprom_model_name, model_id, field_name)):
+                return field_type.decode(row[0])
 
         return field_type.default_value()
 
@@ -87,11 +90,13 @@ class EepromExtension(object):
         model_id = 0 if model_id is None else model_id
         value = field_type.encode(data)
 
-        self.__cursor.execute("INSERT INTO extensions (model, model_id, field, value) "
-                              "VALUES (?, ?, ?, ?)",
-                              (eeprom_model_name, model_id, field_name, value))
+        with self.__lock:
+            self.__cursor.execute("INSERT INTO extensions (model, model_id, field, value) "
+                                  "VALUES (?, ?, ?, ?)",
+                                  (eeprom_model_name, model_id, field_name, value))
 
     def close(self):
         """ Commit the changes and close the database connection. """
-        self.__connection.commit()
-        self.__connection.close()
+        with self.__lock:
+            self.__connection.commit()
+            self.__connection.close()
