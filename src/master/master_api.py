@@ -288,12 +288,12 @@ def thermostat_mode_list():
     """ Read the thermostat mode for each thermostat. """
     return MasterCommandSpec("ml",
         [Field.padding(13)],
-        [Field.svt('mode0'), Field.svt('mode1'), Field.svt('mode2'), Field.svt('mode3'),
-         Field.svt('mode4'), Field.svt('mode5'), Field.svt('mode6'), Field.svt('mode7'),
-         Field.svt('mode8'), Field.svt('mode9'), Field.svt('mode10'), Field.svt('mode11'),
-         Field.svt('mode12'), Field.svt('mode13'), Field.svt('mode14'), Field.svt('mode15'),
-         Field.svt('mode16'), Field.svt('mode17'), Field.svt('mode18'), Field.svt('mode19'),
-         Field.svt('mode20'), Field.svt('mode21'), Field.svt('mode22'), Field.svt('mode23'),
+        [Field.byte('mode0'), Field.byte('mode1'), Field.byte('mode2'), Field.byte('mode3'),
+         Field.byte('mode4'), Field.byte('mode5'), Field.byte('mode6'), Field.byte('mode7'),
+         Field.byte('mode8'), Field.byte('mode9'), Field.byte('mode10'), Field.byte('mode11'),
+         Field.byte('mode12'), Field.byte('mode13'), Field.byte('mode14'), Field.byte('mode15'),
+         Field.byte('mode16'), Field.byte('mode17'), Field.byte('mode18'), Field.byte('mode19'),
+         Field.byte('mode20'), Field.byte('mode21'), Field.byte('mode22'), Field.byte('mode23'),
          Field.crc(), Field.lit('\r\n')])
 
 def sensor_humidity_list():

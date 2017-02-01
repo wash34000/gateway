@@ -22,6 +22,8 @@ and call the master_api to complete the actions.
 import logging
 LOGGER = logging.getLogger("openmotics")
 
+import os
+import threading
 import time as pytime
 import datetime
 import traceback
@@ -43,11 +45,12 @@ from master.master_communicator import BackgroundConsumer
 from master.eeprom_controller import EepromController, EepromFile
 from master.eeprom_extension import EepromExtension
 from master.eeprom_models import OutputConfiguration, InputConfiguration, ThermostatConfiguration,\
-              SensorConfiguration, PumpGroupConfiguration, GroupActionConfiguration, \
-              ScheduledActionConfiguration, PulseCounterConfiguration, StartupActionConfiguration,\
-              ShutterConfiguration, ShutterGroupConfiguration, DimmerConfiguration, \
-              GlobalThermostatConfiguration, CoolingConfiguration, CoolingPumpGroupConfiguration, \
-              GlobalRTD10Configuration, RTD10HeatingConfiguration, RTD10CoolingConfiguration
+    SensorConfiguration, PumpGroupConfiguration, GroupActionConfiguration, \
+    ScheduledActionConfiguration, PulseCounterConfiguration, StartupActionConfiguration,\
+    ShutterConfiguration, ShutterGroupConfiguration, DimmerConfiguration, \
+    GlobalThermostatConfiguration, CoolingConfiguration, CoolingPumpGroupConfiguration, \
+    GlobalRTD10Configuration, RTD10HeatingConfiguration, RTD10CoolingConfiguration, \
+    CanLedConfiguration, RoomConfiguration
 
 import power.power_api as power_api
 
@@ -1079,7 +1082,7 @@ class GatewayApi(object):
 
         tmp_dir = tempfile.mkdtemp()
         try:
-            with eeprom_file = open("%s/master.eep" % tmp_dir, "w"):
+            with open("%s/master.eep" % tmp_dir, "w") as eeprom_file:
                 eeprom_file.write(self.get_master_backup())
 
             backup_sqlite_db(constants.get_user_database_file(),
@@ -1095,7 +1098,7 @@ class GatewayApi(object):
             if retcode != 0:
                 raise Exception("The backup tar could not be created.")
 
-            with backup_file = open("%s/backup.tar" % tmp_dir, "r"):
+            with open("%s/backup.tar" % tmp_dir, "r") as backup_file:
                 return backup_file.read()
 
         finally:
@@ -1115,14 +1118,14 @@ class GatewayApi(object):
 
         tmp_dir = tempfile.mkdtemp()
         try:
-            with backup_file = open("%s/backup.tar" % tmp_dir, "w"):
+            with open("%s/backup.tar" % tmp_dir, "w") as backup_file:
                 backup_file.write(data)
 
             retcode = subprocess.call("cd %s; tar xf backup.tar" % tmp_dir, shell=True)
             if retcode != 0:
                 raise Exception("The backup tar could not be extracted.")
 
-            with eeprom_file = open("%s/backup.tar" % tmp_dir, "r"):
+            with open("%s/backup.tar" % tmp_dir, "r") as eeprom_file:
                 eeprom_content = eeprom_file.read()
                 self.master_restore(eeprom_content)
 
@@ -1922,7 +1925,7 @@ class GatewayApi(object):
         :param config: The list of can_led_configurations to set
         :type config: list of can_led_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'room' (Byte)
         """
-        self.__eeprom_controller.write_batch([ CanLedConfiguration.from_dict(o) for o in config ] )
+        self.__eeprom_controller.write_batch([CanLedConfiguration.from_dict(o) for o in config])
 
     def get_room_configuration(self, id, fields=None):
         """
@@ -1944,7 +1947,7 @@ class GatewayApi(object):
         :type fields: List of strings
         :returns: list of room_configuration dict: contains 'id' (Id), 'floor' (Byte), 'name' (String)
         """
-        return [ o.to_dict() for o in self.__eeprom_controller.read_all(RoomConfiguration, fields) ]
+        return [o.to_dict() for o in self.__eeprom_controller.read_all(RoomConfiguration, fields)]
 
     def set_room_configuration(self, config):
         """
@@ -1962,7 +1965,7 @@ class GatewayApi(object):
         :param config: The list of room_configurations to set
         :type config: list of room_configuration dict: contains 'id' (Id), 'floor' (Byte), 'name' (String)
         """
-        self.__eeprom_controller.write_batch([ RoomConfiguration.from_dict(o) for o in config ] )
+        self.__eeprom_controller.write_batch([RoomConfiguration.from_dict(o) for o in config])
 
     ###### End of auto generated functions
 
