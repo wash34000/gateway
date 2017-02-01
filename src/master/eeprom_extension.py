@@ -29,10 +29,11 @@ class EepromExtension(object):
 
     def __init__(self, db_filename):
         self.__lock = Lock()
+        create_tables = not os.path.exists(db_filename)
         self.__connection = sqlite3.connect(db_filename, detect_types=sqlite3.PARSE_DECLTYPES,
                                             check_same_thread=False, isolation_level=None)
         self.__cursor = self.__connection.cursor()
-        if not os.path.exists(db_filename):
+        if create_tables is True:
             self.__create_tables()
 
     def __create_tables(self):
