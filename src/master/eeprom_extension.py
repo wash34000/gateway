@@ -83,8 +83,9 @@ class EepromExtension(object):
         eeprom_model_name = eeprom_model.__class__.get_name()
 
         for (field_name, field_type) in eeprom_model.__class__.get_fields(include_eext=True):
-            self.write_extension_data(eeprom_model_name, model_id, field_type, field_name,
-                                      eeprom_model.__dict__[field_name])
+            if field_name in eeprom_model.__dict__:
+                self.write_extension_data(eeprom_model_name, model_id, field_type, field_name,
+                                          eeprom_model.__dict__[field_name])
 
     def write_extension_data(self, eeprom_model_name, model_id, field_type, field_name, data):
         """ Write data for a specific eext field. """
