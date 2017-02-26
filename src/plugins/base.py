@@ -562,7 +562,7 @@ else:
     def get_logs(self):
         """ Get the logs for all plugins. Returns a dict where the keys are the plugin
         names and the value is a string. """
-        return '\n'.join(self.__logs)
+        return dict((plugin, '\n'.join(entries)) for plugin, entries in self.__logs.iteritems())
 
 
 class PluginConfigChecker(object):
