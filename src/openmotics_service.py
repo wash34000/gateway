@@ -111,8 +111,8 @@ def main():
     passthrough_service.start()
 
     web_interface = WebInterface(user_controller, gateway_api,
-                                constants.get_scheduling_database_file(), maintenance_service,
-                                led_service.in_authorized_mode)
+                                 constants.get_scheduling_database_file(), maintenance_service,
+                                 led_service.in_authorized_mode)
 
     plugin_controller = PluginController(web_interface)
     plugin_controller.start_plugins()

@@ -2022,12 +2022,15 @@ class GatewayApi(object):
                         return 2
                     if module[key] == 5:  # 100A
                         return 4
+                    return 2  # 12.5A is default
                 self.__power_communicator.do_command(
                     addr, power_api.set_current_clamp_factor(version),
                     *[_convert_ccf('sensor%d' % i) for i in xrange(power_api.NUM_PORTS[version])]
                 )
 
                 def _convert_sci(key):
+                    if key not in module:
+                        return 0
                     return 1 if module[key] in [True, 1] else 0
                 self.__power_communicator.do_command(
                     addr, power_api.set_current_inverse(version),
