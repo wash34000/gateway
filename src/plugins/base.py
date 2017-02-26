@@ -536,30 +536,33 @@ else:
         """ Append an exception to the log for the plugins. This log can be retrieved
         using get_logs. """
         if plugin not in self.__logs:
-            self.__logs[plugin] = ""
+            self.__logs[plugin] = []
 
         LOGGER.error("Plugin %s: %s (%s)", plugin, msg, exception)
         if stacktrace is None:
-            self.__logs[plugin] += "%s - %s: %s\n\n" % (datetime.now(), msg, exception)
+            self.__logs[plugin].append("%s - %s: %s" % (datetime.now(), msg, exception))
         else:
-            self.__logs[plugin] += "%s - %s: %s\n%s\n\n" % \
-                                   (datetime.now(), msg, exception, stacktrace)
+            self.__logs[plugin].append("%s - %s: %s\n%s" % (datetime.now(), msg, exception, stacktrace))
+        if len(self.__logs[plugin]) > 100:
+            self.__logs[plugin].pop(0)
 
     def get_logger(self, plugin_name):
         """ Get a logger for a plugin. """
         if plugin_name not in self.__logs:
-            self.__logs[plugin_name] = ""
+            self.__logs[plugin_name] = []
 
         def log(msg):
             """ Log function for the given plugin."""
-            self.__logs[plugin_name] += "%s - %s\n\n" % (datetime.now(), msg)
+            self.__logs[plugin_name].append("%s - %s" % (datetime.now(), msg))
+            if len(self.__logs[plugin_name]) > 100:
+                self.__logs[plugin_name].pop(0)
 
         return log
 
     def get_logs(self):
         """ Get the logs for all plugins. Returns a dict where the keys are the plugin
         names and the value is a string. """
-        return self.__logs
+        return '\n'.join(self.__logs)
 
 
 class PluginConfigChecker(object):
