@@ -690,7 +690,7 @@ class WebInterface(object):
         return self.__gateway_api.get_full_backup()
 
     @cherrypy.expose
-    def restore_full_backup(self, token, data):
+    def restore_full_backup(self, token, backup_data):
         """ Restore a full backup containing the master eeprom and the sqlite databases.
 
         :param data: The full backup to restore: tar containing 4 files: master.eep, config.db, \
@@ -699,8 +699,11 @@ class WebInterface(object):
         :returns: dict with 'output' key.
         """
         self.check_token(token)
-        data = data.file.read()
-        return self.__wrap(lambda: self.__gateway_api.restore_full_backup(data))
+        data = backup_data.file.read()
+        if len(data) == 0:
+            return self.__error('backup_data is empty')
+        else:
+            return self.__wrap(lambda: self.__gateway_api.restore_full_backup(data))
 
     @cherrypy.expose
     def get_master_backup(self, token):

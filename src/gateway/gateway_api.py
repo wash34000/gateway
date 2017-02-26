@@ -1118,7 +1118,7 @@ class GatewayApi(object):
 
         tmp_dir = tempfile.mkdtemp()
         try:
-            with open("%s/backup.tar" % tmp_dir, "w") as backup_file:
+            with open("%s/backup.tar" % tmp_dir, "wb") as backup_file:
                 backup_file.write(data)
 
             retcode = subprocess.call("cd %s; tar xf backup.tar" % tmp_dir, shell=True)
@@ -1137,6 +1137,8 @@ class GatewayApi(object):
                               constants.get_power_database_file())
             shutil.copyfile("%s/eeprom_extensions.db" % tmp_dir,
                               constants.get_eeprom_extension_database_file())
+
+            return {'output':'Restore complete'}
 
         finally:
             shutil.rmtree(tmp_dir)
