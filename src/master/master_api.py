@@ -497,8 +497,8 @@ def change_communication_mode_to_long():
 def change_communication_mode_to_short():
     """ Change the number of bytes used to communicate with the master to 18. """
     return MasterCommandSpec("cm",
-        [Field.lit('\x12'), Field.lit('\x00'), Field.padding(71)],
-        [Field.lit('\x12'), Field.lit('\x00'), Field.padding(11), Field.lit("\r\n")])
+        [Field.lit('\x12'), Field.lit('\x01'), Field.padding(71)],
+        [Field.lit('\x12'), Field.lit('\x01'), Field.padding(11), Field.lit("\r\n")])
 
 def modules_update_firmware_block():
     """ Upload 1 block of 64 bytes to the module. """
