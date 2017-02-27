@@ -252,6 +252,9 @@ def bootload(master_communicator, address, ihex, crc, blocks, logger):
 
     logger("New version: v %s.%s.%s" % (result["f1"], result["f2"], result["f3"]))
 
+    logger("Resetting error list")
+    master_communicator.do_command(master_api.clear_error_list())
+
 
 def bootload_modules(type, filename, verbose, logger):
     """ Bootload all modules of the given type with the firmware in the given filename.
