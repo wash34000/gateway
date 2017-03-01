@@ -886,8 +886,8 @@ class GatewayApi(object):
 
         return {'status': 'OK'}
 
-    def set_per_thermostat_setpoint(self, thermostat_id, automatic, setpoint):
-        """ Set the setpoint for a certain thermostat.
+    def set_per_thermostat_mode(self, thermostat_id, automatic, setpoint):
+        """ Set the setpoint/mode for a certain thermostat.
 
         :param thermostat_id: The id of the thermostat.
         :type thermostat_id: Integer [0, 23]
