@@ -553,9 +553,9 @@ class WebInterface(object):
 
         if automatic is not None and setpoint is not None:
             for t in range(24):
-                self.__gateway_api.set_per_thermostat_mode(t, automatic, setpoint)
+                self.__gateway_api.set_per_thermostat_mode(t, automatic, int(setpoint))
 
-        return {'status': 'OK'}
+        return self.__success(status='OK')
 
     @cherrypy.expose
     def set_per_thermostat_mode(self, token, thermostat_id, automatic, setpoint):
