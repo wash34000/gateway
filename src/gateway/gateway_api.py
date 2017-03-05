@@ -1125,7 +1125,7 @@ class GatewayApi(object):
             if retcode != 0:
                 raise Exception("The backup tar could not be extracted.")
 
-            with open("%s/backup.tar" % tmp_dir, "r") as eeprom_file:
+            with open("%s/master.eep" % tmp_dir, "r") as eeprom_file:
                 eeprom_content = eeprom_file.read()
                 self.master_restore(eeprom_content)
 
