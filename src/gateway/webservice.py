@@ -196,7 +196,7 @@ class WebInterface(object):
         return serve_file('/opt/openmotics/static/index.html', content_type='text/html')
 
     @cherrypy.expose
-    def login(self, username, password):
+    def login(self, username, password, timeout=None):
         """ Login to the web service, returns a token if successful, returns HTTP status code 401
         otherwise.
 
@@ -204,9 +204,11 @@ class WebInterface(object):
         :param username: Name of the user.
         :type password: String
         :param password: Password of the user.
+        :type timeout: int
+        :param timeout: Optional session timeout. 30d >= x >= 1h
         :returns: 'token' : String
         """
-        token = self.__user_controller.login(username, password)
+        token = self.__user_controller.login(username, password, timeout)
         if token is None:
             raise cherrypy.HTTPError(401, "invalid_credentials")
         else:
