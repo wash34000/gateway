@@ -116,17 +116,25 @@ class UserController(object):
 
         return 0
 
-    def login(self, username, password):
+    def login(self, username, password, timeout=None):
         """ Login with a username and password, returns a token for this user.
 
         :returns: a token that identifies this user, None for invalid credentials.
         """
         username = username.lower()
+        if timeout is not None:
+            try:
+                timeout = int(timeout)
+                timeout = min(60 * 60 * 24 * 30, max(60 * 60, timeout))
+            except ValueError:
+                timeout = None
+        if timeout is None:
+            timeout = self.__token_timeout
 
         for _ in self.__cursor.execute("SELECT id FROM users WHERE username = ? AND "
                                          "password = ? AND enabled = ?;",
                                          (username, self.__hash(password), 1)):
-            return self.__gen_token(username, time.time() + self.__token_timeout)
+            return self.__gen_token(username, time.time() + timeout)
 
         return None
 
