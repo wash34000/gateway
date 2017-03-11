@@ -550,8 +550,9 @@ class WebInterface(object):
         """
         self.check_token(token)
 
-        self.__gateway_api.set_thermostat_mode(boolean(thermostat_on), boolean(cooling_mode),
-            boolean(cooling_on))
+        self.__gateway_api.set_thermostat_mode(boolean(thermostat_on),
+                                               boolean(cooling_mode),
+                                               boolean(cooling_on))
 
         if automatic is not None and setpoint is not None:
             for t in range(24):

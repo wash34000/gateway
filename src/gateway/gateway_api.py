@@ -780,7 +780,7 @@ class GatewayApi(object):
         'id', 'act', 'csetp', 'output0', 'output1', 'outside', 'mode', 'name', 'sensor_nr',
         'automatic', 'setpoint'.
         """
-        if self.__thermostat_status == None:
+        if self.__thermostat_status is None:
             self.__thermostat_status = ThermostatStatus(self.__get_all_thermostats(), 1800)
         elif self.__thermostat_status.should_refresh():
             self.__thermostat_status.update(self.__get_all_thermostats())
@@ -789,12 +789,12 @@ class GatewayApi(object):
         thermostat_mode = self.__master_communicator.do_command(master_api.thermostat_mode_list())
 
         mode = thermostat_info['mode']
-        thermostats_on = (mode & 128 == 128)
-        cooling = (mode & 16 == 16)
+        thermostats_on = bool(mode & 1 << 7)
+        cooling = bool(mode & 1 << 4)
 
-        def get_automatic_setpoint(mode):
-            automatic = mode & 8 == 8
-            return (automatic, 0 if automatic else (mode & 7))
+        def get_automatic_setpoint(_mode):
+            _automatic = bool(_mode & 1 << 3)
+            return _automatic, 0 if _automatic else (_mode & 0b00000111)
 
         (automatic, setpoint) = get_automatic_setpoint(thermostat_mode['mode0'])
 
@@ -807,7 +807,7 @@ class GatewayApi(object):
         aircos = self.__master_communicator.do_command(master_api.read_airco_status_bits())
 
         for thermostat_id in range(0, 24):
-            if cached_thermostats[thermostat_id]['active'] == True:
+            if cached_thermostats[thermostat_id]['active'] is True:
                 thermostat = {'id' : thermostat_id}
                 thermostat['act'] = thermostat_info['tmp%d' % thermostat_id].get_temperature()
                 thermostat['csetp'] = thermostat_info['setp%d' % thermostat_id].get_temperature()
@@ -835,8 +835,11 @@ class GatewayApi(object):
 
                 thermostats.append(thermostat)
 
-        return {'thermostats_on' : thermostats_on, 'automatic' : automatic,
-                'setpoint' : setpoint, 'status' : thermostats, 'cooling' : cooling}
+        return {'thermostats_on': thermostats_on,
+                'automatic': automatic,
+                'setpoint': setpoint,
+                'cooling': cooling,
+                'status': thermostats}
 
     def __check_thermostat(self, thermostat):
         """ :raises ValueError if thermostat not in range [0, 24]. """
@@ -870,19 +873,20 @@ class GatewayApi(object):
         :param cooling_on: boolean (optional)
         :returns: dict with 'status'
         """
-        mode = 64 # Set thermostats to multi-tenant mode
-        mode += 128 if thermostat_on else 0
-        mode += 16 if cooling_mode else 0
+        mode = 0
+        mode |= 1 << 7 if thermostat_on else 0
+        mode |= 1 << 6  # multi-tenant mode
+        mode |= 1 << 4 if cooling_mode else 0
 
         check_basic_action(self.__master_communicator.do_command(master_api.basic_action(),
-                    {'action_type' : master_api.BA_THERMOSTAT_MODE,
-                     'action_number' : mode}))
+                           {'action_type': master_api.BA_THERMOSTAT_MODE,
+                            'action_number': mode}))
 
         cooling_mode = 0 if not cooling_mode else (1 if not cooling_on else 2)
 
         check_basic_action(self.__master_communicator.do_command(master_api.basic_action(),
-                    {'action_type' : master_api.BA_THERMOSTAT_COOLING_HEATING,
-                     'action_number' : cooling_mode}))
+                           {'action_type': master_api.BA_THERMOSTAT_COOLING_HEATING,
+                            'action_number': cooling_mode}))
 
         return {'status': 'OK'}
 
@@ -905,16 +909,16 @@ class GatewayApi(object):
 
         if automatic:
             check_basic_action(self.__master_communicator.do_command(master_api.basic_action(),
-                    {'action_type' : master_api.BA_THERMOSTAT_TENANT_AUTO,
-                     'action_number' : thermostat_id}))
+                               {'action_type': master_api.BA_THERMOSTAT_TENANT_AUTO,
+                                'action_number': thermostat_id}))
         else:
             check_basic_action(self.__master_communicator.do_command(master_api.basic_action(),
-                {'action_type' : master_api.BA_THERMOSTAT_TENANT_MANUAL,
-                 'action_number' : thermostat_id}))
+                               {'action_type': master_api.BA_THERMOSTAT_TENANT_MANUAL,
+                                'action_number': thermostat_id}))
 
             check_basic_action(self.__master_communicator.do_command(master_api.basic_action(),
-                {'action_type' : master_api.__dict__['BA_ONE_SETPOINT_%d' % setpoint],
-                 'action_number' : thermostat_id}))
+                               {'action_type': master_api.__dict__['BA_ONE_SETPOINT_%d' % setpoint],
+                                'action_number': thermostat_id}))
 
         return {'status': 'OK'}
 

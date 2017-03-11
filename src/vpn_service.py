@@ -166,15 +166,16 @@ class Gateway(object):
         None on error.
         """
         data = self.do_call("get_thermostat_status?token=None")
-        if data == None or data['success'] == False:
+        if data is None or data['success'] is False:
             return None
         else:
-            ret = {'thermostats_on' : data['thermostats_on'], 'automatic' : data['automatic'],
-                   'cooling' : data['cooling']}
+            ret = {'thermostats_on': data['thermostats_on'],
+                   'automatic': data['automatic'],
+                   'cooling': data['cooling']}
             thermostats = []
             for thermostat in data['status']:
                 to_add = {}
-                for field in ['id','act','csetp','mode','output0','output1','outside','airco']:
+                for field in ['id', 'act', 'csetp', 'mode', 'output0', 'output1', 'outside', 'airco']:
                     to_add[field] = thermostat[field]
                 thermostats.append(to_add)
             ret['status'] = thermostats
