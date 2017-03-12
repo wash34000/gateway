@@ -858,7 +858,9 @@ class GatewayApi(object):
         self.__check_thermostat(thermostat)
 
         _ = self.__master_communicator.do_command(master_api.write_setpoint(),
-            {'thermostat' : thermostat, 'config' : 0, 'temp' : master_api.Svt.temp(temperature)})
+                                                  {'thermostat': thermostat,
+                                                   'config': 0,
+                                                   'temp': master_api.Svt.temp(temperature)})
 
         return {'status': 'OK'}
 

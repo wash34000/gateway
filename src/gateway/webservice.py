@@ -555,8 +555,10 @@ class WebInterface(object):
                                                boolean(cooling_on))
 
         if automatic is not None and setpoint is not None:
-            for t in range(24):
-                self.__gateway_api.set_per_thermostat_mode(t, automatic, int(setpoint))
+            for thermostat_id in range(24):
+                self.__gateway_api.set_per_thermostat_mode(thermostat_id,
+                                                           boolean(automatic),
+                                                           int(setpoint))
 
         return self.__success(status='OK')
 
@@ -573,8 +575,9 @@ class WebInterface(object):
         :type setpoint: Integer [0, 5]
         """
         self.check_token(token)
-        return self.__wrap(lambda: self.__gateway_api.set_per_thermostat_mode(
-                       int(thermostat_id), boolean(automatic), int(setpoint)))
+        return self.__wrap(lambda: self.__gateway_api.set_per_thermostat_mode(int(thermostat_id),
+                                                                              boolean(automatic),
+                                                                              int(setpoint)))
 
     @cherrypy.expose
     def get_airco_status(self, token):
