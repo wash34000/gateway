@@ -407,6 +407,13 @@ class SensorConfiguration(EepromModel):
     room = EextByte()
 
 
+class ThermostatSetpointConfiguration(EepromModel):
+    """ Models the setpoints for all of the thermostats. """
+    id = EepromId(24)
+    automatic = EextBool()
+    setpoint = EextByte()
+
+
 class GroupActionConfiguration(EepromModel):
     """ Models a group action. The maximum number of inputs is 160. """
     id = EepromId(160)

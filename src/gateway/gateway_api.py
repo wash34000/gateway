@@ -50,7 +50,7 @@ from master.eeprom_models import OutputConfiguration, InputConfiguration, Thermo
     ShutterConfiguration, ShutterGroupConfiguration, DimmerConfiguration, \
     GlobalThermostatConfiguration, CoolingConfiguration, CoolingPumpGroupConfiguration, \
     GlobalRTD10Configuration, RTD10HeatingConfiguration, RTD10CoolingConfiguration, \
-    CanLedConfiguration, RoomConfiguration
+    CanLedConfiguration, RoomConfiguration, ThermostatSetpointConfiguration
 
 import power.power_api as power_api
 
@@ -106,7 +106,8 @@ class GatewayApi(object):
         self.__extend_method("set_shutter_configuration", self.__init_shutter_status)
         self.__extend_method("set_shutter_configurations", self.__init_shutter_status)
 
-        self.init_master()
+        self.__init_master()
+        self.__load_thermostat_setpoints()
         self.__run_master_timer()
 
     def __extend_method(self, method_name, extension):
@@ -127,7 +128,7 @@ class GatewayApi(object):
         """ Set the plugin controller. """
         self.__plugin_controller = plugin_controller
 
-    def init_master(self):
+    def __init_master(self):
         """ Initialize the master: disable the async RO messages, enable async OL, IL and SO
         messages, enables multi-tenant thermostats. """
         try:
@@ -172,6 +173,12 @@ class GatewayApi(object):
 
         except CommunicationTimedOutException:
             LOGGER.error("Got CommunicationTimedOutException during gateway_api initialization.")
+
+    def __load_thermostat_setpoints(self):
+        """ Load the thermostat setpoints from the EepromController into the master. """
+        for config in self.__eeprom_controller.read_all(ThermostatSetpointConfiguration):
+            if config.setpoint != 255: # Skip not initialised ThermostatSetpointConfiguration
+                self.set_per_thermostat_mode(config.id, config.automatic, config.setpoint)
 
     def __run_master_timer(self):
         """ Run the master timer, this sets the masters clock if it differs more than 3 minutes
@@ -921,6 +928,9 @@ class GatewayApi(object):
             check_basic_action(self.__master_communicator.do_command(master_api.basic_action(),
                                {'action_type': master_api.__dict__['BA_ONE_SETPOINT_%d' % setpoint],
                                 'action_number': thermostat_id}))
+
+        self.__eeprom_controller.write(ThermostatSetpointConfiguration.from_dict(
+            {'id':thermostat_id,'automatic':automatic,'setpoint':setpoint}))
 
         return {'status': 'OK'}
 

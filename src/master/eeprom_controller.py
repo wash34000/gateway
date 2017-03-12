@@ -1042,3 +1042,22 @@ class EextString(EextDataType):
 
     def encode(self, value):
         return value
+
+
+class EextBool(EextDataType):
+    """ A Boolean field, stored in the eepro extension database. """
+
+    def __init__(self):
+        pass
+
+    def get_name(self):
+        return "Boolean"
+
+    def default_value(self):
+        return False
+
+    def decode(self, value):
+        return bool(value)
+
+    def encode(self, value):
+        return str(value)
