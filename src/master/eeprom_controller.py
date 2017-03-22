@@ -815,11 +815,19 @@ class EepromTemp(EepromDataType):
         return "Temp"
 
     def from_bytes(self, bytes):
-        return float(ord(bytes[0])) / 2 - 32
+        value = ord(bytes[0])
+        if value == 255:
+            return None
+        return float(value) / 2 - 32
 
     def to_bytes(self, field):
         self.check_writable()
-        return str(chr(int((float(field) + 32) * 2)))
+        if field is None:
+            value = 255
+        else:
+            value = int((float(field) + 32) * 2)
+            value = max(min(value, 255), 0)
+        return str(chr(value))
 
     def get_length(self):
         return 1

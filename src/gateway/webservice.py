@@ -646,8 +646,11 @@ class WebInterface(object):
         """
         self.check_token(token)
         return self.__wrap(lambda: self.__gateway_api.set_virtual_sensor(
-                                        int(sensor_id), float(temperature), float(humidity),
-                                        int(brightness)))
+            int(sensor_id),
+            float(temperature) if temperature is not None else None,
+            float(humidity) if humidity is not None else None,
+            int(brightness) if brightness is not None else None
+        ))
 
     @cherrypy.expose
     def do_basic_action(self, token, action_type, action_number):

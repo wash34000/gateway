@@ -1009,7 +1009,7 @@ class GatewayApi(object):
     def get_sensor_temperature_status(self):
         """ Get the current temperature of all sensors.
 
-        :returns: list with 32 temperatures, 1 for each sensor.
+        :returns: list with 32 temperatures, 1 for each sensor. None/null if not connected
         """
         output = []
 
@@ -1022,26 +1022,26 @@ class GatewayApi(object):
     def get_sensor_humidity_status(self):
         """ Get the current humidity of all sensors.
 
-        :returns: list with 32 bytes, 1 for each sensor.
+        :returns: list with 32 percentages, 1 for each sensor. None/null if not connected
         """
         output = []
 
         sensor_list = self.__master_communicator.do_command(master_api.sensor_humidity_list())
         for i in range(32):
-            output.append(sensor_list['hum%d' % i])
+            output.append(sensor_list['hum%d' % i].get_humidity())
 
         return output
 
     def get_sensor_brightness_status(self):
         """ Get the current brightness of all sensors.
 
-        :returns: list with 32 bytes, 1 for each sensor.
+        :returns: list with 32 percentages, 1 for each sensor. None/null if not connected
         """
         output = []
 
         sensor_list = self.__master_communicator.do_command(master_api.sensor_brightness_list())
         for i in range(32):
-            output.append(sensor_list['bri%d' % i])
+            output.append(sensor_list['bri%d' % i].get_brightness())
 
         return output
 
@@ -1064,8 +1064,8 @@ class GatewayApi(object):
         self.__master_communicator.do_command(master_api.set_virtual_sensor(),
                                               {'sensor': sensor_id,
                                                'tmp': master_api.Svt.temp(temperature),
-                                               'hum': humidity,
-                                               'bri': brightness})
+                                               'hum': master_api.Svt.humidity(humidity),
+                                               'bri': master_api.Svt.brightness(brightness)})
 
         return {'status': 'OK'}
 
