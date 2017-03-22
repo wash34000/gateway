@@ -19,9 +19,6 @@ and call the master_api to complete the actions.
 @author: fryckbos
 """
 
-import logging
-LOGGER = logging.getLogger("openmotics")
-
 import os
 import threading
 import time as pytime
@@ -29,48 +26,50 @@ import datetime
 import traceback
 import math
 import sqlite3
-from threading import Timer
-
 import constants
-
+import logging
+from threading import Timer
 from serial_utils import CommunicationTimedOutException
-
 import master.master_api as master_api
 from master.outputs import OutputStatus
 from master.inputs import InputStatus
 from master.thermostats import ThermostatStatus
 from master.shutters import ShutterStatus
 from master.master_communicator import BackgroundConsumer
-
 from master.eeprom_controller import EepromController, EepromFile
 from master.eeprom_extension import EepromExtension
-from master.eeprom_models import OutputConfiguration, InputConfiguration, ThermostatConfiguration,\
+from master.eeprom_models import OutputConfiguration, InputConfiguration, ThermostatConfiguration, \
     SensorConfiguration, PumpGroupConfiguration, GroupActionConfiguration, \
-    ScheduledActionConfiguration, PulseCounterConfiguration, StartupActionConfiguration,\
+    ScheduledActionConfiguration, PulseCounterConfiguration, StartupActionConfiguration, \
     ShutterConfiguration, ShutterGroupConfiguration, DimmerConfiguration, \
     GlobalThermostatConfiguration, CoolingConfiguration, CoolingPumpGroupConfiguration, \
     GlobalRTD10Configuration, RTD10HeatingConfiguration, RTD10CoolingConfiguration, \
     CanLedConfiguration, RoomConfiguration, ThermostatSetpointConfiguration
-
 import power.power_api as power_api
+
+LOGGER = logging.getLogger("openmotics")
+
 
 def convert_nan(number):
     """ Convert nan to 0. """
     return 0.0 if math.isnan(number) else number
+
 
 def check_basic_action(ret_dict):
     """ Checks if the response is 'OK', throws a ValueError otherwise. """
     if ret_dict['resp'] != 'OK':
         raise ValueError("Basic action did not return OK.")
 
+
 class GatewayApi(object):
     """ The GatewayApi combines master_api functions into high level functions. """
 
     def __init__(self, master_communicator, power_communicator, power_controller):
         self.__master_communicator = master_communicator
-        self.__eeprom_controller = \
-                   EepromController(EepromFile(self.__master_communicator),
-                                    EepromExtension(constants.get_eeprom_extension_database_file()))
+        self.__eeprom_controller = EepromController(
+            EepromFile(self.__master_communicator),
+            EepromExtension(constants.get_eeprom_extension_database_file())
+        )
         self.__power_communicator = power_communicator
         self.__power_controller = power_controller
         self.__plugin_controller = None
@@ -87,21 +86,23 @@ class GatewayApi(object):
         self.__shutter_status = ShutterStatus()
 
         self.__master_communicator.register_consumer(
-                    BackgroundConsumer(master_api.output_list(), 0, self.__update_outputs, True))
-
+                BackgroundConsumer(master_api.output_list(), 0, self.__update_outputs, True)
+        )
         self.__master_communicator.register_consumer(
-                    BackgroundConsumer(master_api.input_list(), 0, self.__update_inputs))
-
+                BackgroundConsumer(master_api.input_list(), 0, self.__update_inputs)
+        )
         self.__master_communicator.register_consumer(
-                    BackgroundConsumer(master_api.module_initialize(), 0, self.__update_modules))
-
+                BackgroundConsumer(master_api.module_initialize(), 0, self.__update_modules)
+        )
         self.__master_communicator.register_consumer(
-                    BackgroundConsumer(master_api.event_triggered(), 0, self.__event_triggered, True))
+            BackgroundConsumer(master_api.event_triggered(), 0, self.__event_triggered, True)
+        )
 
         self.__init_shutter_status()
         self.__master_communicator.register_consumer(
-                    BackgroundConsumer(master_api.shutter_status(), 0,
-                                       self.__shutter_status.handle_shutter_update))
+                BackgroundConsumer(master_api.shutter_status(), 0,
+                                   self.__shutter_status.handle_shutter_update)
+        )
 
         self.__extend_method("set_shutter_configuration", self.__init_shutter_status)
         self.__extend_method("set_shutter_configurations", self.__init_shutter_status)
@@ -133,43 +134,53 @@ class GatewayApi(object):
         messages, enables multi-tenant thermostats. """
         try:
             eeprom_data = self.__master_communicator.do_command(master_api.eeprom_list(),
-                {"bank" : 0})['data']
+                                                                {"bank": 0})['data']
 
             write = False
 
             if eeprom_data[11] != chr(255):
                 LOGGER.info("Disabling async RO messages.")
-                self.__master_communicator.do_command(master_api.write_eeprom(),
-                    {"bank" : 0, "address": 11, "data": chr(255)})
+                self.__master_communicator.do_command(
+                    master_api.write_eeprom(),
+                    {"bank": 0, "address": 11, "data": chr(255)}
+                )
                 write = True
 
             if eeprom_data[18] != chr(0):
                 LOGGER.info("Enabling async OL messages.")
-                self.__master_communicator.do_command(master_api.write_eeprom(),
-                    {"bank" : 0, "address": 18, "data": chr(0)})
+                self.__master_communicator.do_command(
+                    master_api.write_eeprom(),
+                    {"bank": 0, "address": 18, "data": chr(0)}
+                )
                 write = True
 
             if eeprom_data[20] != chr(0):
                 LOGGER.info("Enabling async IL messages.")
-                self.__master_communicator.do_command(master_api.write_eeprom(),
-                    {"bank" : 0, "address": 20, "data": chr(0)})
+                self.__master_communicator.do_command(
+                    master_api.write_eeprom(),
+                    {"bank": 0, "address": 20, "data": chr(0)}
+                )
                 write = True
 
             if eeprom_data[28] != chr(0):
                 LOGGER.info("Enabling async SO messages.")
-                self.__master_communicator.do_command(master_api.write_eeprom(),
-                    {"bank" : 0, "address": 28, "data": chr(0)})
+                self.__master_communicator.do_command(
+                    master_api.write_eeprom(),
+                    {"bank": 0, "address": 28, "data": chr(0)}
+                )
                 write = True
 
             thermostat_mode = ord(eeprom_data[14])
             if thermostat_mode & 64 == 0:
                 LOGGER.info("Enabling multi-tenant thermostats.")
-                self.__master_communicator.do_command(master_api.write_eeprom(),
-                    {"bank" : 0, "address": 14, "data": chr(thermostat_mode | 64)})
+                self.__master_communicator.do_command(
+                    master_api.write_eeprom(),
+                    {"bank": 0, "address": 14, "data": chr(thermostat_mode | 64)}
+                )
                 write = True
 
             if write:
-                self.__master_communicator.do_command(master_api.activate_eeprom(), {'eep' : 0})
+                self.__master_communicator.do_command(master_api.activate_eeprom(), {'eep': 0})
 
         except CommunicationTimedOutException:
             LOGGER.error("Got CommunicationTimedOutException during gateway_api initialization.")
@@ -177,7 +188,7 @@ class GatewayApi(object):
     def __load_thermostat_setpoints(self):
         """ Load the thermostat setpoints from the EepromController into the master. """
         for config in self.__eeprom_controller.read_all(ThermostatSetpointConfiguration):
-            if config.setpoint != 255: # Skip not initialised ThermostatSetpointConfiguration
+            if config.setpoint != 255:  # Skip not initialised ThermostatSetpointConfiguration
                 self.set_per_thermostat_mode(config.id, config.automatic, config.setpoint)
 
     def __run_master_timer(self):
@@ -215,10 +226,12 @@ class GatewayApi(object):
         """ Set the time on the master. """
         LOGGER.info("Setting the time on the master.")
         now = datetime.datetime.now()
-        self.__master_communicator.do_command(master_api.set_time(),
-                  {'sec': now.second, 'min': now.minute, 'hours': now.hour,
-                   'weekday': now.isoweekday(), 'day': now.day, 'month': now.month,
-                   'year': now.year % 100})
+        self.__master_communicator.do_command(
+            master_api.set_time(),
+            {'sec': now.second, 'min': now.minute, 'hours': now.hour,
+             'weekday': now.isoweekday(), 'day': now.day, 'month': now.month,
+             'year': now.year % 100}
+        )
 
     def __init_shutter_status(self):
         """ Initialize the shutter status. """
@@ -227,12 +240,12 @@ class GatewayApi(object):
 
         configs = []
         for i in range(num_shutter_modules):
-            configs.append([ self.get_shutter_configuration(i * 4 + j) for j in range(4) ])
+            configs.append([self.get_shutter_configuration(i * 4 + j) for j in range(4)])
 
         status = []
         for i in range(num_shutter_modules):
             status.append(self.__master_communicator.do_command(master_api.shutter_status(),
-                                                                {'module_nr' : i})['status'])
+                                                                {'module_nr': i})['status'])
 
         self.__shutter_status.init(configs, status)
 
@@ -240,10 +253,10 @@ class GatewayApi(object):
         """ Handle an event triggered by the master. """
         code = ev_output['code']
 
-        if self.__plugin_controller != None:
+        if self.__plugin_controller is not None:
             self.__plugin_controller.process_event(code)
 
-    ###### Maintenance functions
+    # Maintenance functions
 
     def start_maintenance_mode(self, timeout=600):
         """ Start maintenance mode, if the time between send_maintenance_data calls exceeds the
@@ -254,7 +267,7 @@ class GatewayApi(object):
             msg = "Exception while setting status leds before maintenance mode:" + str(exception)
             LOGGER.warning(msg)
 
-        self.__eeprom_controller.invalidate_cache() # Eeprom can be changed in maintenance mode.
+        self.__eeprom_controller.invalidate_cache()  # Eeprom can be changed in maintenance mode.
         self.__master_communicator.start_maintenance_mode()
 
         def check_maintenance_timeout():
@@ -272,7 +285,6 @@ class GatewayApi(object):
 
         self.__maintenance_timeout_timer = Timer(timeout, check_maintenance_timeout)
         self.__maintenance_timeout_timer.start()
-
 
     def send_maintenance_data(self, data):
         """ Send data to the master in maintenance mode.
@@ -293,13 +305,13 @@ class GatewayApi(object):
     def stop_maintenance_mode(self):
         """ Stop maintenance mode. """
         self.__master_communicator.stop_maintenance_mode()
-        if self.__output_status != None:
+        if self.__output_status is not None:
             self.__output_status.force_refresh()
 
-        if self.__thermostat_status != None:
+        if self.__thermostat_status is not None:
             self.__thermostat_status.force_refresh()
 
-        if self.__maintenance_timeout_timer != None:
+        if self.__maintenance_timeout_timer is not None:
             self.__maintenance_timeout_timer.cancel()
             self.__maintenance_timeout_timer = None
 
@@ -318,11 +330,11 @@ class GatewayApi(object):
                   and 'hw_version' (hardware version)
         """
         out_dict = self.__master_communicator.do_command(master_api.status())
-        return {'time' : '%02d:%02d' % (out_dict['hours'], out_dict['minutes']),
-                'date' : '%02d/%02d/%d' % (out_dict['day'], out_dict['month'], out_dict['year']),
-                'mode' : out_dict['mode'],
-                'version' : "%d.%d.%d" % (out_dict['f1'], out_dict['f2'], out_dict['f3']),
-                'hw_version' : out_dict['h']}
+        return {'time': '%02d:%02d' % (out_dict['hours'], out_dict['minutes']),
+                'date': '%02d/%02d/%d' % (out_dict['day'], out_dict['month'], out_dict['year']),
+                'mode': out_dict['mode'],
+                'version': "%d.%d.%d" % (out_dict['f1'], out_dict['f2'], out_dict['f3']),
+                'hw_version': out_dict['h']}
 
     def reset_master(self):
         """ Perform a cold reset on the master. Turns the power off, waits 5 seconds and
@@ -330,6 +342,7 @@ class GatewayApi(object):
 
         :returns: 'status': 'OK'.
         """
+        _ = self  # Must be an instance method
         gpio_direction = open('/sys/class/gpio/gpio44/direction', 'w')
         gpio_direction.write('out')
         gpio_direction.close()
@@ -344,18 +357,18 @@ class GatewayApi(object):
         pytime.sleep(5)
         power(True)
 
-        return {'status' : 'OK'}
+        return {'status': 'OK'}
 
-    ###### Master module functions
+    # Master module functions
 
     def __update_modules(self, api_data):
         """ Create a log entry when the MI message is received. """
-        module_map = {'O' : 'output', 'I' : 'input', 'T' : 'temperature', 'D' : 'dimmer'}
-        message_map = {'N' : 'New %s module found.',
-                       'E' : 'Existing %s module found.',
-                       'D' : 'The %s module tried to register but the registration failed, '
-                             'please presse the init button again.'}
-        log_level_map = {'N' : 'INFO', 'E' : 'WARN', 'D' : 'ERROR'}
+        module_map = {'O': 'output', 'I': 'input', 'T': 'temperature', 'D': 'dimmer'}
+        message_map = {'N': 'New %s module found.',
+                       'E': 'Existing %s module found.',
+                       'D': 'The %s module tried to register but the registration failed, '
+                            'please presse the init button again.'}
+        log_level_map = {'N': 'INFO', 'E': 'WARN', 'D': 'ERROR'}
 
         module_type = module_map.get(api_data['id'][0])
         message = message_map.get(api_data['instr']) % module_type
@@ -409,7 +422,7 @@ class GatewayApi(object):
         :returns: dict with 'log' (list of tuples (log_level, message)).
         """
         (module_log, self.__module_log) = (self.__module_log, [])
-        return {'log' : module_log}
+        return {'log': module_log}
 
     def get_modules(self):
         """ Get a list of all modules attached and registered with the master.
@@ -426,37 +439,36 @@ class GatewayApi(object):
         for i in range(mods['in']):
             ret = self.__master_communicator.do_command(
                             master_api.read_eeprom(),
-                            {'bank' : 2 + i, 'addr' : 0, 'num' : 1})
+                            {'bank': 2 + i, 'addr': 0, 'num': 1})
 
             inputs.append(ret['data'][0])
 
         for i in range(mods['out']):
             ret = self.__master_communicator.do_command(
                             master_api.read_eeprom(),
-                            {'bank' : 33 + i, 'addr' : 0, 'num' : 1})
+                            {'bank': 33 + i, 'addr': 0, 'num': 1})
 
             outputs.append(ret['data'][0])
 
         for shutter in range(mods['shutter']):
             shutters.append('S')
 
-        return {'outputs' : outputs, 'inputs' : inputs, 'shutters' : shutters}
+        return {'outputs': outputs, 'inputs': inputs, 'shutters': shutters}
 
-    def flash_leds(self, type, id):
+    def flash_leds(self, led_type, led_id):
         """ Flash the leds on the module for an output/input/sensor.
 
-        :type type: byte
-        :param type: The module type: output/dimmer (0), input (1), sensor/temperatur (2).
-        :type id: bytes
-        :param id: The id of the output/input/sensor.
+        :type led_type: byte
+        :param led_type: The module type: output/dimmer (0), input (1), sensor/temperatur (2).
+        :type led_id: bytes
+        :param led_id: The id of the output/input/sensor.
         :returns: dict with 'status' ('OK').
         """
         ret = self.__master_communicator.do_command(master_api.indicate(),
-                                                    {'type' : type, 'id' : id})
-        return {'status' : ret['resp']}
+                                                    {'type': led_type, 'id': led_id})
+        return {'status': ret['resp']}
 
-
-    ###### Output functions
+    # Output functions
 
     def __read_outputs(self):
         """ Read all output information from the MasterApi.
@@ -469,17 +481,17 @@ class GatewayApi(object):
         outputs = []
         for i in range(0, num_outputs):
             outputs.append(self.__master_communicator.do_command(master_api.read_output(),
-                                                                 {'id' : i}))
+                                                                 {'id': i}))
         return outputs
 
     def __update_outputs(self, ol_output):
         """ Update the OutputStatus when an OL is received. """
         on_outputs = ol_output['outputs']
 
-        if self.__output_status != None:
+        if self.__output_status is not None:
             self.__output_status.partial_update(on_outputs)
 
-        if self.__plugin_controller != None:
+        if self.__plugin_controller is not None:
             self.__plugin_controller.process_output_status(on_outputs)
 
     def get_output_status(self):
@@ -488,22 +500,22 @@ class GatewayApi(object):
         :returns: A list is a dicts containing the following keys: id, status, ctimer
         and dimmer.
         """
-        if self.__output_status == None:
+        if self.__output_status is None:
             self.__output_status = OutputStatus(self.__read_outputs())
 
         if self.__output_status.should_refresh():
             self.__output_status.full_update(self.__read_outputs())
 
         outputs = self.__output_status.get_outputs()
-        return [{'id':output['id'], 'status':output['status'],
-                 'ctimer':output['ctimer'], 'dimmer':output['dimmer']}
-                 for output in outputs]
+        return [{'id': output['id'], 'status': output['status'],
+                 'ctimer': output['ctimer'], 'dimmer': output['dimmer']}
+                for output in outputs]
 
-    def set_output(self, id, is_on, dimmer=None, timer=None):
+    def set_output(self, output_id, is_on, dimmer=None, timer=None):
         """ Set the status, dimmer and timer of an output.
 
-        :param id: The id of the output to set
-        :type id: Integer [0, 240]
+        :param output_id: The id of the output to set
+        :type output_id: Integer [0, 240]
         :param is_on: Whether the output should be on
         :type is_on: Boolean
         :param dimmer: The dimmer value to set, None if unchanged
@@ -513,53 +525,57 @@ class GatewayApi(object):
         :returns: emtpy dict.
         """
         if not is_on:
-            if dimmer != None or timer != None:
+            if dimmer is not None or timer is not None:
                 raise ValueError("Cannot set timer and dimmer when setting output to off")
             else:
-                self.set_output_status(id, False)
+                self.set_output_status(output_id, False)
         else:
-            if dimmer != None:
-                self.set_output_dimmer(id, dimmer)
+            if dimmer is not None:
+                self.set_output_dimmer(output_id, dimmer)
 
-            self.set_output_status(id, True)
+            self.set_output_status(output_id, True)
 
-            if timer != None:
-                self.set_output_timer(id, timer)
+            if timer is not None:
+                self.set_output_timer(output_id, timer)
 
         return dict()
 
-    def set_output_status(self, id, is_on):
+    def set_output_status(self, output_id, is_on):
         """ Set the status of an output.
 
-        :param id: The id of the output to set
-        :type id: Integer [0, 240]
+        :param output_id: The id of the output to set
+        :type output_id: Integer [0, 240]
         :param is_on: Whether the output should be on
         :type is_on: Boolean
         :returns: empty dict.
         """
-        if id < 0 or id > 240:
-            raise ValueError("id not in [0, 240]: %d" % id)
+        if output_id < 0 or output_id > 240:
+            raise ValueError("id not in [0, 240]: %d" % output_id)
 
         if is_on:
-            self.__master_communicator.do_command(master_api.basic_action(),
-                    {"action_type" : master_api.BA_LIGHT_ON, "action_number" : id})
+            self.__master_communicator.do_command(
+                master_api.basic_action(),
+                {"action_type": master_api.BA_LIGHT_ON, "action_number": output_id}
+            )
         else:
-            self.__master_communicator.do_command(master_api.basic_action(),
-                    {"action_type" : master_api.BA_LIGHT_OFF, "action_number" : id})
+            self.__master_communicator.do_command(
+                master_api.basic_action(),
+                {"action_type": master_api.BA_LIGHT_OFF, "action_number": output_id}
+            )
 
         return dict()
 
-    def set_output_dimmer(self, id, dimmer):
+    def set_output_dimmer(self, output_id, dimmer):
         """ Set the dimmer of an output.
 
-        :param id: The id of the output to set
-        :type id: Integer [0, 240]
+        :param output_id: The id of the output to set
+        :type output_id: Integer [0, 240]
         :param dimmer: The dimmer value to set, None if unchanged
         :type dimmer: Integer [0, 100] or None
         :returns: empty dict.
         """
-        if id < 0 or id > 240:
-            raise ValueError("id not in [0, 240]: %d" % id)
+        if output_id < 0 or output_id > 240:
+            raise ValueError("id not in [0, 240]: %d" % output_id)
 
         if dimmer < 0 or dimmer > 100:
             raise ValueError("Dimmer value not in [0, 100]: %d" % dimmer)
@@ -573,30 +589,34 @@ class GatewayApi(object):
         else:
             dimmer_action = master_api.__dict__['BA_LIGHT_ON_DIMMER_' + str(dimmer)]
 
-        self.__master_communicator.do_command(master_api.basic_action(),
-                    {"action_type" : dimmer_action, "action_number" : id})
+        self.__master_communicator.do_command(
+            master_api.basic_action(),
+            {"action_type": dimmer_action, "action_number": output_id}
+        )
 
         return dict()
 
-    def set_output_timer(self, id, timer):
+    def set_output_timer(self, output_id, timer):
         """ Set the timer of an output.
 
-        :param id: The id of the output to set
-        :type id: Integer [0, 240]
+        :param output_id: The id of the output to set
+        :type output_id: Integer [0, 240]
         :param timer: The timer value to set, None if unchanged
         :type timer: Integer in [150, 450, 900, 1500, 2220, 3120]
         :returns: empty dict.
         """
-        if id < 0 or id > 240:
-            raise ValueError("id not in [0, 240]: %d" % id)
+        if output_id < 0 or output_id > 240:
+            raise ValueError("id not in [0, 240]: %d" % output_id)
 
         if timer not in [150, 450, 900, 1500, 2220, 3120]:
             raise ValueError("Timer value not in [150, 450, 900, 1500, 2220, 3120]: %d" % timer)
 
-        timer_action = master_api.__dict__['BA_LIGHT_ON_TIMER_'+str(timer)+'_OVERRULE']
+        timer_action = master_api.__dict__['BA_LIGHT_ON_TIMER_' + str(timer) + '_OVERRULE']
 
-        self.__master_communicator.do_command(master_api.basic_action(),
-                    {"action_type" : timer_action, "action_number" : id})
+        self.__master_communicator.do_command(
+            master_api.basic_action(),
+            {"action_type": timer_action, "action_number": output_id}
+        )
 
         return dict()
 
@@ -605,8 +625,10 @@ class GatewayApi(object):
 
         :returns: empty dict.
         """
-        self.__master_communicator.do_command(master_api.basic_action(),
-                    {"action_type" : master_api.BA_ALL_LIGHTS_OFF, "action_number" : 0})
+        self.__master_communicator.do_command(
+            master_api.basic_action(),
+            {"action_type": master_api.BA_ALL_LIGHTS_OFF, "action_number": 0}
+        )
 
         return dict()
 
@@ -615,8 +637,10 @@ class GatewayApi(object):
 
         :returns: empty dict.
         """
-        self.__master_communicator.do_command(master_api.basic_action(),
-                    {"action_type" : master_api.BA_LIGHTS_OFF_FLOOR, "action_number" : floor})
+        self.__master_communicator.do_command(
+            master_api.basic_action(),
+            {"action_type": master_api.BA_LIGHTS_OFF_FLOOR, "action_number": floor}
+        )
 
         return dict()
 
@@ -625,12 +649,14 @@ class GatewayApi(object):
 
         :returns: empty dict.
         """
-        self.__master_communicator.do_command(master_api.basic_action(),
-                    {"action_type" : master_api.BA_LIGHTS_ON_FLOOR, "action_number" : floor})
+        self.__master_communicator.do_command(
+            master_api.basic_action(),
+            {"action_type": master_api.BA_LIGHTS_ON_FLOOR, "action_number": floor}
+        )
 
         return dict()
 
-    ###### Shutter functions
+    # Shutter functions
 
     def get_shutter_status(self):
         """ Get a list containing the status of the Shutters.
@@ -639,108 +665,120 @@ class GatewayApi(object):
         """
         return self.__shutter_status.get_status()
 
-    def do_shutter_down(self, id):
+    def do_shutter_down(self, shutter_id):
         """ Make a shutter go down. The shutter stops automatically when the down position is
         reached (after the predefined number of seconds).
 
-        :param id: The id of the shutter.
-        :type id: Byte
+        :param shutter_id: The id of the shutter.
+        :type shutter_id: Byte
         :returns:'status': 'OK'.
         """
-        if id < 0 or id > 120:
-            raise ValueError("id not in [0, 120]: %d" % id)
+        if shutter_id < 0 or shutter_id > 120:
+            raise ValueError("id not in [0, 120]: %d" % shutter_id)
 
-        self.__master_communicator.do_command(master_api.basic_action(),
-                {"action_type" : master_api.BA_SHUTTER_DOWN, "action_number" : id})
+        self.__master_communicator.do_command(
+            master_api.basic_action(),
+            {"action_type": master_api.BA_SHUTTER_DOWN, "action_number": shutter_id}
+        )
 
-        return {'status' : 'OK'}
+        return {'status': 'OK'}
 
-    def do_shutter_up(self, id):
+    def do_shutter_up(self, shutter_id):
         """ Make a shutter go up. The shutter stops automatically when the up position is
         reached (after the predefined number of seconds).
 
-        :param id: The id of the shutter.
-        :type id: Byte
+        :param shutter_id: The id of the shutter.
+        :type shutter_id: Byte
         :returns:'status': 'OK'.
         """
-        if id < 0 or id > 120:
-            raise ValueError("id not in [0, 120]: %d" % id)
+        if shutter_id < 0 or shutter_id > 120:
+            raise ValueError("id not in [0, 120]: %d" % shutter_id)
 
-        self.__master_communicator.do_command(master_api.basic_action(),
-                {"action_type" : master_api.BA_SHUTTER_UP, "action_number" : id})
+        self.__master_communicator.do_command(
+            master_api.basic_action(),
+            {"action_type": master_api.BA_SHUTTER_UP, "action_number": shutter_id}
+        )
 
-        return {'status' : 'OK'}
+        return {'status': 'OK'}
 
-    def do_shutter_stop(self, id):
+    def do_shutter_stop(self, shutter_id):
         """ Make a shutter stop.
 
-        :param id: The id of the shutter.
-        :type id: Byte
+        :param shutter_id: The id of the shutter.
+        :type shutter_id: Byte
         :returns:'status': 'OK'.
         """
-        if id < 0 or id > 120:
-            raise ValueError("id not in [0, 120]: %d" % id)
+        if shutter_id < 0 or shutter_id > 120:
+            raise ValueError("id not in [0, 120]: %d" % shutter_id)
 
-        self.__master_communicator.do_command(master_api.basic_action(),
-                {"action_type" : master_api.BA_SHUTTER_STOP, "action_number" : id})
+        self.__master_communicator.do_command(
+            master_api.basic_action(),
+            {"action_type": master_api.BA_SHUTTER_STOP, "action_number": shutter_id}
+        )
 
-        return {'status' : 'OK'}
+        return {'status': 'OK'}
 
-    def do_shutter_group_down(self, id):
+    def do_shutter_group_down(self, group_id):
         """ Make a shutter group go down. The shutters stop automatically when the down position is
         reached (after the predefined number of seconds).
 
-        :param id: The id of the shutter group.
-        :type id: Byte
+        :param group_id: The id of the shutter group.
+        :type group_id: Byte
         :returns:'status': 'OK'.
         """
-        if id < 0 or id > 30:
-            raise ValueError("id not in [0, 30]: %d" % id)
+        if group_id < 0 or group_id > 30:
+            raise ValueError("id not in [0, 30]: %d" % group_id)
 
-        self.__master_communicator.do_command(master_api.basic_action(),
-                {"action_type" : master_api.BA_SHUTTER_GROUP_DOWN, "action_number" : id})
+        self.__master_communicator.do_command(
+            master_api.basic_action(),
+            {"action_type": master_api.BA_SHUTTER_GROUP_DOWN, "action_number": group_id}
+        )
 
-        return {'status' : 'OK'}
+        return {'status': 'OK'}
 
-    def do_shutter_group_up(self, id):
+    def do_shutter_group_up(self, group_id):
         """ Make a shutter group go up. The shutters stop automatically when the up position is
         reached (after the predefined number of seconds).
 
-        :param id: The id of the shutter group.
-        :type id: Byte
+        :param group_id: The id of the shutter group.
+        :type group_id: Byte
         :returns:'status': 'OK'.
         """
-        if id < 0 or id > 30:
-            raise ValueError("id not in [0, 30]: %d" % id)
+        if group_id < 0 or group_id > 30:
+            raise ValueError("id not in [0, 30]: %d" % group_id)
 
-        self.__master_communicator.do_command(master_api.basic_action(),
-                {"action_type" : master_api.BA_SHUTTER_GROUP_UP, "action_number" : id})
+        self.__master_communicator.do_command(
+            master_api.basic_action(),
+            {"action_type": master_api.BA_SHUTTER_GROUP_UP, "action_number": id}
+        )
 
-        return {'status' : 'OK'}
+        return {'status': 'OK'}
 
-    def do_shutter_group_stop(self, id):
+    def do_shutter_group_stop(self, group_id):
         """ Make a shutter group stop.
 
-        :param id: The id of the shutter group.
-        :type id: Byte
+        :param group_id: The id of the shutter group.
+        :type group_id: Byte
         :returns:'status': 'OK'.
         """
-        if id < 0 or id > 30:
-            raise ValueError("id not in [0, 30]: %d" % id)
+        if group_id < 0 or group_id > 30:
+            raise ValueError("id not in [0, 30]: %d" % group_id)
 
-        self.__master_communicator.do_command(master_api.basic_action(),
-                {"action_type" : master_api.BA_SHUTTER_GROUP_STOP, "action_number" : id})
+        self.__master_communicator.do_command(
+            master_api.basic_action(),
+            {"action_type": master_api.BA_SHUTTER_GROUP_STOP, "action_number": group_id}
+        )
 
-        return {'status' : 'OK'}
+        return {'status': 'OK'}
 
-    ###### Input functions
+    # Input functions
 
     def __update_inputs(self, api_data):
         """ Update the InputStatus with data from an IL message. """
-        tuple = (api_data['input'], api_data['output'])
-        self.__input_status.add_data(tuple)
-        if self.__plugin_controller != None:
-            self.__plugin_controller.process_input_status(tuple)
+        data_set = (api_data['input'], api_data['output'])
+        self.__input_status.add_data(data_set)
+        if self.__plugin_controller is not None:
+            self.__plugin_controller.process_input_status(data_set)
 
     def get_last_inputs(self):
         """ Get the 5 last pressed inputs during the last 5 minutes.
@@ -749,7 +787,7 @@ class GatewayApi(object):
         """
         return self.__input_status.get_status()
 
-    ###### Thermostat functions
+    # Thermostat functions
 
     def __get_all_thermostats(self):
         """ Get basic information about all thermostats.
@@ -757,7 +795,7 @@ class GatewayApi(object):
         :returns: array containing 24 dicts (one for each thermostats) with the following keys: \
         'active', 'sensor_nr', 'output0_nr', 'output1_nr', 'name'.
         """
-        thermostats = {'heating':[], 'cooling':[]}
+        thermostats = {'heating': [], 'cooling': []}
 
         fields = ['sensor', 'output0', 'output1', 'name']
         heating_config = self.get_thermostat_configurations(fields=fields)
@@ -765,13 +803,11 @@ class GatewayApi(object):
 
         for (key, config) in [('heating', heating_config), ('cooling', cooling_config)]:
             for thermostat in config:
-                info = {}
-                info['active'] = (thermostat['sensor'] < 30 or  thermostat['sensor'] == 240) \
-                                 and thermostat['output0'] <= 240
-                info['sensor_nr'] = thermostat['sensor']
-                info['output0_nr'] = thermostat['output0']
-                info['output1_nr'] = thermostat['output1']
-                info['name'] = thermostat['name']
+                info = {'active': (thermostat['sensor'] < 30 or thermostat['sensor'] == 240) and thermostat['output0'] <= 240,
+                        'sensor_nr': thermostat['sensor'],
+                        'output0_nr': thermostat['output0'],
+                        'output1_nr': thermostat['output1'],
+                        'name': thermostat['name']}
 
                 thermostats[key].append(info)
 
@@ -808,20 +844,18 @@ class GatewayApi(object):
         thermostats = []
         outputs = self.get_output_status()
 
-        cached_thermostats = \
-            self.__thermostat_status.get_thermostats()['cooling' if cooling else 'heating']
+        cached_thermostats = self.__thermostat_status.get_thermostats()['cooling' if cooling else 'heating']
 
         aircos = self.__master_communicator.do_command(master_api.read_airco_status_bits())
 
         for thermostat_id in range(0, 24):
             if cached_thermostats[thermostat_id]['active'] is True:
-                thermostat = {'id' : thermostat_id}
-                thermostat['act'] = thermostat_info['tmp%d' % thermostat_id].get_temperature()
-                thermostat['csetp'] = thermostat_info['setp%d' % thermostat_id].get_temperature()
-                thermostat['outside'] = thermostat_info['outside'].get_temperature()
-                thermostat['mode'] = thermostat_mode['mode%d' % thermostat_id]
-                (thermostat['automatic'], thermostat['setpoint']) = \
-                    get_automatic_setpoint(thermostat['mode'])
+                thermostat = {'id': thermostat_id,
+                              'act': thermostat_info['tmp%d' % thermostat_id].get_temperature(),
+                              'csetp': thermostat_info['setp%d' % thermostat_id].get_temperature(),
+                              'outside': thermostat_info['outside'].get_temperature(),
+                              'mode': thermostat_mode['mode%d' % thermostat_id]}
+                (thermostat['automatic'], thermostat['setpoint']) = get_automatic_setpoint(thermostat['mode'])
 
                 output0_nr = cached_thermostats[thermostat_id]['output0_nr']
                 if output0_nr < len(outputs) and outputs[output0_nr]['status'] == 1:
@@ -848,7 +882,8 @@ class GatewayApi(object):
                 'cooling': cooling,
                 'status': thermostats}
 
-    def __check_thermostat(self, thermostat):
+    @staticmethod
+    def __check_thermostat(thermostat):
         """ :raises ValueError if thermostat not in range [0, 24]. """
         if thermostat not in range(0, 25):
             raise ValueError("Thermostat not in [0,24]: %d" % thermostat)
@@ -862,12 +897,12 @@ class GatewayApi(object):
         :type temperature: float
         :returns: dict with 'thermostat', 'config' and 'temp'
         """
-        self.__check_thermostat(thermostat)
+        GatewayApi.__check_thermostat(thermostat)
 
-        _ = self.__master_communicator.do_command(master_api.write_setpoint(),
-                                                  {'thermostat': thermostat,
-                                                   'config': 0,
-                                                   'temp': master_api.Svt.temp(temperature)})
+        self.__master_communicator.do_command(master_api.write_setpoint(),
+                                              {'thermostat': thermostat,
+                                               'config': 0,
+                                               'temp': master_api.Svt.temp(temperature)})
 
         return {'status': 'OK'}
 
@@ -893,9 +928,11 @@ class GatewayApi(object):
 
         cooling_mode = 0 if not cooling_mode else (1 if not cooling_on else 2)
 
-        check_basic_action(self.__master_communicator.do_command(master_api.basic_action(),
-                           {'action_type': master_api.BA_THERMOSTAT_COOLING_HEATING,
-                            'action_number': cooling_mode}))
+        check_basic_action(self.__master_communicator.do_command(
+            master_api.basic_action(),
+            {'action_type': master_api.BA_THERMOSTAT_COOLING_HEATING,
+             'action_number': cooling_mode})
+        )
 
         return {'status': 'OK'}
 
@@ -929,8 +966,11 @@ class GatewayApi(object):
                                {'action_type': master_api.__dict__['BA_ONE_SETPOINT_%d' % setpoint],
                                 'action_number': thermostat_id}))
 
-        self.__eeprom_controller.write(ThermostatSetpointConfiguration.from_dict(
-            {'id':thermostat_id,'automatic':automatic,'setpoint':setpoint}))
+        self.__eeprom_controller.write(
+            ThermostatSetpointConfiguration.from_dict(
+                {'id': thermostat_id, 'automatic': automatic, 'setpoint': setpoint}
+            )
+        )
 
         return {'status': 'OK'}
 
@@ -956,13 +996,15 @@ class GatewayApi(object):
 
         modifier = 0 if airco_on else 100
 
-        check_basic_action(self.__master_communicator.do_command(master_api.basic_action(),
-                   {'action_type' : master_api.BA_THERMOSTAT_AIRCO_STATUS,
-                    'action_number' : modifier + thermostat_id}))
+        check_basic_action(self.__master_communicator.do_command(
+            master_api.basic_action(),
+            {'action_type': master_api.BA_THERMOSTAT_AIRCO_STATUS,
+             'action_number': modifier + thermostat_id}
+        ))
 
         return {'status': 'OK'}
 
-    ###### Sensor status
+    # Sensor status
 
     def get_sensor_temperature_status(self):
         """ Get the current temperature of all sensors.
@@ -971,10 +1013,9 @@ class GatewayApi(object):
         """
         output = []
 
-        list = self.__master_communicator.do_command(master_api.sensor_temperature_list())
-
+        sensor_list = self.__master_communicator.do_command(master_api.sensor_temperature_list())
         for i in range(32):
-            output.append(list['tmp%d' % i].get_temperature())
+            output.append(sensor_list['tmp%d' % i].get_temperature())
 
         return output
 
@@ -985,10 +1026,9 @@ class GatewayApi(object):
         """
         output = []
 
-        list = self.__master_communicator.do_command(master_api.sensor_humidity_list())
-
+        sensor_list = self.__master_communicator.do_command(master_api.sensor_humidity_list())
         for i in range(32):
-            output.append(list['hum%d' % i])
+            output.append(sensor_list['hum%d' % i])
 
         return output
 
@@ -999,10 +1039,9 @@ class GatewayApi(object):
         """
         output = []
 
-        list = self.__master_communicator.do_command(master_api.sensor_brightness_list())
-
+        sensor_list = self.__master_communicator.do_command(master_api.sensor_brightness_list())
         for i in range(32):
-            output.append(list['bri%d' % i])
+            output.append(sensor_list['bri%d' % i])
 
         return output
 
@@ -1023,14 +1062,14 @@ class GatewayApi(object):
             raise ValueError("sensor_id not in [0, 31]: %d" % sensor_id)
 
         self.__master_communicator.do_command(master_api.set_virtual_sensor(),
-                                              {'sensor':sensor_id,
-                                               'tmp':master_api.Svt.temp(temperature),
-                                               'hum':humidity,
-                                               'bri':brightness})
+                                              {'sensor': sensor_id,
+                                               'tmp': master_api.Svt.temp(temperature),
+                                               'hum': humidity,
+                                               'bri': brightness})
 
         return {'status': 'OK'}
 
-    ###### Basic and group actions
+    # Basic and group actions
 
     def do_basic_action(self, action_type, action_number):
         """ Execute a basic action.
@@ -1047,9 +1086,11 @@ class GatewayApi(object):
         if action_number < 0 or action_number > 254:
             raise ValueError("action_number not in [0, 254]: %d" % action_number)
 
-        self.__master_communicator.do_command(master_api.basic_action(),
-                    {"action_type" : action_type,
-                     "action_number" : action_number})
+        self.__master_communicator.do_command(
+            master_api.basic_action(),
+            {"action_type": action_type,
+             "action_number": action_number}
+        )
 
         return dict()
 
@@ -1063,13 +1104,15 @@ class GatewayApi(object):
         if group_action_id < 0 or group_action_id > 159:
             raise ValueError("group_action_id not in [0, 160]: %d" % group_action_id)
 
-        self.__master_communicator.do_command(master_api.basic_action(),
-                    {"action_type" : master_api.BA_GROUP_ACTION,
-                     "action_number" : group_action_id})
+        self.__master_communicator.do_command(
+            master_api.basic_action(),
+            {"action_type": master_api.BA_GROUP_ACTION,
+             "action_number": group_action_id}
+        )
 
         return dict()
 
-    ###### Backup and restore functions
+    # Backup and restore functions
 
     def get_full_backup(self):
         """ Get a backup (tar) of the master eeprom and the sqlite databases.
@@ -1146,15 +1189,15 @@ class GatewayApi(object):
                 self.master_restore(eeprom_content)
 
             shutil.copyfile("%s/users.db" % tmp_dir,
-                              constants.get_user_database_file())
+                            constants.get_user_database_file())
             shutil.copyfile("%s/scheduled.db" % tmp_dir,
-                              constants.get_scheduling_database_file())
+                            constants.get_scheduling_database_file())
             shutil.copyfile("%s/power.db" % tmp_dir,
-                              constants.get_power_database_file())
+                            constants.get_power_database_file())
             shutil.copyfile("%s/eeprom_extensions.db" % tmp_dir,
-                              constants.get_eeprom_extension_database_file())
+                            constants.get_eeprom_extension_database_file())
 
-            return {'output':'Restore complete'}
+            return {'output': 'Restore complete'}
 
         finally:
             shutil.rmtree(tmp_dir)
@@ -1169,8 +1212,10 @@ class GatewayApi(object):
         """
         output = ""
         for bank in range(0, 256):
-            output += self.__master_communicator.do_command(master_api.eeprom_list(),
-                {'bank' : bank})['data']
+            output += self.__master_communicator.do_command(
+                master_api.eeprom_list(),
+                {'bank': bank}
+            )['data']
         return output
 
     def master_restore(self, data):
@@ -1185,20 +1230,22 @@ class GatewayApi(object):
 
         for bank in range(0, num_banks):
             read = self.__master_communicator.do_command(master_api.eeprom_list(),
-                                                         {'bank' : bank})['data']
+                                                         {'bank': bank})['data']
             for addr in range(0, bank_size, write_size):
                 orig = read[addr:addr + write_size]
-                new = data[bank * bank_size + addr : bank * bank_size + addr + len(orig)]
+                new = data[bank * bank_size + addr: bank * bank_size + addr + len(orig)]
                 if new != orig:
                     ret.append("B" + str(bank) + "A" + str(addr))
 
-                    self.__master_communicator.do_command(master_api.write_eeprom(),
-                        {'bank': bank, 'address': addr, 'data': new})
+                    self.__master_communicator.do_command(
+                        master_api.write_eeprom(),
+                        {'bank': bank, 'address': addr, 'data': new}
+                    )
 
-        self.__master_communicator.do_command(master_api.activate_eeprom(), {'eep' : 0})
+        self.__master_communicator.do_command(master_api.activate_eeprom(), {'eep': 0})
         ret.append("Activated eeprom")
 
-        return {'output' : ret}
+        return {'output': ret}
 
     def master_reset(self):
         """ Reset the master.
@@ -1208,7 +1255,7 @@ class GatewayApi(object):
         self.__master_communicator.do_command(master_api.reset())
         return dict()
 
-    ###### Error functions
+    # Error functions
 
     def master_error_list(self):
         """ Get the error list per module (input and output modules). The modules are identified by
@@ -1216,8 +1263,8 @@ class GatewayApi(object):
 
         :returns: dict with 'errors' key, it contains list of tuples (module, nr_errors).
         """
-        list = self.__master_communicator.do_command(master_api.error_list())
-        return list["errors"]
+        error_list = self.__master_communicator.do_command(master_api.error_list())
+        return error_list["errors"]
 
     def master_last_success(self):
         """ Get the number of seconds since the last successful communication with the master.
@@ -1238,7 +1285,7 @@ class GatewayApi(object):
         self.__master_communicator.do_command(master_api.clear_error_list())
         return dict()
 
-    ###### Status led functions
+    # Status led functions
 
     def set_master_status_leds(self, status):
         """ Set the status of the leds on the master.
@@ -1247,12 +1294,14 @@ class GatewayApi(object):
         :type status: boolean.
         :returns: empty dict.
         """
-        on = 1 if status == True else 0
-        self.__master_communicator.do_command(master_api.basic_action(),
-                    {"action_type" : master_api.BA_STATUS_LEDS, "action_number" : on})
+        on = 1 if status is True else 0
+        self.__master_communicator.do_command(
+            master_api.basic_action(),
+            {"action_type": master_api.BA_STATUS_LEDS, "action_number": on}
+        )
         return dict()
 
-    ###### Pulse counter functions
+    # Pulse counter functions
 
     def get_pulse_counter_status(self):
         """ Get the pulse counter values.
@@ -1267,19 +1316,19 @@ class GatewayApi(object):
                 out_dict['pv16'], out_dict['pv17'], out_dict['pv18'], out_dict['pv19'],
                 out_dict['pv20'], out_dict['pv21'], out_dict['pv22'], out_dict['pv23']]
 
-    ###### Below are the auto generated master configuration functions
+    # Below are the auto generated master configuration functions
 
-    def get_output_configuration(self, id, fields=None):
+    def get_output_configuration(self, output_id, fields=None):
         """
         Get a specific output_configuration defined by its id.
 
-        :param id: The id of the output_configuration
-        :type id: Id
+        :param output_id: The id of the output_configuration
+        :type output_id: Id
         :param fields: The field of the output_configuration to get. (None gets all fields)
         :type fields: List of strings
         :returns: output_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'floor' (Byte), 'module_type' (String[1]), 'name' (String[16]), 'room' (Byte), 'timer' (Word), 'type' (Byte)
         """
-        return self.__eeprom_controller.read(OutputConfiguration, id, fields).to_dict()
+        return self.__eeprom_controller.read(OutputConfiguration, output_id, fields).to_dict()
 
     def get_output_configurations(self, fields=None):
         """
@@ -1289,7 +1338,7 @@ class GatewayApi(object):
         :type fields: List of strings
         :returns: list of output_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'floor' (Byte), 'module_type' (String[1]), 'name' (String[16]), 'room' (Byte), 'timer' (Word), 'type' (Byte)
         """
-        return [ o.to_dict() for o in self.__eeprom_controller.read_all(OutputConfiguration, fields) ]
+        return [o.to_dict() for o in self.__eeprom_controller.read_all(OutputConfiguration, fields)]
 
     def set_output_configuration(self, config):
         """
@@ -1307,19 +1356,19 @@ class GatewayApi(object):
         :param config: The list of output_configurations to set
         :type config: list of output_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'floor' (Byte), 'name' (String[16]), 'room' (Byte), 'timer' (Word), 'type' (Byte)
         """
-        self.__eeprom_controller.write_batch([ OutputConfiguration.from_dict(o) for o in config ] )
+        self.__eeprom_controller.write_batch([OutputConfiguration.from_dict(o) for o in config])
 
-    def get_shutter_configuration(self, id, fields=None):
+    def get_shutter_configuration(self, shutter_id, fields=None):
         """
         Get a specific shutter_configuration defined by its id.
 
-        :param id: The id of the shutter_configuration
-        :type id: Id
+        :param shutter_id: The id of the shutter_configuration
+        :type shutter_id: Id
         :param fields: The field of the shutter_configuration to get. (None gets all fields)
         :type fields: List of strings
         :returns: shutter_configuration dict: contains 'id' (Id), 'group_1' (Byte), 'group_2' (Byte), 'name' (String[16]), 'room' (Byte), 'timer_down' (Byte), 'timer_up' (Byte), 'up_down_config' (Byte)
         """
-        return self.__eeprom_controller.read(ShutterConfiguration, id, fields).to_dict()
+        return self.__eeprom_controller.read(ShutterConfiguration, shutter_id, fields).to_dict()
 
     def get_shutter_configurations(self, fields=None):
         """
@@ -1329,7 +1378,7 @@ class GatewayApi(object):
         :type fields: List of strings
         :returns: list of shutter_configuration dict: contains 'id' (Id), 'group_1' (Byte), 'group_2' (Byte), 'name' (String[16]), 'room' (Byte), 'timer_down' (Byte), 'timer_up' (Byte), 'up_down_config' (Byte)
         """
-        return [ o.to_dict() for o in self.__eeprom_controller.read_all(ShutterConfiguration, fields) ]
+        return [o.to_dict() for o in self.__eeprom_controller.read_all(ShutterConfiguration, fields)]
 
     def set_shutter_configuration(self, config):
         """
@@ -1347,19 +1396,19 @@ class GatewayApi(object):
         :param config: The list of shutter_configurations to set
         :type config: list of shutter_configuration dict: contains 'id' (Id), 'group_1' (Byte), 'group_2' (Byte), 'name' (String[16]), 'room' (Byte), 'timer_down' (Byte), 'timer_up' (Byte), 'up_down_config' (Byte)
         """
-        self.__eeprom_controller.write_batch([ ShutterConfiguration.from_dict(o) for o in config ] )
+        self.__eeprom_controller.write_batch([ShutterConfiguration.from_dict(o) for o in config])
 
-    def get_shutter_group_configuration(self, id, fields=None):
+    def get_shutter_group_configuration(self, group_id, fields=None):
         """
         Get a specific shutter_group_configuration defined by its id.
 
-        :param id: The id of the shutter_group_configuration
-        :type id: Id
+        :param group_id: The id of the shutter_group_configuration
+        :type group_id: Id
         :param fields: The field of the shutter_group_configuration to get. (None gets all fields)
         :type fields: List of strings
         :returns: shutter_group_configuration dict: contains 'id' (Id), 'room' (Byte), 'timer_down' (Byte), 'timer_up' (Byte)
         """
-        return self.__eeprom_controller.read(ShutterGroupConfiguration, id, fields).to_dict()
+        return self.__eeprom_controller.read(ShutterGroupConfiguration, group_id, fields).to_dict()
 
     def get_shutter_group_configurations(self, fields=None):
         """
@@ -1369,7 +1418,7 @@ class GatewayApi(object):
         :type fields: List of strings
         :returns: list of shutter_group_configuration dict: contains 'id' (Id), 'room' (Byte), 'timer_down' (Byte), 'timer_up' (Byte)
         """
-        return [ o.to_dict() for o in self.__eeprom_controller.read_all(ShutterGroupConfiguration, fields) ]
+        return [o.to_dict() for o in self.__eeprom_controller.read_all(ShutterGroupConfiguration, fields)]
 
     def set_shutter_group_configuration(self, config):
         """
@@ -1387,19 +1436,19 @@ class GatewayApi(object):
         :param config: The list of shutter_group_configurations to set
         :type config: list of shutter_group_configuration dict: contains 'id' (Id), 'room' (Byte), 'timer_down' (Byte), 'timer_up' (Byte)
         """
-        self.__eeprom_controller.write_batch([ ShutterGroupConfiguration.from_dict(o) for o in config ] )
+        self.__eeprom_controller.write_batch([ShutterGroupConfiguration.from_dict(o) for o in config])
 
-    def get_input_configuration(self, id, fields=None):
+    def get_input_configuration(self, input_id, fields=None):
         """
         Get a specific input_configuration defined by its id.
 
-        :param id: The id of the input_configuration
-        :type id: Id
+        :param input_id: The id of the input_configuration
+        :type input_id: Id
         :param fields: The field of the input_configuration to get. (None gets all fields)
         :type fields: List of strings
         :returns: input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'module_type' (String[1]), 'name' (String[8]), 'room' (Byte)
         """
-        return self.__eeprom_controller.read(InputConfiguration, id, fields).to_dict()
+        return self.__eeprom_controller.read(InputConfiguration, input_id, fields).to_dict()
 
     def get_input_configurations(self, fields=None):
         """
@@ -1409,7 +1458,7 @@ class GatewayApi(object):
         :type fields: List of strings
         :returns: list of input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'module_type' (String[1]), 'name' (String[8]), 'room' (Byte)
         """
-        return [ o.to_dict() for o in self.__eeprom_controller.read_all(InputConfiguration, fields) ]
+        return [o.to_dict() for o in self.__eeprom_controller.read_all(InputConfiguration, fields)]
 
     def set_input_configuration(self, config):
         """
@@ -1427,19 +1476,19 @@ class GatewayApi(object):
         :param config: The list of input_configurations to set
         :type config: list of input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'name' (String[8]), 'room' (Byte)
         """
-        self.__eeprom_controller.write_batch([ InputConfiguration.from_dict(o) for o in config ] )
+        self.__eeprom_controller.write_batch([InputConfiguration.from_dict(o) for o in config])
 
-    def get_thermostat_configuration(self, id, fields=None):
+    def get_thermostat_configuration(self, thermostat_id, fields=None):
         """
         Get a specific thermostat_configuration defined by its id.
 
-        :param id: The id of the thermostat_configuration
-        :type id: Id
+        :param thermostat_id: The id of the thermostat_configuration
+        :type thermostat_id: Id
         :param fields: The field of the thermostat_configuration to get. (None gets all fields)
         :type fields: List of strings
         :returns: thermostat_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'room' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
         """
-        return self.__eeprom_controller.read(ThermostatConfiguration, id, fields).to_dict()
+        return self.__eeprom_controller.read(ThermostatConfiguration, thermostat_id, fields).to_dict()
 
     def get_thermostat_configurations(self, fields=None):
         """
@@ -1449,7 +1498,7 @@ class GatewayApi(object):
         :type fields: List of strings
         :returns: list of thermostat_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'room' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
         """
-        return [ o.to_dict() for o in self.__eeprom_controller.read_all(ThermostatConfiguration, fields) ]
+        return [o.to_dict() for o in self.__eeprom_controller.read_all(ThermostatConfiguration, fields)]
 
     def set_thermostat_configuration(self, config):
         """
@@ -1467,19 +1516,19 @@ class GatewayApi(object):
         :param config: The list of thermostat_configurations to set
         :type config: list of thermostat_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'room' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
         """
-        self.__eeprom_controller.write_batch([ ThermostatConfiguration.from_dict(o) for o in config ] )
+        self.__eeprom_controller.write_batch([ThermostatConfiguration.from_dict(o) for o in config])
 
-    def get_sensor_configuration(self, id, fields=None):
+    def get_sensor_configuration(self, sensor_id, fields=None):
         """
         Get a specific sensor_configuration defined by its id.
 
-        :param id: The id of the sensor_configuration
-        :type id: Id
+        :param sensor_id: The id of the sensor_configuration
+        :type sensor_id: Id
         :param fields: The field of the sensor_configuration to get. (None gets all fields)
         :type fields: List of strings
         :returns: sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees)), 'room' (Byte), 'virtual' (Boolean)
         """
-        return self.__eeprom_controller.read(SensorConfiguration, id, fields).to_dict()
+        return self.__eeprom_controller.read(SensorConfiguration, sensor_id, fields).to_dict()
 
     def get_sensor_configurations(self, fields=None):
         """
@@ -1489,7 +1538,7 @@ class GatewayApi(object):
         :type fields: List of strings
         :returns: list of sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees)), 'room' (Byte), 'virtual' (Boolean)
         """
-        return [ o.to_dict() for o in self.__eeprom_controller.read_all(SensorConfiguration, fields) ]
+        return [o.to_dict() for o in self.__eeprom_controller.read_all(SensorConfiguration, fields)]
 
     def set_sensor_configuration(self, config):
         """
@@ -1507,19 +1556,19 @@ class GatewayApi(object):
         :param config: The list of sensor_configurations to set
         :type config: list of sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees)), 'room' (Byte), 'virtual' (Boolean)
         """
-        self.__eeprom_controller.write_batch([ SensorConfiguration.from_dict(o) for o in config ] )
+        self.__eeprom_controller.write_batch([SensorConfiguration.from_dict(o) for o in config])
 
-    def get_pump_group_configuration(self, id, fields=None):
+    def get_pump_group_configuration(self, pump_group_id, fields=None):
         """
         Get a specific pump_group_configuration defined by its id.
 
-        :param id: The id of the pump_group_configuration
-        :type id: Id
+        :param pump_group_id: The id of the pump_group_configuration
+        :type pump_group_id: Id
         :param fields: The field of the pump_group_configuration to get. (None gets all fields)
         :type fields: List of strings
         :returns: pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32]), 'room' (Byte)
         """
-        return self.__eeprom_controller.read(PumpGroupConfiguration, id, fields).to_dict()
+        return self.__eeprom_controller.read(PumpGroupConfiguration, pump_group_id, fields).to_dict()
 
     def get_pump_group_configurations(self, fields=None):
         """
@@ -1529,7 +1578,7 @@ class GatewayApi(object):
         :type fields: List of strings
         :returns: list of pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32]), 'room' (Byte)
         """
-        return [ o.to_dict() for o in self.__eeprom_controller.read_all(PumpGroupConfiguration, fields) ]
+        return [o.to_dict() for o in self.__eeprom_controller.read_all(PumpGroupConfiguration, fields)]
 
     def set_pump_group_configuration(self, config):
         """
@@ -1547,19 +1596,19 @@ class GatewayApi(object):
         :param config: The list of pump_group_configurations to set
         :type config: list of pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32]), 'room' (Byte)
         """
-        self.__eeprom_controller.write_batch([ PumpGroupConfiguration.from_dict(o) for o in config ] )
+        self.__eeprom_controller.write_batch([PumpGroupConfiguration.from_dict(o) for o in config])
 
-    def get_cooling_configuration(self, id, fields=None):
+    def get_cooling_configuration(self, cooling_id, fields=None):
         """
         Get a specific cooling_configuration defined by its id.
 
-        :param id: The id of the cooling_configuration
-        :type id: Id
+        :param cooling_id: The id of the cooling_configuration
+        :type cooling_id: Id
         :param fields: The field of the cooling_configuration to get. (None gets all fields)
         :type fields: List of strings
         :returns: cooling_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'room' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
         """
-        return self.__eeprom_controller.read(CoolingConfiguration, id, fields).to_dict()
+        return self.__eeprom_controller.read(CoolingConfiguration, cooling_id, fields).to_dict()
 
     def get_cooling_configurations(self, fields=None):
         """
@@ -1569,7 +1618,7 @@ class GatewayApi(object):
         :type fields: List of strings
         :returns: list of cooling_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'room' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
         """
-        return [ o.to_dict() for o in self.__eeprom_controller.read_all(CoolingConfiguration, fields) ]
+        return [o.to_dict() for o in self.__eeprom_controller.read_all(CoolingConfiguration, fields)]
 
     def set_cooling_configuration(self, config):
         """
@@ -1587,19 +1636,19 @@ class GatewayApi(object):
         :param config: The list of cooling_configurations to set
         :type config: list of cooling_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'room' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
         """
-        self.__eeprom_controller.write_batch([ CoolingConfiguration.from_dict(o) for o in config ] )
+        self.__eeprom_controller.write_batch([CoolingConfiguration.from_dict(o) for o in config])
 
-    def get_cooling_pump_group_configuration(self, id, fields=None):
+    def get_cooling_pump_group_configuration(self, pump_group_id, fields=None):
         """
         Get a specific cooling_pump_group_configuration defined by its id.
 
-        :param id: The id of the cooling_pump_group_configuration
-        :type id: Id
+        :param pump_group_id: The id of the cooling_pump_group_configuration
+        :type pump_group_id: Id
         :param fields: The field of the cooling_pump_group_configuration to get. (None gets all fields)
         :type fields: List of strings
         :returns: cooling_pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32]), 'room' (Byte)
         """
-        return self.__eeprom_controller.read(CoolingPumpGroupConfiguration, id, fields).to_dict()
+        return self.__eeprom_controller.read(CoolingPumpGroupConfiguration, pump_group_id, fields).to_dict()
 
     def get_cooling_pump_group_configurations(self, fields=None):
         """
@@ -1609,7 +1658,7 @@ class GatewayApi(object):
         :type fields: List of strings
         :returns: list of cooling_pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32]), 'room' (Byte)
         """
-        return [ o.to_dict() for o in self.__eeprom_controller.read_all(CoolingPumpGroupConfiguration, fields) ]
+        return [o.to_dict() for o in self.__eeprom_controller.read_all(CoolingPumpGroupConfiguration, fields)]
 
     def set_cooling_pump_group_configuration(self, config):
         """
@@ -1627,7 +1676,7 @@ class GatewayApi(object):
         :param config: The list of cooling_pump_group_configurations to set
         :type config: list of cooling_pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32]), 'room' (Byte)
         """
-        self.__eeprom_controller.write_batch([ CoolingPumpGroupConfiguration.from_dict(o) for o in config ] )
+        self.__eeprom_controller.write_batch([CoolingPumpGroupConfiguration.from_dict(o) for o in config])
 
     def get_global_rtd10_configuration(self, fields=None):
         """
@@ -1648,17 +1697,17 @@ class GatewayApi(object):
         """
         self.__eeprom_controller.write(GlobalRTD10Configuration.from_dict(config))
 
-    def get_rtd10_heating_configuration(self, id, fields=None):
+    def get_rtd10_heating_configuration(self, heating_id, fields=None):
         """
         Get a specific rtd10_heating_configuration defined by its id.
 
-        :param id: The id of the rtd10_heating_configuration
-        :type id: Id
+        :param heating_id: The id of the rtd10_heating_configuration
+        :type heating_id: Id
         :param fields: The field of the rtd10_heating_configuration to get. (None gets all fields)
         :type fields: List of strings
         :returns: rtd10_heating_configuration dict: contains 'id' (Id), 'mode_output' (Byte), 'mode_value' (Byte), 'on_off_output' (Byte), 'poke_angle_output' (Byte), 'poke_angle_value' (Byte), 'room' (Byte), 'temp_setpoint_output' (Byte), 'ventilation_speed_output' (Byte), 'ventilation_speed_value' (Byte)
         """
-        return self.__eeprom_controller.read(RTD10HeatingConfiguration, id, fields).to_dict()
+        return self.__eeprom_controller.read(RTD10HeatingConfiguration, heating_id, fields).to_dict()
 
     def get_rtd10_heating_configurations(self, fields=None):
         """
@@ -1668,7 +1717,7 @@ class GatewayApi(object):
         :type fields: List of strings
         :returns: list of rtd10_heating_configuration dict: contains 'id' (Id), 'mode_output' (Byte), 'mode_value' (Byte), 'on_off_output' (Byte), 'poke_angle_output' (Byte), 'poke_angle_value' (Byte), 'room' (Byte), 'temp_setpoint_output' (Byte), 'ventilation_speed_output' (Byte), 'ventilation_speed_value' (Byte)
         """
-        return [ o.to_dict() for o in self.__eeprom_controller.read_all(RTD10HeatingConfiguration, fields) ]
+        return [o.to_dict() for o in self.__eeprom_controller.read_all(RTD10HeatingConfiguration, fields)]
 
     def set_rtd10_heating_configuration(self, config):
         """
@@ -1686,19 +1735,19 @@ class GatewayApi(object):
         :param config: The list of rtd10_heating_configurations to set
         :type config: list of rtd10_heating_configuration dict: contains 'id' (Id), 'mode_output' (Byte), 'mode_value' (Byte), 'on_off_output' (Byte), 'poke_angle_output' (Byte), 'poke_angle_value' (Byte), 'room' (Byte), 'temp_setpoint_output' (Byte), 'ventilation_speed_output' (Byte), 'ventilation_speed_value' (Byte)
         """
-        self.__eeprom_controller.write_batch([ RTD10HeatingConfiguration.from_dict(o) for o in config ] )
+        self.__eeprom_controller.write_batch([RTD10HeatingConfiguration.from_dict(o) for o in config])
 
-    def get_rtd10_cooling_configuration(self, id, fields=None):
+    def get_rtd10_cooling_configuration(self, cooling_id, fields=None):
         """
         Get a specific rtd10_cooling_configuration defined by its id.
 
-        :param id: The id of the rtd10_cooling_configuration
-        :type id: Id
+        :param cooling_id: The id of the rtd10_cooling_configuration
+        :type cooling_id: Id
         :param fields: The field of the rtd10_cooling_configuration to get. (None gets all fields)
         :type fields: List of strings
         :returns: rtd10_cooling_configuration dict: contains 'id' (Id), 'mode_output' (Byte), 'mode_value' (Byte), 'on_off_output' (Byte), 'poke_angle_output' (Byte), 'poke_angle_value' (Byte), 'room' (Byte), 'temp_setpoint_output' (Byte), 'ventilation_speed_output' (Byte), 'ventilation_speed_value' (Byte)
         """
-        return self.__eeprom_controller.read(RTD10CoolingConfiguration, id, fields).to_dict()
+        return self.__eeprom_controller.read(RTD10CoolingConfiguration, cooling_id, fields).to_dict()
 
     def get_rtd10_cooling_configurations(self, fields=None):
         """
@@ -1708,7 +1757,7 @@ class GatewayApi(object):
         :type fields: List of strings
         :returns: list of rtd10_cooling_configuration dict: contains 'id' (Id), 'mode_output' (Byte), 'mode_value' (Byte), 'on_off_output' (Byte), 'poke_angle_output' (Byte), 'poke_angle_value' (Byte), 'room' (Byte), 'temp_setpoint_output' (Byte), 'ventilation_speed_output' (Byte), 'ventilation_speed_value' (Byte)
         """
-        return [ o.to_dict() for o in self.__eeprom_controller.read_all(RTD10CoolingConfiguration, fields) ]
+        return [o.to_dict() for o in self.__eeprom_controller.read_all(RTD10CoolingConfiguration, fields)]
 
     def set_rtd10_cooling_configuration(self, config):
         """
@@ -1726,19 +1775,19 @@ class GatewayApi(object):
         :param config: The list of rtd10_cooling_configurations to set
         :type config: list of rtd10_cooling_configuration dict: contains 'id' (Id), 'mode_output' (Byte), 'mode_value' (Byte), 'on_off_output' (Byte), 'poke_angle_output' (Byte), 'poke_angle_value' (Byte), 'room' (Byte), 'temp_setpoint_output' (Byte), 'ventilation_speed_output' (Byte), 'ventilation_speed_value' (Byte)
         """
-        self.__eeprom_controller.write_batch([ RTD10CoolingConfiguration.from_dict(o) for o in config ] )
+        self.__eeprom_controller.write_batch([RTD10CoolingConfiguration.from_dict(o) for o in config])
 
-    def get_group_action_configuration(self, id, fields=None):
+    def get_group_action_configuration(self, group_action_id, fields=None):
         """
         Get a specific group_action_configuration defined by its id.
 
-        :param id: The id of the group_action_configuration
-        :type id: Id
+        :param group_action_id: The id of the group_action_configuration
+        :type group_action_id: Id
         :param fields: The field of the group_action_configuration to get. (None gets all fields)
         :type fields: List of strings
         :returns: group_action_configuration dict: contains 'id' (Id), 'actions' (Actions[16]), 'name' (String[16])
         """
-        return self.__eeprom_controller.read(GroupActionConfiguration, id, fields).to_dict()
+        return self.__eeprom_controller.read(GroupActionConfiguration, group_action_id, fields).to_dict()
 
     def get_group_action_configurations(self, fields=None):
         """
@@ -1748,7 +1797,7 @@ class GatewayApi(object):
         :type fields: List of strings
         :returns: list of group_action_configuration dict: contains 'id' (Id), 'actions' (Actions[16]), 'name' (String[16])
         """
-        return [ o.to_dict() for o in self.__eeprom_controller.read_all(GroupActionConfiguration, fields) ]
+        return [o.to_dict() for o in self.__eeprom_controller.read_all(GroupActionConfiguration, fields)]
 
     def set_group_action_configuration(self, config):
         """
@@ -1766,19 +1815,19 @@ class GatewayApi(object):
         :param config: The list of group_action_configurations to set
         :type config: list of group_action_configuration dict: contains 'id' (Id), 'actions' (Actions[16]), 'name' (String[16])
         """
-        self.__eeprom_controller.write_batch([ GroupActionConfiguration.from_dict(o) for o in config ] )
+        self.__eeprom_controller.write_batch([GroupActionConfiguration.from_dict(o) for o in config])
 
-    def get_scheduled_action_configuration(self, id, fields=None):
+    def get_scheduled_action_configuration(self, scheduled_action_id, fields=None):
         """
         Get a specific scheduled_action_configuration defined by its id.
 
-        :param id: The id of the scheduled_action_configuration
-        :type id: Id
+        :param scheduled_action_id: The id of the scheduled_action_configuration
+        :type scheduled_action_id: Id
         :param fields: The field of the scheduled_action_configuration to get. (None gets all fields)
         :type fields: List of strings
         :returns: scheduled_action_configuration dict: contains 'id' (Id), 'action' (Actions[1]), 'day' (Byte), 'hour' (Byte), 'minute' (Byte)
         """
-        return self.__eeprom_controller.read(ScheduledActionConfiguration, id, fields).to_dict()
+        return self.__eeprom_controller.read(ScheduledActionConfiguration, scheduled_action_id, fields).to_dict()
 
     def get_scheduled_action_configurations(self, fields=None):
         """
@@ -1788,7 +1837,7 @@ class GatewayApi(object):
         :type fields: List of strings
         :returns: list of scheduled_action_configuration dict: contains 'id' (Id), 'action' (Actions[1]), 'day' (Byte), 'hour' (Byte), 'minute' (Byte)
         """
-        return [ o.to_dict() for o in self.__eeprom_controller.read_all(ScheduledActionConfiguration, fields) ]
+        return [o.to_dict() for o in self.__eeprom_controller.read_all(ScheduledActionConfiguration, fields)]
 
     def set_scheduled_action_configuration(self, config):
         """
@@ -1806,19 +1855,19 @@ class GatewayApi(object):
         :param config: The list of scheduled_action_configurations to set
         :type config: list of scheduled_action_configuration dict: contains 'id' (Id), 'action' (Actions[1]), 'day' (Byte), 'hour' (Byte), 'minute' (Byte)
         """
-        self.__eeprom_controller.write_batch([ ScheduledActionConfiguration.from_dict(o) for o in config ] )
+        self.__eeprom_controller.write_batch([ScheduledActionConfiguration.from_dict(o) for o in config])
 
-    def get_pulse_counter_configuration(self, id, fields=None):
+    def get_pulse_counter_configuration(self, pulse_counter_id, fields=None):
         """
         Get a specific pulse_counter_configuration defined by its id.
 
-        :param id: The id of the pulse_counter_configuration
-        :type id: Id
+        :param pulse_counter_id: The id of the pulse_counter_configuration
+        :type pulse_counter_id: Id
         :param fields: The field of the pulse_counter_configuration to get. (None gets all fields)
         :type fields: List of strings
         :returns: pulse_counter_configuration dict: contains 'id' (Id), 'input' (Byte), 'name' (String[16]), 'room' (Byte)
         """
-        return self.__eeprom_controller.read(PulseCounterConfiguration, id, fields).to_dict()
+        return self.__eeprom_controller.read(PulseCounterConfiguration, pulse_counter_id, fields).to_dict()
 
     def get_pulse_counter_configurations(self, fields=None):
         """
@@ -1828,7 +1877,7 @@ class GatewayApi(object):
         :type fields: List of strings
         :returns: list of pulse_counter_configuration dict: contains 'id' (Id), 'input' (Byte), 'name' (String[16]), 'room' (Byte)
         """
-        return [ o.to_dict() for o in self.__eeprom_controller.read_all(PulseCounterConfiguration, fields) ]
+        return [o.to_dict() for o in self.__eeprom_controller.read_all(PulseCounterConfiguration, fields)]
 
     def set_pulse_counter_configuration(self, config):
         """
@@ -1846,7 +1895,7 @@ class GatewayApi(object):
         :param config: The list of pulse_counter_configurations to set
         :type config: list of pulse_counter_configuration dict: contains 'id' (Id), 'input' (Byte), 'name' (String[16]), 'room' (Byte)
         """
-        self.__eeprom_controller.write_batch([ PulseCounterConfiguration.from_dict(o) for o in config ] )
+        self.__eeprom_controller.write_batch([PulseCounterConfiguration.from_dict(o) for o in config])
 
     def get_startup_action_configuration(self, fields=None):
         """
@@ -1905,17 +1954,17 @@ class GatewayApi(object):
         """
         self.__eeprom_controller.write(GlobalThermostatConfiguration.from_dict(config))
 
-    def get_can_led_configuration(self, id, fields=None):
+    def get_can_led_configuration(self, can_led_id, fields=None):
         """
         Get a specific can_led_configuration defined by its id.
 
-        :param id: The id of the can_led_configuration
-        :type id: Id
+        :param can_led_id: The id of the can_led_configuration
+        :type can_led_id: Id
         :param fields: The field of the can_led_configuration to get. (None gets all fields)
         :type fields: List of strings
         :returns: can_led_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'room' (Byte)
         """
-        return self.__eeprom_controller.read(CanLedConfiguration, id, fields).to_dict()
+        return self.__eeprom_controller.read(CanLedConfiguration, can_led_id, fields).to_dict()
 
     def get_can_led_configurations(self, fields=None):
         """
@@ -1925,7 +1974,7 @@ class GatewayApi(object):
         :type fields: List of strings
         :returns: list of can_led_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'room' (Byte)
         """
-        return [ o.to_dict() for o in self.__eeprom_controller.read_all(CanLedConfiguration, fields) ]
+        return [o.to_dict() for o in self.__eeprom_controller.read_all(CanLedConfiguration, fields)]
 
     def set_can_led_configuration(self, config):
         """
@@ -1945,17 +1994,17 @@ class GatewayApi(object):
         """
         self.__eeprom_controller.write_batch([CanLedConfiguration.from_dict(o) for o in config])
 
-    def get_room_configuration(self, id, fields=None):
+    def get_room_configuration(self, room_id, fields=None):
         """
         Get a specific room_configuration defined by its id.
 
-        :param id: The id of the room_configuration
-        :type id: Id
+        :param room_id: The id of the room_configuration
+        :type room_id: Id
         :param fields: The field of the room_configuration to get. (None gets all fields)
         :type fields: List of strings
         :returns: room_configuration dict: contains 'id' (Id), 'floor' (Byte), 'name' (String)
         """
-        return self.__eeprom_controller.read(RoomConfiguration, id, fields).to_dict()
+        return self.__eeprom_controller.read(RoomConfiguration, room_id, fields).to_dict()
 
     def get_room_configurations(self, fields=None):
         """
@@ -1985,9 +2034,9 @@ class GatewayApi(object):
         """
         self.__eeprom_controller.write_batch([RoomConfiguration.from_dict(o) for o in config])
 
-    ###### End of auto generated functions
+    # End of auto generated functions
 
-    ###### Power functions
+    # Power functions
 
     def get_power_modules(self):
         """ Get information on the power modules.
@@ -2001,10 +2050,12 @@ class GatewayApi(object):
         'times11'.
         """
         modules = self.__power_controller.get_power_modules().values()
-        def translate_address(module):
+
+        def translate_address(_module):
             """ Translate the address from an integer to the external address format (eg. E1). """
-            module['address'] = "E" + str(module['address'])
-            return module
+            _module['address'] = "E" + str(_module['address'])
+            return _module
+
         return [translate_address(module) for module in modules]
 
     def set_power_modules(self, modules):
@@ -2040,7 +2091,7 @@ class GatewayApi(object):
                         return 2
                     if module[key] == 5:  # 100A
                         return 4
-                    return 2  # 12.5A is default
+                    return 0.5  # 12.5A is default
                 self.__power_communicator.do_command(
                     addr, power_api.set_current_clamp_factor(version),
                     *[_convert_ccf('sensor%d' % i) for i in xrange(power_api.NUM_PORTS[version])]
@@ -2068,17 +2119,17 @@ class GatewayApi(object):
         output = dict()
 
         modules = self.__power_controller.get_power_modules()
-        for id in sorted(modules.keys()):
+        for module_id in sorted(modules.keys()):
             try:
-                addr = modules[id]['address']
-                version = modules[id]['version']
+                addr = modules[module_id]['address']
+                version = modules[module_id]['version']
                 num_ports = power_api.NUM_PORTS[version]
 
                 if version == power_api.POWER_API_8_PORTS:
                     raw_volt = self.__power_communicator.do_command(addr,
-                                                                power_api.get_voltage(version))
+                                                                    power_api.get_voltage(version))
                     raw_freq = self.__power_communicator.do_command(addr,
-                                                                power_api.get_frequency(version))
+                                                                    power_api.get_frequency(version))
 
                     volt = [raw_volt[0] for _ in range(num_ports)]
                     freq = [raw_freq[0] for _ in range(num_ports)]
@@ -2101,9 +2152,9 @@ class GatewayApi(object):
                     out.append([convert_nan(volt[i]), convert_nan(freq[i]),
                                 convert_nan(current[i]), convert_nan(power[i])])
 
-                output[str(id)] = out
+                output[str(module_id)] = out
             except Exception as ex:
-                LOGGER.exception("Got Exception for power module %s: %s", id, ex)
+                LOGGER.exception("Got Exception for power module %s: %s", module_id, ex)
 
         return output
 
@@ -2115,10 +2166,10 @@ class GatewayApi(object):
         output = dict()
 
         modules = self.__power_controller.get_power_modules()
-        for id in sorted(modules.keys()):
+        for module_id in sorted(modules.keys()):
             try:
-                addr = modules[id]['address']
-                version = modules[id]['version']
+                addr = modules[module_id]['address']
+                version = modules[module_id]['version']
 
                 day = self.__power_communicator.do_command(addr,
                                                            power_api.get_day_energy(version))
@@ -2129,9 +2180,9 @@ class GatewayApi(object):
                 for i in range(power_api.NUM_PORTS[version]):
                     out.append([convert_nan(day[i]), convert_nan(night[i])])
 
-                output[str(id)] = out
+                output[str(module_id)] = out
             except Exception as ex:
-                LOGGER.exception("Got Exception for power module %s: %s", id, ex)
+                LOGGER.exception("Got Exception for power module %s: %s", module_id, ex)
 
         return output
 
