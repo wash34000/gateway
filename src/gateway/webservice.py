@@ -648,8 +648,8 @@ class WebInterface(object):
         return self.__wrap(lambda: self.__gateway_api.set_virtual_sensor(
             int(sensor_id),
             float(temperature) if temperature not in [None, '', 'None', 'null'] else None,
-            float(humidity) if humidity is not [None, '', 'None', 'null'] else None,
-            int(brightness) if brightness is not [None, '', 'None', 'null'] else None
+            float(humidity) if humidity not in [None, '', 'None', 'null'] else None,
+            int(brightness) if brightness not in [None, '', 'None', 'null'] else None
         ))
 
     @cherrypy.expose
