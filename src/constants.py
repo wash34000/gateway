@@ -35,6 +35,10 @@ def get_scheduling_database_file():
     """ Get the filename of the scheduling database file. This file is in sqlite format. """
     return "/opt/openmotics/etc/sched.db"
 
+def get_eeprom_extension_database_file():
+    """ Get the filename of the EEPROM extension database file. This file is in sqlite format. """
+    return "/opt/openmotics/etc/eeprom_ext.db"
+
 
 def get_ssl_certificate_file():
     """ Get the filename of the ssl certificate. """

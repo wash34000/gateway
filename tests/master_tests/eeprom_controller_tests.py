@@ -19,10 +19,14 @@ Tests for the eeprom_controller module.
 """
 
 import unittest
+import os
 
 from master.eeprom_controller import EepromController, EepromFile, EepromModel, EepromAddress, \
                                      EepromData, EepromId, EepromString, EepromByte, EepromWord, \
-                                     CompositeDataType, EepromActions, EepromSignedTemp, EepromIBool
+                                     CompositeDataType, EepromActions, EepromSignedTemp, \
+                                     EepromIBool, EextByte, EextString
+
+from master.eeprom_extension import EepromExtension
 import master.master_api as master_api
 
 
@@ -66,6 +70,28 @@ class Model6(EepromModel):
                             ('out', EepromWord((3, 15)))])
 
 
+class Model7(EepromModel):
+    """ Dummy model with multiple fields, including eext fields and an id. """
+    id = EepromId(3)
+    name = EepromString(10, lambda id: (id, 4))
+    link = EepromByte(lambda id: (id, 14))
+    room = EextByte()
+
+
+class Model8(EepromModel):
+    """ Dummy model with multiple fields, including eext fields, without an id. """
+    name = EepromString(10, (1, 4))
+    link = EepromByte((1, 14))
+    room = EextByte()
+
+
+class Model9(EepromModel):
+    """ Dummy model with multiple fields, including eext fields, without an id. """
+    id = EepromId(10)
+    name = EextString()
+    floor = EextByte()
+
+
 def get_eeprom_file_dummy(banks):
     """ Create an EepromFile when the data for all banks is provided.
 
@@ -85,27 +111,43 @@ def get_eeprom_file_dummy(banks):
 
     return EepromFile(MasterCommunicatorDummy(list, write))
 
+EEPROM_DB_FILE = 'test.db'
+
+def get_eeprom_controller_dummy(banks):
+    """ Create a dummy EepromController, banks is passed to get_eeprom_file_dummy. """
+    return EepromController(get_eeprom_file_dummy(banks), EepromExtension(EEPROM_DB_FILE))
+
 
 class EepromControllerTest(unittest.TestCase):
     """ Tests for EepromController. """
 
+    def setUp(self): #pylint: disable=C0103
+        """ Run before each test. """
+        if os.path.exists(EEPROM_DB_FILE):
+            os.remove(EEPROM_DB_FILE)
+
+    def tearDown(self): #pylint: disable=C0103
+        """ Run after each test. """
+        if os.path.exists(EEPROM_DB_FILE):
+            os.remove(EEPROM_DB_FILE)
+
     def test_read(self):
         """ Test read. """
-        controller = EepromController(get_eeprom_file_dummy(
-                            ["\x00" * 256, "\x00" * 2 + "hello" + "\x00" * 249]))
+        controller = get_eeprom_controller_dummy(
+                            ["\x00" * 256, "\x00" * 2 + "hello" + "\x00" * 249])
         model = controller.read(Model1, 0)
         self.assertEquals(0, model.id)
         self.assertEquals("hello" + "\x00" * 95, model.name)
 
-        controller = EepromController(get_eeprom_file_dummy(
-                            ["", "", "", "\x00" * 4 + "hello" + "\x00" * 249]))
+        controller = get_eeprom_controller_dummy(
+                            ["", "", "", "\x00" * 4 + "hello" + "\x00" * 249])
         model = controller.read(Model2)
         self.assertEquals("hello" + "\x00" * 95, model.name)
 
     def test_read_field(self):
         """ Test read with a field. """
-        controller = EepromController(get_eeprom_file_dummy(
-                            ["", "", "", "\x00" * 4 + "helloworld\x01\x02\x00" + "\x00" * 239]))
+        controller = get_eeprom_controller_dummy(
+                            ["", "", "", "\x00" * 4 + "helloworld\x01\x02\x00" + "\x00" * 239])
         model = controller.read(Model5, 0, [u"name"])
         self.assertEquals(0, model.id)
         self.assertEquals("helloworld", model.name)
@@ -132,8 +174,8 @@ class EepromControllerTest(unittest.TestCase):
 
     def test_read_batch(self):
         """ Test read_batch. """
-        controller = EepromController(get_eeprom_file_dummy(
-                            ["\x00" * 256, "\x00" * 2 + "hello" + "\x00" * 249]))
+        controller = get_eeprom_controller_dummy(
+                            ["\x00" * 256, "\x00" * 2 + "hello" + "\x00" * 249])
 
         models = controller.read_batch(Model1, [0, 3, 8])
 
@@ -150,10 +192,10 @@ class EepromControllerTest(unittest.TestCase):
 
     def test_read_batch_field(self):
         """ Test read_batch with a field. """
-        controller = EepromController(get_eeprom_file_dummy(
+        controller = get_eeprom_controller_dummy(
                         ["", "", "",
                          "\x00" * 4 + "helloworld\x01\x00\x02" + "\x00" * 239,
-                         "\x00" * 4 + "secondpage\x02\x00\x03" + "\x00" * 239]))
+                         "\x00" * 4 + "secondpage\x02\x00\x03" + "\x00" * 239])
 
         models = controller.read_batch(Model5, [0, 1], ["name"])
 
@@ -171,7 +213,7 @@ class EepromControllerTest(unittest.TestCase):
 
     def test_read_all_without_id(self):
         """ Test read_all for EepromModel without id. """
-        controller = EepromController(get_eeprom_file_dummy([]))
+        controller = get_eeprom_controller_dummy([])
 
         try:
             controller.read_all(Model2)
@@ -181,8 +223,8 @@ class EepromControllerTest(unittest.TestCase):
 
     def test_read_all(self):
         """ Test read_all. """
-        controller = EepromController(get_eeprom_file_dummy(
-                            ["\x00" * 256, "\x00" * 2 + "hello" + "\x00" * 249]))
+        controller = get_eeprom_controller_dummy(
+                            ["\x00" * 256, "\x00" * 2 + "hello" + "\x00" * 249])
         models = controller.read_all(Model1)
 
         self.assertEquals(10, len(models))
@@ -199,11 +241,11 @@ class EepromControllerTest(unittest.TestCase):
 
     def test_read_all_fields(self):
         """ Test read_all with a field. """
-        controller = EepromController(get_eeprom_file_dummy(
+        controller = get_eeprom_controller_dummy(
                         ["", "", "",
                          "\x00" * 4 + "helloworld\x01\x00\x02" + "\x00" * 239,
                          "\x00" * 4 + "secondpage\x02\x00\x03" + "\x00" * 239,
-                         "\x00" * 4 + "anotherone\x04\x00\x05" + "\x00" * 239]))
+                         "\x00" * 4 + "anotherone\x04\x00\x05" + "\x00" * 239])
 
         models = controller.read_all(Model5, ["name", "link"])
 
@@ -226,13 +268,13 @@ class EepromControllerTest(unittest.TestCase):
 
     def test_get_max_id(self):
         """ Test get_max_id. """
-        controller = EepromController(get_eeprom_file_dummy(["\x05" + "\x00" * 254]))
+        controller = get_eeprom_controller_dummy(["\x05" + "\x00" * 254])
         self.assertEquals(10, controller.get_max_id(Model4))
 
-        controller = EepromController(get_eeprom_file_dummy(["\x10" + "\x00" * 254]))
+        controller = get_eeprom_controller_dummy(["\x10" + "\x00" * 254])
         self.assertEquals(32, controller.get_max_id(Model4))
 
-        controller = EepromController(get_eeprom_file_dummy([]))
+        controller = get_eeprom_controller_dummy([])
         self.assertEquals(10, controller.get_max_id(Model1))
 
         try:
@@ -243,8 +285,8 @@ class EepromControllerTest(unittest.TestCase):
 
     def test_write(self):
         """ Test write. """
-        controller = EepromController(get_eeprom_file_dummy(
-                                ["\x00" * 256, "\x00" * 256, "\x00" * 256, "\x00" * 256]))
+        controller = get_eeprom_controller_dummy(
+                                ["\x00" * 256, "\x00" * 256, "\x00" * 256, "\x00" * 256])
         controller.write(Model1(id=1, name="Hello world !" + "\xff" * 10))
 
         model = controller.read(Model1, 1)
@@ -253,8 +295,8 @@ class EepromControllerTest(unittest.TestCase):
 
     def test_write_sparse(self):
         """ Test write when not all fields of the model are provided. """
-        controller = EepromController(get_eeprom_file_dummy(
-                                ["\x00" * 256, "\x00" * 256, "\x00" * 256, "\x00" * 256]))
+        controller = get_eeprom_controller_dummy(
+                                ["\x00" * 256, "\x00" * 256, "\x00" * 256, "\x00" * 256])
         controller.write(Model5(id=0, name="Helloworld"))
 
         model = controller.read(Model5, 0)
@@ -273,8 +315,8 @@ class EepromControllerTest(unittest.TestCase):
 
     def test_write_batch_one(self):
         """ Test write_batch with one model. """
-        controller = EepromController(get_eeprom_file_dummy(
-                                ["\x00" * 256, "\x00" * 256, "\x00" * 256, "\x00" * 256]))
+        controller = get_eeprom_controller_dummy(
+                                ["\x00" * 256, "\x00" * 256, "\x00" * 256, "\x00" * 256])
         controller.write_batch([Model1(id=3, name="Hello world !")])
 
         model = controller.read(Model1, 3)
@@ -283,8 +325,8 @@ class EepromControllerTest(unittest.TestCase):
 
     def test_write_batch_multiple(self):
         """ Test write with multiple models. """
-        controller = EepromController(get_eeprom_file_dummy(
-                                ["\x00" * 256, "\x00" * 256, "\x00" * 256, "\x00" * 256]))
+        controller = get_eeprom_controller_dummy(
+                                ["\x00" * 256, "\x00" * 256, "\x00" * 256, "\x00" * 256])
         controller.write_batch([Model1(id=3, name="First model"),
                                 Model2(name="Second model" + "\x01" * 88)])
 
@@ -294,6 +336,85 @@ class EepromControllerTest(unittest.TestCase):
 
         model = controller.read(Model2)
         self.assertEquals("Second model" + "\x01" * 88, model.name)
+
+    def test_read_with_ext(self):
+        """ Test reading a model with an EextDataType. """
+        controller = get_eeprom_controller_dummy(
+                                ["\x00" * 256, "\x00" * 256, "\x00" * 256, "\x00" * 256])
+        model7 = controller.read(Model7, 1)
+
+        self.assertEquals(1, model7.id)
+        self.assertEquals('\x00'*10, model7.name)
+        self.assertEquals(0, model7.link)
+        self.assertEquals(255, model7.room)
+
+    def test_read_batch_with_ext(self):
+        """ Test reading a batch of models with an EextDataType. """
+        controller = get_eeprom_controller_dummy(
+                                ["\x00" * 256, "\x00" * 256, "\x00" * 256, "\x00" * 256])
+        models = controller.read_batch(Model7, [1,2])
+
+        self.assertEquals(1, models[0].id)
+        self.assertEquals('\x00'*10, models[0].name)
+        self.assertEquals(0, models[0].link)
+        self.assertEquals(255, models[0].room)
+
+        self.assertEquals(2, models[1].id)
+        self.assertEquals('\x00'*10, models[1].name)
+        self.assertEquals(0, models[1].link)
+        self.assertEquals(255, models[1].room)
+
+    def test_write_read_with_ext(self):
+        """ Test writing and reading a model with an EextDataType. """
+        controller = get_eeprom_controller_dummy(
+                                ["\xff" * 256, "\xff" * 256, "\xff" * 256, "\xff" * 256])
+        controller.write_batch([Model7(id=1, name="First", link=79, room=123),
+                                Model7(id=2, name="Second", link=99, room=55)])
+
+        models = controller.read_batch(Model7, [1,2])
+
+        self.assertEquals(1, models[0].id)
+        self.assertEquals('First', models[0].name)
+        self.assertEquals(79, models[0].link)
+        self.assertEquals(123, models[0].room)
+
+        self.assertEquals(2, models[1].id)
+        self.assertEquals('Second', models[1].name)
+        self.assertEquals(99, models[1].link)
+        self.assertEquals(55, models[1].room)
+
+
+    def test_write_read_with_ext_without_id(self):
+        """ Test writing and reading a model with an EextDataType but without id. """
+        controller = get_eeprom_controller_dummy(
+                                ["\xff" * 256, "\xff" * 256, "\xff" * 256, "\xff" * 256])
+        controller.write(Model8(name="First", link=79, room=123))
+
+        model8 = controller.read(Model8)
+
+        self.assertEquals('First', model8.name)
+        self.assertEquals(79, model8.link)
+        self.assertEquals(123, model8.room)
+
+    def test_ext_only(self):
+        """ Test writing and reading a model that only has an id and EextDataType fields. """
+        controller = get_eeprom_controller_dummy([])
+        ids = Model9.id.get_max_id()
+
+        batch = []
+        for i in range(ids):
+            batch.append(Model9(id=i, name='Room %d'%i, floor=i/2))
+
+        controller.write_batch(batch)
+
+        models = controller.read_all(Model9)
+
+        self.assertEquals(ids, len(models))
+        for i in range(ids):
+            self.assertEquals(i, models[i].id)
+            self.assertEquals('Room %d'%i, models[i].name)
+            self.assertEquals(i/2, models[i].floor)
+
 
 class MasterCommunicatorDummy(object):
     """ Dummy for the MasterCommunicator. """
@@ -662,28 +783,45 @@ class EepromModelTest(unittest.TestCase):
 
     def test_get_fields(self):
         """ Test get_fields. """
-        fields = Model1.get_fields()
+        fields = Model1.get_fields(include_eeprom=True)
 
         self.assertEquals(1, len(fields))
         self.assertEquals("name", fields[0][0])
 
-        fields = Model1.get_fields(include_id=True)
+        fields = Model1.get_fields(include_id=True, include_eeprom=True)
 
         self.assertEquals(2, len(fields))
         self.assertEquals("id", fields[0][0])
         self.assertEquals("name", fields[1][0])
 
-        fields = Model6.get_fields()
+        fields = Model6.get_fields(include_eeprom=True)
 
         self.assertEquals(2, len(fields))
         self.assertEquals("name", fields[0][0])
         self.assertEquals("status", fields[1][0])
+
+        fields = Model7.get_fields(include_id=True, include_eeprom=True)
+
+        self.assertEquals(3, len(fields))
+        self.assertEquals("id", fields[0][0])
+        self.assertEquals("link", fields[1][0])
+        self.assertEquals("name", fields[2][0])
+
+        fields = Model7.get_fields(include_id=True, include_eeprom=True, include_eext=True)
+
+        self.assertEquals(4, len(fields))
+        self.assertEquals("id", fields[0][0])
+        self.assertEquals("link", fields[1][0])
+        self.assertEquals("name", fields[2][0])
+        self.assertEquals("room", fields[3][0])
 
 
     def test_has_id(self):
         """ Test has_id. """
         self.assertTrue(Model1.has_id())
         self.assertFalse(Model2.has_id())
+        self.assertTrue(Model7.has_id())
+        self.assertFalse(Model8.has_id())
 
     def test_get_name(self):
         """ Test get_name. """
@@ -719,6 +857,8 @@ class EepromModelTest(unittest.TestCase):
         self.assertEquals({'id':1, 'name':'test'}, Model1(id=1, name="test").to_dict())
         self.assertEquals({'name':'hello world'}, Model2(name="hello world").to_dict())
         self.assertEquals({'name':'a', 'status':[1, 2]}, Model6(name="a", status=[1, 2]).to_dict())
+        self.assertEquals({'id':2, 'name':'a', 'link':4, 'room':5},
+                          Model7(id=2, name="a", link=4, room=5).to_dict())
 
     def test_from_dict(self):
         """ Test from_dict. """
@@ -732,6 +872,12 @@ class EepromModelTest(unittest.TestCase):
         model6 = Model6.from_dict({'name':u'test', 'status':[1, 2]})
         self.assertEquals('test', model6.name)
         self.assertEquals([1, 2], model6.status)
+
+        model7 = Model7.from_dict({'id':2, 'name':u'test', 'link':3, 'room':5})
+        self.assertEquals(2, model7.id)
+        self.assertEquals('test', model7.name)
+        self.assertEquals(3, model7.link)
+        self.assertEquals(5, model7.room)
 
     def test_from_dict_error(self):
         """ Test from_dict when the dict does not contain the right keys. """
@@ -828,28 +974,28 @@ class EepromModelTest(unittest.TestCase):
         """ Test from_eeprom_data. """
         model1_data = [EepromData(EepromAddress(1, 3, 100), "test" + "\xff" * 96)]
         model1 = Model1.from_eeprom_data(model1_data, 1)
-        self.assertEquals(1, model1.id)
-        self.assertEquals("test", model1.name)
+        self.assertEquals(1, model1['id'])
+        self.assertEquals("test", model1['name'])
 
         model2_data = [EepromData(EepromAddress(3, 4, 100), "hello world" + "\xff" * 89)]
         model2 = Model2.from_eeprom_data(model2_data)
-        self.assertEquals("hello world", model2.name)
+        self.assertEquals("hello world", model2['name'])
 
         model3_data = [EepromData(EepromAddress(3, 4, 10), "hello worl"),
                        EepromData(EepromAddress(3, 14, 1), str(chr(123))),
                        EepromData(EepromAddress(3, 15, 2), str(chr(200) + chr(1)))]
         model3 = Model3.from_eeprom_data(model3_data)
-        self.assertEquals("hello worl", model3.name)
-        self.assertEquals(123, model3.link)
-        self.assertEquals(456, model3.out)
+        self.assertEquals("hello worl", model3['name'])
+        self.assertEquals(123, model3['link'])
+        self.assertEquals(456, model3['out'])
 
         model6_data = [EepromData(EepromAddress(3, 4, 10), "test" + "\xff" * 6),
                        EepromData(EepromAddress(3, 14, 1), str(chr(1))),
                        EepromData(EepromAddress(3, 15, 2), str(chr(2) + chr(0)))]
         model6 = Model6.from_eeprom_data(model6_data)
 
-        self.assertEquals("test", model6.name)
-        self.assertEquals([1, 2], model6.status)
+        self.assertEquals("test", model6['name'])
+        self.assertEquals([1, 2], model6['status'])
 
     def test_from_eeprom_wrong_address(self):
         """ Test from_eeprom_data with wrong address. """

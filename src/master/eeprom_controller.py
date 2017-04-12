@@ -22,17 +22,21 @@ import inspect
 import types
 
 from master_api import eeprom_list, read_eeprom, write_eeprom, activate_eeprom
+from eeprom_extension import EepromExtension
 
 
 class EepromController(object):
     """ The controller takes EepromModels and reads or writes them from and to an EepromFile. """
 
-    def __init__(self, eeprom_file):
-        """ Constructor takes the eeprom_file for reading and writes.
+    def __init__(self, eeprom_file, eeprom_extension):
+        """ Constructor takes the eeprom_file (for reading and writes from the eeprom) and the
+        eeprom_extension (for reading the extensions from sqlite).
 
         :param eeprom_file: instance of EepromFile.
+        :param eeprom_extension: instance of EepromExtension.
         """
         self.__eeprom_file = eeprom_file
+        self.__eeprom_extension = eeprom_extension
 
     def invalidate_cache(self):
         """ Invalidate the cache, this should happen when maintenance mode was used. """
@@ -50,7 +54,9 @@ class EepromController(object):
         addresses = eeprom_model.get_addresses(id, fields)
         eeprom_data = self.__eeprom_file.read(addresses)
 
-        return eeprom_model.from_eeprom_data(eeprom_data, id, fields)
+        field_dict = eeprom_model.from_eeprom_data(eeprom_data, id, fields)
+        field_dict.update(self.__eeprom_extension.read_model(eeprom_model, id, fields))
+        return eeprom_model(**field_dict)
 
     def read_batch(self, eeprom_model, ids, fields=None):
         """ Create a list of instances of an EepromModel by reading it from the EepromFile.
@@ -72,7 +78,9 @@ class EepromController(object):
 
         for id in ids:
             length = len(eeprom_model.get_addresses(id, fields))
-            out.append(eeprom_model.from_eeprom_data(eeprom_data[i:i + length], id, fields))
+            field_dict = eeprom_model.from_eeprom_data(eeprom_data[i:i + length], id, fields)
+            field_dict.update(self.__eeprom_extension.read_model(eeprom_model, id, fields))
+            out.append(eeprom_model(**field_dict))
             i += length
 
         return out
@@ -90,21 +98,24 @@ class EepromController(object):
 
         :param eeprom_model: instance of EepromModel.
         """
-        eeprom_data = eeprom_model.to_eeprom_data()
-        self.__eeprom_file.write(eeprom_data)
-        self.__eeprom_file.activate()
+        return self.write_batch([eeprom_model])
 
     def write_batch(self, eeprom_models):
         """ Write a list of EepromModel instances to the EepromFile.
 
         :param eeprom_models: list of EepromModel instances.
         """
+        # Write to the eeprom
         eeprom_data = []
         for eeprom_model in eeprom_models:
             eeprom_data.extend(eeprom_model.to_eeprom_data())
 
         self.__eeprom_file.write(eeprom_data)
         self.__eeprom_file.activate()
+
+        # Write the extensions
+        for eeprom_model in eeprom_models:
+            self.__eeprom_extension.write_model(eeprom_model)
 
     def get_max_id(self, eeprom_model):
         """ Get the maximum id for an eeprom_model.
@@ -357,7 +368,9 @@ class EepromModel(object):
 
     def __init__(self, **kwargs):
         """ The arguments to the constructor are defined by the EepromDataType class fields. """
-        fields = [x[0] for x in self.__class__.get_fields(include_id=True)]
+        fields = [x[0] for x in self.__class__.get_fields(include_id=True,
+                                                          include_eeprom=True,
+                                                          include_eext=True)]
 
         for (field, value) in kwargs.items():
             if field in fields:
@@ -369,21 +382,33 @@ class EepromModel(object):
         if id_field_name != None and id_field_name not in kwargs:
             raise TypeError("The id was missing for %s" % self.__class__.__name__)
 
-    @classmethod
-    def get_fields(cls, include_id=False):
-        """ Get the fields defined by an EepromModel child. """
-        return inspect.getmembers(cls,
-                                  lambda x: isinstance(x, EepromDataType) or
-                                            isinstance(x, CompositeDataType) or
-                                            (include_id and isinstance(x, EepromId)))
+    def get_id(self):
+        """ Create EepromData from the EepromModel. """
+        id_field = self.__class__.get_id_field()
+        return None if id_field is None else self.__dict__[id_field]
 
     @classmethod
-    def get_field_dict(cls, include_id=False):
+    def get_fields(cls, include_id=False, include_eeprom=False, include_eext=False):
+        """ Get the fields defined by an EepromModel child. """
+        def include(field):
+            if isinstance(field, EepromId) and include_id:
+                return True
+            elif (isinstance(field, EepromDataType) or isinstance(field, CompositeDataType)) and include_eeprom:
+                return True
+            elif isinstance(field, EextDataType) and include_eext:
+                return True
+            else:
+                return False
+
+        return inspect.getmembers(cls, include)
+
+    @classmethod
+    def get_field_dict(cls, include_id=False, include_eeprom=False, include_eext=False):
         """ Get a dict from the field name to the field type for each field defined by the
         EepromModel child.
         """
         class_field_dict = {}
-        for (name, type) in cls.get_fields(include_id):
+        for (name, type) in cls.get_fields(include_id, include_eeprom, include_eext):
             class_field_dict[name] = type
 
         return class_field_dict
@@ -433,8 +458,9 @@ class EepromModel(object):
     def to_dict(self):
         """ Create a model dict from the EepromModel. """
         out = dict()
+        fields = self.__class__.get_fields(include_id=True, include_eeprom=True, include_eext=True)
 
-        for (field_name, _) in self.__class__.get_fields(include_id=True):
+        for (field_name, _) in fields:
             if field_name in self.__dict__:
                 out[field_name] = self.__dict__[field_name]
 
@@ -448,11 +474,9 @@ class EepromModel(object):
     def to_eeprom_data(self):
         """ Create EepromData from the EepromModel. """
         data = []
+        id = self.get_id()
 
-        id_field = self.__class__.get_id_field()
-        id = None if id_field is None else self.__dict__[id_field]
-
-        for (field_name, field_type) in self.__class__.get_fields():
+        for (field_name, field_type) in self.__class__.get_fields(include_eeprom=True):
             if field_name in self.__dict__ and field_type.is_writable():
                 if isinstance(field_type, CompositeDataType):
                     data.extend(field_type.to_eeprom_data(self.__dict__[field_name], id))
@@ -477,7 +501,7 @@ class EepromModel(object):
 
         if fields == None:
             # Add data for all fields.
-            for (field_name, field_type) in cls.get_fields():
+            for (field_name, field_type) in cls.get_fields(include_eeprom=True):
                 if isinstance(field_type, CompositeDataType):
                     field_dict[field_name] = field_type.from_data_dict(data_dict, id)
                 else:
@@ -486,7 +510,7 @@ class EepromModel(object):
                     field_dict[field_name] = field_type.from_bytes(bytes)
         else:
             # Add data for given fields only.
-            class_field_dict = cls.get_field_dict()
+            class_field_dict = cls.get_field_dict(include_eeprom=True)
             for field_name in fields:
                 if field_name not in class_field_dict:
                     raise TypeError("Field %s is unknown for %s" % (field_name, cls.__name__))
@@ -502,7 +526,7 @@ class EepromModel(object):
         if id is not None:
             field_dict[cls.get_id_field()] = id
 
-        return cls(**field_dict)
+        return field_dict
 
     @classmethod
     def get_addresses(cls, id=None, fields=None):
@@ -512,7 +536,7 @@ class EepromModel(object):
 
         if fields == None:
             # Add addresses for all fields.
-            for (_, field_type) in cls.get_fields():
+            for (_, field_type) in cls.get_fields(include_eeprom=True):
                 if isinstance(field_type, CompositeDataType):
                     addresses.extend(field_type.get_addresses(id))
                 else:
@@ -520,7 +544,7 @@ class EepromModel(object):
 
         else:
             # Add addresses for given fields only.
-            class_field_dict = cls.get_field_dict()
+            class_field_dict = cls.get_field_dict(include_eeprom=True)
 
             for field in fields:
                 if field not in class_field_dict:
@@ -962,3 +986,86 @@ class EepromEnum(EepromDataType):
 
     def get_length(self):
         return 1
+
+
+class EextDataType(object):
+    """ Classes that are eeprom extensions should inherit from EextDataType. """
+
+    def get_name(self):
+        """ Get the name of the EextDataType. To be implemented in the subclass. """
+        raise NotImplementedError()
+
+    def is_writable(self):
+        """ Always returns True, all EextDataTypes are writeable. """
+        return True
+
+    def default_value(self):
+        """ Get the default value for this data type. To be implemented in the subclass. """
+        raise NotImplementedError()
+
+    def decode(self, value):
+        """ Decode the database string value into the appropriate data type.
+        To be implemented in the subclass. """
+        raise NotImplementedError()
+
+    def encode(self, value):
+        """ Encode the data type into the database string value.
+        To be implemented in the subclass. """
+        raise NotImplementedError()
+
+
+class EextByte(EextDataType):
+    """ An byte field, stored in the eeprom extension database. """
+
+    def __init__(self):
+        pass
+
+    def get_name(self):
+        return "Byte"
+
+    def default_value(self):
+        return 255
+
+    def decode(self, value):
+        return int(value)
+
+    def encode(self, value):
+        return str(value)
+
+
+class EextString(EextDataType):
+    """ An string field, stored in the eeprom extension database. """
+
+    def __init__(self):
+        pass
+
+    def get_name(self):
+        return "String"
+
+    def default_value(self):
+        return ""
+
+    def decode(self, value):
+        return value
+
+    def encode(self, value):
+        return value
+
+
+class EextBool(EextDataType):
+    """ A Boolean field, stored in the eepro extension database. """
+
+    def __init__(self):
+        pass
+
+    def get_name(self):
+        return "Boolean"
+
+    def default_value(self):
+        return False
+
+    def decode(self, value):
+        return bool(value)
+
+    def encode(self, value):
+        return str(value)
