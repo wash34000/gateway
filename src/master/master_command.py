@@ -217,18 +217,13 @@ class Field(object):
 
     @staticmethod
     def svt(name):
-        """ System value time """
+        """ System value type """
         return Field(name, SvtFieldType())
 
     @staticmethod
     def dimmer(name):
         """ Dimmer type (byte in [0, 63] converted to integer in [0, 100]. """
         return Field(name, DimmerFieldType())
-
-    @staticmethod
-    def hum(name):
-        """ Humidity value. """
-        return Field(name, HumidityFieldType())
 
     @staticmethod
     def crc():
@@ -400,7 +395,7 @@ class LiteralFieldType(object):
             return ""
 
 class SvtFieldType(object):
-    """ The System value temperature is one byte. This types encodes and decodes into
+    """ The System Value Type is one byte. This types encodes and decodes into
     a float (degrees Celsius).
     """
     def __init__(self):
@@ -418,25 +413,6 @@ class SvtFieldType(object):
         """ Decode a svt byte string into a instance of the Svt class. """
         return master_api.Svt.from_byte(byte_str[0])
 
-class HumidityFieldType(object):
-    """ The humidity field is one byte. This types encodes and decodes
-    into a float (percentage).
-    """
-    def __init__(self):
-        pass
-
-    def encode(self, field_value):
-        """ Encode an instance of the Svt class to a byte. """
-        return chr(int(field_value * 2) if field_value != 255.0 else 255)
-
-    def get_min_decode_bytes(self):
-        """ Get the minimal amount of bytes required to start decoding. """
-        return 1
-
-    def decode(self, byte_str):
-        """ Decode a byte string into a float. """
-        value = ord(byte_str[0])
-        return (value / 2.0) if value != 255 else 255.0
 
 class VarStringFieldType(object):
     """ The VarString uses 1 byte for the length, the total length of the string is fixed.

@@ -1,7 +1,5 @@
 #!/bin/bash
-export PYTHONPATH=$PYTHONPATH:`pwd`/python
-
-cd tests
+export PYTHONPATH=$PYTHONPATH:`pwd`/../src
 
 echo "Running master api tests"
 python -m master_tests.master_api_tests
@@ -26,6 +24,9 @@ python -m master_tests.thermostats_tests
 
 echo "Running eeprom controller tests"
 python -m master_tests.eeprom_controller_tests
+
+echo "Running eeprom extension tests"
+python -m master_tests.eeprom_extension_tests
 
 echo "Running users tests"
 python -m gateway_tests.users_tests

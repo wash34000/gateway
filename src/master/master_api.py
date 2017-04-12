@@ -25,6 +25,15 @@ from master_command import MasterCommandSpec, Field, OutputFieldType, DimmerFiel
 BA_GROUP_ACTION = 2
 
 BA_TRIGGER_EVENT = 60
+BA_STATUS_LEDS = 64
+
+BA_THERMOSTAT_COOLING_HEATING = 80
+BA_THERMOSTAT_AIRCO_STATUS = 81
+BA_SET_PERMANENT_MANUAL_MODE = 82
+BA_CLEAR_PERMANENT_MANUAL_MODE = 83
+
+BA_THERMOSTAT_TENANT_AUTO = 90
+BA_THERMOSTAT_TENANT_MANUAL = 91
 
 BA_SHUTTER_UP = 100
 BA_SHUTTER_DOWN = 101
@@ -32,11 +41,6 @@ BA_SHUTTER_STOP = 102
 BA_SHUTTER_GROUP_UP = 104
 BA_SHUTTER_GROUP_DOWN = 105
 BA_SHUTTER_GROUP_STOP = 106
-
-BA_SET_HEATING_MODE = 80
-BA_SET_AIRCO_STATUS = 81
-BA_SET_PERMANENT_MANUAL_MODE = 82
-BA_CLEAR_PERMANENT_MANUAL_MODE = 83
 
 BA_ONE_SETPOINT_0 = 128
 BA_ONE_SETPOINT_1 = 129
@@ -54,8 +58,6 @@ BA_ALL_SETPOINT_5 = 139
 
 BA_THERMOSTAT_MODE = 140
 BA_THERMOSTAT_AUTOMATIC = 141
-BA_THERMOSTAT_COOLING_HEATING = 80
-BA_THERMOSTAT_AIRCO_STATUS = 81
 
 BA_LIGHT_OFF = 160
 BA_LIGHT_ON = 161
@@ -103,7 +105,6 @@ BA_LIGHT_ON_TIMER_1500_NO_OVERRULE = 204
 BA_LIGHT_ON_TIMER_2220_NO_OVERRULE = 205
 BA_LIGHT_ON_TIMER_3120_NO_OVERRULE = 206
 
-BA_STATUS_LEDS = 64
 
 def basic_action():
     """ Basic actions. """
@@ -283,18 +284,30 @@ def thermostat_list():
          Field.svt('setp20'), Field.svt('setp21'), Field.svt('setp22'), Field.svt('setp23'),
          Field.crc(), Field.lit('\r\n')])
 
+def thermostat_mode_list():
+    """ Read the thermostat mode for each thermostat. """
+    return MasterCommandSpec("ml",
+        [Field.padding(13)],
+        [Field.byte('mode0'), Field.byte('mode1'), Field.byte('mode2'), Field.byte('mode3'),
+         Field.byte('mode4'), Field.byte('mode5'), Field.byte('mode6'), Field.byte('mode7'),
+         Field.byte('mode8'), Field.byte('mode9'), Field.byte('mode10'), Field.byte('mode11'),
+         Field.byte('mode12'), Field.byte('mode13'), Field.byte('mode14'), Field.byte('mode15'),
+         Field.byte('mode16'), Field.byte('mode17'), Field.byte('mode18'), Field.byte('mode19'),
+         Field.byte('mode20'), Field.byte('mode21'), Field.byte('mode22'), Field.byte('mode23'),
+         Field.crc(), Field.lit('\r\n')])
+
 def sensor_humidity_list():
     """ Reads the list humidity values of the 32 (0-31) sensors. """
     return MasterCommandSpec("hl",
         [Field.padding(13)],
-        [Field.hum('hum0'), Field.hum('hum1'), Field.hum('hum2'), Field.hum('hum3'),
-         Field.hum('hum4'), Field.hum('hum5'), Field.hum('hum6'), Field.hum('hum7'),
-         Field.hum('hum8'), Field.hum('hum9'), Field.hum('hum10'), Field.hum('hum11'),
-         Field.hum('hum12'), Field.hum('hum13'), Field.hum('hum14'), Field.hum('hum15'),
-         Field.hum('hum16'), Field.hum('hum17'), Field.hum('hum18'), Field.hum('hum19'),
-         Field.hum('hum20'), Field.hum('hum21'), Field.hum('hum22'), Field.hum('hum23'),
-         Field.hum('hum24'), Field.hum('hum25'), Field.hum('hum26'), Field.hum('hum27'),
-         Field.hum('hum28'), Field.hum('hum29'), Field.hum('hum30'), Field.hum('hum31'),
+        [Field.svt('hum0'), Field.svt('hum1'), Field.svt('hum2'), Field.svt('hum3'),
+         Field.svt('hum4'), Field.svt('hum5'), Field.svt('hum6'), Field.svt('hum7'),
+         Field.svt('hum8'), Field.svt('hum9'), Field.svt('hum10'), Field.svt('hum11'),
+         Field.svt('hum12'), Field.svt('hum13'), Field.svt('hum14'), Field.svt('hum15'),
+         Field.svt('hum16'), Field.svt('hum17'), Field.svt('hum18'), Field.svt('hum19'),
+         Field.svt('hum20'), Field.svt('hum21'), Field.svt('hum22'), Field.svt('hum23'),
+         Field.svt('hum24'), Field.svt('hum25'), Field.svt('hum26'), Field.svt('hum27'),
+         Field.svt('hum28'), Field.svt('hum29'), Field.svt('hum30'), Field.svt('hum31'),
          Field.crc(), Field.lit('\r\n')])
 
 def sensor_temperature_list():
@@ -315,18 +328,18 @@ def sensor_brightness_list():
     """ Reads the list brightness values of the 32 (0-31) sensors. """
     return MasterCommandSpec("bl",
         [Field.padding(13)],
-        [Field.byte('bri0'), Field.byte('bri1'), Field.byte('bri2'), Field.byte('bri3'),
-         Field.byte('bri4'), Field.byte('bri5'), Field.byte('bri6'), Field.byte('bri7'),
-         Field.byte('bri8'), Field.byte('bri9'), Field.byte('bri10'), Field.byte('bri11'),
-         Field.byte('bri12'), Field.byte('bri13'), Field.byte('bri14'), Field.byte('bri15'),
-         Field.byte('bri16'), Field.byte('bri17'), Field.byte('bri18'), Field.byte('bri19'),
-         Field.byte('bri20'), Field.byte('bri21'), Field.byte('bri22'), Field.byte('bri23'),
-         Field.byte('bri24'), Field.byte('bri25'), Field.byte('bri26'), Field.byte('bri27'),
-         Field.byte('bri28'), Field.byte('bri29'), Field.byte('bri30'), Field.byte('bri31'),
+        [Field.svt('bri0'), Field.svt('bri1'), Field.svt('bri2'), Field.svt('bri3'),
+         Field.svt('bri4'), Field.svt('bri5'), Field.svt('bri6'), Field.svt('bri7'),
+         Field.svt('bri8'), Field.svt('bri9'), Field.svt('bri10'), Field.svt('bri11'),
+         Field.svt('bri12'), Field.svt('bri13'), Field.svt('bri14'), Field.svt('bri15'),
+         Field.svt('bri16'), Field.svt('bri17'), Field.svt('bri18'), Field.svt('bri19'),
+         Field.svt('bri20'), Field.svt('bri21'), Field.svt('bri22'), Field.svt('bri23'),
+         Field.svt('bri24'), Field.svt('bri25'), Field.svt('bri26'), Field.svt('bri27'),
+         Field.svt('bri28'), Field.svt('bri29'), Field.svt('bri30'), Field.svt('bri31'),
          Field.crc(), Field.lit('\r\n')])
 
 def virtual_sensor_list():
-    """ Read the list with virtual values of the 32 (0-31) sensors. """
+    """ Read the list with virtual settings of the 32 (0-31) sensors. """
     return MasterCommandSpec("VL",
         [Field.padding(13)],
         [Field.byte('vir0'), Field.byte('vir1'), Field.byte('vir2'), Field.byte('vir3'),
@@ -342,9 +355,9 @@ def virtual_sensor_list():
 def set_virtual_sensor():
     """ Set the values (temperature, humidity, brightness) of a virtual sensor. """
     return MasterCommandSpec("VS",
-        [Field.byte('sensor'), Field.svt('tmp'), Field.hum('hum'), Field.byte('bri'),
+        [Field.byte('sensor'), Field.svt('tmp'), Field.svt('hum'), Field.svt('bri'),
          Field.padding(9)],
-        [Field.byte('sensor'), Field.svt('tmp'), Field.hum('hum'), Field.byte('bri'),
+        [Field.byte('sensor'), Field.svt('tmp'), Field.svt('hum'), Field.svt('bri'),
          Field.padding(9), Field.lit('\r\n')])
 
 def pulse_list():
@@ -484,8 +497,8 @@ def change_communication_mode_to_long():
 def change_communication_mode_to_short():
     """ Change the number of bytes used to communicate with the master to 18. """
     return MasterCommandSpec("cm",
-        [Field.lit('\x12'), Field.lit('\x00'), Field.padding(71)],
-        [Field.lit('\x12'), Field.lit('\x00'), Field.padding(11), Field.lit("\r\n")])
+        [Field.lit('\x12'), Field.lit('\x01'), Field.padding(71)],
+        [Field.lit('\x12'), Field.lit('\x01'), Field.padding(11), Field.lit("\r\n")])
 
 def modules_update_firmware_block():
     """ Upload 1 block of 64 bytes to the module. """
@@ -524,26 +537,37 @@ def modules_goto_application():
 ### Below are helpers for the Svt (System value type).
 
 class Svt(object):
-    """ Class for the system value type, this can be either a time or a temperature. """
+    """ Class for the System Value Type, this can be either a time, temperature, humidity or brightness. """
     TIME = 1
     TEMPERATURE = 2
-    RAW = 3
+    HUMIDITY = 3
+    BRIGHTNESS = 4
+    RAW = 5
 
     def __init__(self, type, value):
         """ Default constructor.
-        :param type: Type of the Svt (can be Svt.TIME or Svt.TERMPERATUR).
+        :param type: Type of the Svt (can be Svt.TIME, Svt.TEMPERATURE, Svt.HUMIDITY, Svt.BRIGHTNESS or Svt.RAW).
+        :param value: The human-friendly value
         """
         if type == Svt.TIME:
             split = [int(x) for x in value.split(":")]
             if len(split) != 2:
                 raise ValueError("Time is not in HH:MM format: %s" % value)
             self.__value = (split[0] * 6) + (split[1] / 10)
-        elif type == Svt.TEMPERATURE:
-            self.__value = int((value + 32) * 2)
+        elif type in [Svt.TEMPERATURE, Svt.HUMIDITY, Svt.BRIGHTNESS]:
+            if value is None:
+                self.__value = 255
+            elif type == Svt.TEMPERATURE:
+                self.__value = int((value + 32) * 2)
+            elif type == Svt.HUMIDITY:
+                self.__value = int(value * 2)
+            elif type == Svt.BRIGHTNESS:
+                self.__value = 254 - int(value * 2.54)
         elif type == Svt.RAW:
             self.__value = value
         else:
             raise ValueError("Unknown type for Svt: " + str(type))
+        self.__value = min(max(self.__value, 0), 255)
 
     def get_time(self):
         """ Convert an Svt to time.
@@ -557,7 +581,25 @@ class Svt(object):
         """ Convert an Svt to temperature.
         :returns: degrees celcius (float).
         """
+        if self.__value == 255:
+            return None
         return (float(self.__value) / 2) - 32
+
+    def get_humidity(self):
+        """ Convert an Svt to humidity.
+        :returns: humidity in percent.
+        """
+        if self.__value > 200:
+            return None
+        return self.__value / 2.0
+
+    def get_brightness(self):
+        """ Convert an Svt to brightness.
+        :returns: brightness in percent.
+        """
+        if self.__value == 255:
+            return None
+        return round((254 - self.__value) / 2.54, 2)
 
     def get_byte(self):
         """ Get the Svt value as a byte.
@@ -578,6 +620,18 @@ class Svt(object):
         :param temperature: in degrees celcius (float)
         """
         return Svt(Svt.TEMPERATURE, temperature)
+
+    @staticmethod
+    def humidity(humidity):
+        """ Create an Svt instance from a humidity.
+        :param humidity: in percent (float)"""
+        return Svt(Svt.HUMIDITY, humidity)
+
+    @staticmethod
+    def brightness(brightness):
+        """ Create an Svt instance from a brightness.
+        :param brightness: in percent (float)"""
+        return Svt(Svt.BRIGHTNESS, brightness)
 
     @staticmethod
     def time(time_value):

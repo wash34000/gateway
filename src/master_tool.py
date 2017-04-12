@@ -20,6 +20,7 @@ Tool to control the master from the command line.
 
 import argparse
 import sys
+import time
 from ConfigParser import ConfigParser
 
 from serial import Serial
@@ -41,6 +42,8 @@ def main():
                         help='sync the serial port')
     parser.add_argument('--reset', dest='reset', action='store_true',
                         help='reset the master')
+    parser.add_argument('--hard-reset', dest='hardreset', action='store_true',
+                        help='perform a hardware reset on the master')
     parser.add_argument('--version', dest='version', action='store_true',
                         help='get the version of the master')
     parser.add_argument('--wipe', dest='wipe', action='store_true',
@@ -55,6 +58,24 @@ def main():
 
     if args.port:
         print port
+    elif args.hardreset:
+        print "Performing hard reset"
+
+        gpio_dir = open('/sys/class/gpio/gpio44/direction', 'w')
+        gpio_dir.write('out')
+        gpio_dir.close()
+
+        def power(master_on):
+            """ Set the power on the master. """
+            gpio_file = open('/sys/class/gpio/gpio44/value', 'w')
+            gpio_file.write('1' if master_on else '0')
+            gpio_file.close()
+
+        power(False)
+        time.sleep(5)
+        power(True)
+
+        print "Done"
     elif args.sync or args.version or args.reset or args.wipe:
         master_serial = Serial(port, 115200)
         master_communicator = MasterCommunicator(master_serial)
