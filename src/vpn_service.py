@@ -191,7 +191,8 @@ class Gateway(object):
             update_status_file = open(filename, 'r')
             status = update_status_file.read()
             update_status_file.close()
-            os.remove(filename)
+            if status.endswith('DONE\n'):
+                os.remove(filename)
             return status
         else:
             return None
