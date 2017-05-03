@@ -1454,19 +1454,23 @@ class GatewayApi(object):
         :type input_id: Id
         :param fields: The field of the input_configuration to get. (None gets all fields)
         :type fields: List of strings
-        :returns: input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'module_type' (String[1]), 'name' (String[8]), 'room' (Byte)
+        :returns: input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'module_type' (String[1]), 'name' (String[8]), 'room' (Byte), 'can' (String[1])
         """
-        return self.__eeprom_controller.read(InputConfiguration, input_id, fields).to_dict()
+        o = self.__eeprom_controller.read(InputConfiguration, input_id, fields)
+        if o.module_type == 'C':  # Do not return modules with module_type 'C'. These are CAN Control Modules.
+            raise TypeError('The given id is not an input')
+        return o.to_dict()
 
     def get_input_configurations(self, fields=None):
         """
-        Get all input_configurations.
+        Get all input_configurations. 
 
         :param fields: The field of the input_configuration to get. (None gets all fields)
         :type fields: List of strings
-        :returns: list of input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'module_type' (String[1]), 'name' (String[8]), 'room' (Byte)
+        :returns: list of input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'module_type' (String[1]), 'name' (String[8]), 'room' (Byte), 'can' (String[1])
         """
-        return [o.to_dict() for o in self.__eeprom_controller.read_all(InputConfiguration, fields)]
+        return [o.to_dict() for o in self.__eeprom_controller.read_all(InputConfiguration, fields)
+                if o.module_type != 'C']  # Filter modules with module_type 'C'. These are CAN Control Modules.
 
     def set_input_configuration(self, config):
         """
