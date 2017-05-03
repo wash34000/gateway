@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -e
 export PYTHONPATH=$PYTHONPATH:`pwd`/../src
 
 echo "Running master api tests"
