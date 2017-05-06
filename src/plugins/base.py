@@ -34,7 +34,7 @@ from datetime import datetime
 import cherrypy
 
 
-def om_expose(method=None, auth=True):
+def om_expose(method=None, auth=True, content_type='application/json'):
     """ Decorator to expose a method of the plugin class through the
     webinterface. The url will be /plugins/<plugin-name>/<method>.
 
@@ -60,13 +60,15 @@ def om_expose(method=None, auth=True):
             def _exposed(self, token, *args, **kwargs):
                 """ Exposed with token. """
                 self.webinterface.check_token(token)
-                cherrypy.response.headers["Content-Type"] = "application/json"
-                return method(self, *args, **kwargs)
+                result = method(self, *args, **kwargs)
+                cherrypy.response.headers["Content-Type"] = content_type
+                return result
         else:
             def _exposed(*args, **kwargs):
                 """ Exposed without token. """
-                cherrypy.response.headers["Content-Type"] = "application/json"
-                return method(*args, **kwargs)
+                result = method(*args, **kwargs)
+                cherrypy.response.headers["Content-Type"] = content_type
+                return result
 
         _exposed.exposed = True
         _exposed.auth = auth
