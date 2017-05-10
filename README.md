@@ -1,5 +1,7 @@
 # OpenMotics Gateway (backend)
 
+[![Build Status](https://travis-ci.org/openmotics/gateway.svg?branch=develop)](https://travis-ci.org/openmotics/gateway)
+
 This project is the OpenMotics Gateway backend. It provides an API used by the frontend, by the Cloud and by third party applications. It is the glue
 between the OpenMotics Master (microcontroller) and the rest of the world.
 

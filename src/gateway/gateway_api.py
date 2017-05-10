@@ -179,6 +179,14 @@ class GatewayApi(object):
                 )
                 write = True
 
+            if eeprom_data[59] != chr(32):
+                LOGGER.info("Enabling 32 thermostats.")
+                self.__master_communicator.do_command(
+                    master_api.write_eeprom(),
+                    {"bank": 0, "address": 59, "data": chr(32)}
+                )
+                write = True
+
             if write:
                 self.__master_communicator.do_command(master_api.activate_eeprom(), {'eep': 0})
 
@@ -792,7 +800,7 @@ class GatewayApi(object):
     def __get_all_thermostats(self):
         """ Get basic information about all thermostats.
 
-        :returns: array containing 24 dicts (one for each thermostats) with the following keys: \
+        :returns: array containing 32 dicts (one for each thermostats) with the following keys: \
         'active', 'sensor_nr', 'output0_nr', 'output1_nr', 'name'.
         """
         thermostats = {'heating': [], 'cooling': []}
@@ -848,7 +856,7 @@ class GatewayApi(object):
 
         aircos = self.__master_communicator.do_command(master_api.read_airco_status_bits())
 
-        for thermostat_id in range(0, 24):
+        for thermostat_id in range(0, 32):
             if cached_thermostats[thermostat_id]['active'] is True:
                 thermostat = {'id': thermostat_id,
                               'act': thermostat_info['tmp%d' % thermostat_id].get_temperature(),
@@ -884,15 +892,15 @@ class GatewayApi(object):
 
     @staticmethod
     def __check_thermostat(thermostat):
-        """ :raises ValueError if thermostat not in range [0, 24]. """
-        if thermostat not in range(0, 25):
-            raise ValueError("Thermostat not in [0,24]: %d" % thermostat)
+        """ :raises ValueError if thermostat not in range [0, 32]. """
+        if thermostat not in range(0, 32):
+            raise ValueError("Thermostat not in [0,32]: %d" % thermostat)
 
     def set_current_setpoint(self, thermostat, temperature):
         """ Set the current setpoint of a thermostat.
 
         :param thermostat: The id of the thermostat to set
-        :type thermostat: Integer [0, 24]
+        :type thermostat: Integer [0, 32]
         :param temperature: The temperature to set in degrees Celcius
         :type temperature: float
         :returns: dict with 'thermostat', 'config' and 'temp'
@@ -940,15 +948,15 @@ class GatewayApi(object):
         """ Set the setpoint/mode for a certain thermostat.
 
         :param thermostat_id: The id of the thermostat.
-        :type thermostat_id: Integer [0, 23]
+        :type thermostat_id: Integer [0, 31]
         :param automatic: Automatic mode (True) or Manual mode (False)
         :type automatic: boolean
         :param setpoint: The current setpoint
         :type setpoint: Integer [0, 5]
         :returns: dict with 'status'
         """
-        if thermostat_id < 0 or thermostat_id > 23:
-            raise ValueError("thermostat_id not in [0, 23]: %d" % thermostat_id)
+        if thermostat_id < 0 or thermostat_id > 31:
+            raise ValueError("thermostat_id not in [0, 31]: %d" % thermostat_id)
 
         if setpoint < 0 or setpoint > 5:
             raise ValueError("setpoint not in [0, 5]: %d" % setpoint)
@@ -977,7 +985,7 @@ class GatewayApi(object):
     def get_airco_status(self):
         """ Get the mode of the airco attached to a all thermostats.
 
-        :returns: dict with ASB0-ASB23.
+        :returns: dict with ASB0-ASB31.
         """
         return self.__master_communicator.do_command(master_api.read_airco_status_bits())
 
@@ -985,14 +993,14 @@ class GatewayApi(object):
         """ Set the mode of the airco attached to a given thermostat.
 
         :param thermostat_id: The thermostat id.
-        :type thermostat_id: Integer [0, 23]
+        :type thermostat_id: Integer [0, 31]
         :param airco_on: Turns the airco on if True.
         :type airco_on: boolean.
 
         :returns: dict with 'status'.
         """
-        if thermostat_id < 0 or thermostat_id > 23:
-            raise ValueError("thermostat_id not in [0, 23]: %d" % thermostat_id)
+        if thermostat_id < 0 or thermostat_id > 31:
+            raise ValueError("thermostat_id not in [0, 31]: %d" % thermostat_id)
 
         modifier = 0 if airco_on else 100
 
@@ -1446,9 +1454,12 @@ class GatewayApi(object):
         :type input_id: Id
         :param fields: The field of the input_configuration to get. (None gets all fields)
         :type fields: List of strings
-        :returns: input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'module_type' (String[1]), 'name' (String[8]), 'room' (Byte)
+        :returns: input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'module_type' (String[1]), 'name' (String[8]), 'room' (Byte), 'can' (String[1])
         """
-        return self.__eeprom_controller.read(InputConfiguration, input_id, fields).to_dict()
+        o = self.__eeprom_controller.read(InputConfiguration, input_id, fields)
+        if o.module_type not in ['i', 'I']:  # Only return "real" inputs
+            raise TypeError('The given id is not an input')
+        return o.to_dict()
 
     def get_input_configurations(self, fields=None):
         """
@@ -1456,9 +1467,10 @@ class GatewayApi(object):
 
         :param fields: The field of the input_configuration to get. (None gets all fields)
         :type fields: List of strings
-        :returns: list of input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'module_type' (String[1]), 'name' (String[8]), 'room' (Byte)
+        :returns: list of input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'module_type' (String[1]), 'name' (String[8]), 'room' (Byte), 'can' (String[1])
         """
-        return [o.to_dict() for o in self.__eeprom_controller.read_all(InputConfiguration, fields)]
+        return [o.to_dict() for o in self.__eeprom_controller.read_all(InputConfiguration, fields)
+                if o.module_type in ['i', 'I']]  # Only return "real" inputs
 
     def set_input_configuration(self, config):
         """

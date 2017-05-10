@@ -155,8 +155,8 @@ class ShutterGroupConfiguration(EepromModel):
 
 
 class ThermostatConfiguration(EepromModel):
-    """ Models a thermostat. The maximum number of thermostats is 24. """
-    id = EepromId(24)
+    """ Models a thermostat. The maximum number of thermostats is 32. """
+    id = EepromId(32)
     name = EepromString(16, lambda mid: (187 + (mid / 16), 16 * (mid % 16)))
     setp0 = EepromTemp(lambda mid: (142, 32 + mid))
     setp1 = EepromTemp(lambda mid: (142, 64 + mid))
@@ -246,8 +246,8 @@ class PumpGroupConfiguration(EepromModel):
 
 
 class CoolingConfiguration(EepromModel):
-    """ Models a thermostat in cooling mode. The maximum number of thermostats is 24. """
-    id = EepromId(24)
+    """ Models a thermostat in cooling mode. The maximum number of thermostats is 32. """
+    id = EepromId(32)
     name = EepromString(16, lambda mid: (204 + (mid / 16), 16 * (mid % 16)))
     setp0 = EepromTemp(lambda mid: (201, 32 + mid))
     setp1 = EepromTemp(lambda mid: (201, 64 + mid))
@@ -338,29 +338,29 @@ class CoolingPumpGroupConfiguration(EepromModel):
 
 class RTD10HeatingConfiguration(EepromModel):
     """ Configuration for RTD-10 when in heating mode. """
-    id = EepromId(24)
-    temp_setpoint_output = EepromByte(lambda mid: (213, mid))
+    id = EepromId(32)
+    temp_setpoint_output = EepromByte(lambda mid: (213, 200 + mid))
     ventilation_speed_output = EepromByte(lambda mid: (214, mid))
-    ventilation_speed_value = EepromByte(lambda mid: (214, 24 + mid))
+    ventilation_speed_value = EepromByte(lambda mid: (214, 64 + mid))
     mode_output = EepromByte(lambda mid: (215, mid))
-    mode_value = EepromByte(lambda mid: (215, 24 + mid))
+    mode_value = EepromByte(lambda mid: (215, 64 + mid))
     on_off_output = EepromByte(lambda mid: (215, 100 + mid))
     poke_angle_output = EepromByte(lambda mid: (216, mid))
-    poke_angle_value = EepromByte(lambda mid: (216, 24 + mid))
+    poke_angle_value = EepromByte(lambda mid: (216, 64 + mid))
     room = EextByte()
 
 
 class RTD10CoolingConfiguration(EepromModel):
     """ Configuration for RTD-10 when in cooling mode. """
-    id = EepromId(24)
-    temp_setpoint_output = EepromByte(lambda mid: (217, mid))
+    id = EepromId(32)
+    temp_setpoint_output = EepromByte(lambda mid: (217, 200 + mid))
     ventilation_speed_output = EepromByte(lambda mid: (218, mid))
-    ventilation_speed_value = EepromByte(lambda mid: (218, 24 + mid))
+    ventilation_speed_value = EepromByte(lambda mid: (218, 64 + mid))
     mode_output = EepromByte(lambda mid: (219, mid))
-    mode_value = EepromByte(lambda mid: (219, 24 + mid))
+    mode_value = EepromByte(lambda mid: (219, 264 + mid))
     on_off_output = EepromByte(lambda mid: (219, 100 + mid))
     poke_angle_output = EepromByte(lambda mid: (220, mid))
-    poke_angle_value = EepromByte(lambda mid: (220, 24 + mid))
+    poke_angle_value = EepromByte(lambda mid: (220, 64 + mid))
     room = EextByte()
 
 
@@ -413,7 +413,7 @@ class SensorConfiguration(EepromModel):
 
 class ThermostatSetpointConfiguration(EepromModel):
     """ Models the setpoints for all of the thermostats. """
-    id = EepromId(24)
+    id = EepromId(32)
     automatic = EextBool()
     setpoint = EextByte()
 

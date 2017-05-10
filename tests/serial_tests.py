@@ -92,6 +92,10 @@ class SerialMock(object):
             raise Exception("Can only interrupt read at end of stream")
         self.__sequence.append(sout("\x00"))
 
+    def fileno(self):
+        return None
+
+
 class SerialMockTest(unittest.TestCase):
     """ Tests for SerialMock class """
 

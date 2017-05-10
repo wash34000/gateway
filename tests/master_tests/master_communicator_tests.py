@@ -59,7 +59,7 @@ class MasterCommunicatorTest(unittest.TestCase):
         comm.start()
 
         try:
-            comm.do_command(action, in_fields)
+            comm.do_command(action, in_fields, timeout=0.1)
             self.assertTrue(False)
         except CommunicationTimedOutException:
             pass
@@ -78,7 +78,7 @@ class MasterCommunicatorTest(unittest.TestCase):
         comm.start()
 
         try:
-            comm.do_command(action, in_fields)
+            comm.do_command(action, in_fields, timeout=0.1)
             self.assertTrue(False)
         except CommunicationTimedOutException:
             pass
@@ -302,32 +302,34 @@ class MasterCommunicatorTest(unittest.TestCase):
             watchdog['done'] = True
 
         comm = MasterCommunicator(serial_mock, init_master=False,
-                                  watchdog_period=4, watchdog_callback=callback)
+                                  watchdog_period=0.5, watchdog_callback=callback)
         comm.start()
 
         try:
-            comm.do_command(action, in_fields)
+            comm.do_command(action, in_fields, timeout=0.1)
         except CommunicationTimedOutException:
             timeout = True
 
-        time.sleep(6)
+        time.sleep(1)
 
         self.assertTrue(timeout)
         self.assertFalse('done' in watchdog)
 
+        timeout = False
         try:
-            comm.do_command(action, in_fields)
+            comm.do_command(action, in_fields, timeout=0.1)
         except CommunicationTimedOutException:
             timeout = True
 
         self.assertTrue(timeout)
 
+        timeout = False
         try:
-            comm.do_command(action, in_fields)
+            comm.do_command(action, in_fields, timeout=0.1)
         except CommunicationTimedOutException:
             timeout = True
 
-        time.sleep(6)
+        time.sleep(1.5)
 
         self.assertTrue(timeout)
         self.assertTrue('done' in watchdog)
@@ -338,12 +340,12 @@ class MasterCommunicatorTest(unittest.TestCase):
 
         out_fields = {}
         for i in range(0, 32):
-            out_fields['hum%d' % i] = i
-        out_fields['crc'] = [ord('C'), 3, 224]
+            out_fields['hum%d' % i] = master_api.Svt(master_api.Svt.RAW, i)
+        out_fields['crc'] = [ord('C'), 1, 240]
 
         out_fields2 = {}
         for i in range(0, 32):
-            out_fields2['hum%d' % i] = 2 * i
+            out_fields2['hum%d' % i] = master_api.Svt(master_api.Svt.RAW, 2 * i)
         out_fields2['crc'] = [ord('C'), 0, 0]
 
         serial_mock = SerialMock([sin(action.create_input(1)),
@@ -355,8 +357,8 @@ class MasterCommunicatorTest(unittest.TestCase):
         comm.start()
 
         output = comm.do_command(action)
-        self.assertEquals(0, output['hum0'])
-        self.assertEquals(1, output['hum1'])
+        self.assertEquals('\x00', output['hum0'].get_byte())
+        self.assertEquals('\x01', output['hum1'].get_byte())
 
         self.assertRaises(CrcCheckFailedException, lambda: comm.do_command(action))
 

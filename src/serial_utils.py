@@ -46,8 +46,10 @@ class RS485(object):
         """ Initialize a rs485 connection using the serial port. """
         self.__serial = serial
         fileno = serial.fileno()
-        serial_rs485 = struct.pack('hhhhhhhh', 3, 0, 0, 0, 0, 0, 0, 0)
-        fcntl.ioctl(fileno, 0x542F, serial_rs485)
+        if fileno is not None:
+            serial_rs485 = struct.pack('hhhhhhhh', 3, 0, 0, 0, 0, 0, 0, 0)
+            fcntl.ioctl(fileno, 0x542F, serial_rs485)
+
         serial.timeout = None
         self.__thread = Thread(target=self._reader)
         self.__thread.daemon = True
