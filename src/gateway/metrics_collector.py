@@ -343,11 +343,6 @@ class MetricsCollector(object):
                              'mtype': 'gauge',
                              'unit': '',
                              'value': float(thermostat['output1'])},
-                            {'name': 'outside',
-                             'description': 'Outside sensor value',
-                             'mtype': 'gauge',
-                             'unit': 'degree C',
-                             'value': thermostat['outside']},
                             {'name': 'mode',
                              'description': 'Thermostat mode',
                              'mtype': 'gauge',
@@ -368,7 +363,13 @@ class MetricsCollector(object):
                              'mtype': 'gauge',
                              'unit': 'degree C',
                              'value': thermostat['csetp']}]
-                    if thermostat['sensor_nr'] != 240:
+                    if thermostat['outside'] is not None:
+                        data.append({'name': 'outside',
+                                     'description': 'Outside sensor value',
+                                     'mtype': 'gauge',
+                                     'unit': 'degree C',
+                                     'value': thermostat['outside']})
+                    if thermostat['sensor_nr'] != 240 and thermostat['act'] is not None:
                         data.append({'name': 'temperature',
                                      'description': 'Current temperature',
                                      'mtype': 'gauge',
