@@ -34,6 +34,8 @@ from serial_utils import RS485
 from gateway.webservice import WebInterface, WebService
 from gateway.gateway_api import GatewayApi
 from gateway.users import UserController
+from gateway.metrics import MetricsController
+from gateway.metrics_collector import MetricsCollector
 
 from bus.led_service import LedService
 
@@ -46,6 +48,7 @@ from power.power_controller import PowerController
 
 from plugins.base import PluginController
 
+
 def setup_logger():
     """ Setup the OpenMotics logger. """
     logger = logging.getLogger("openmotics")
@@ -55,6 +58,7 @@ def setup_logger():
     handler.setLevel(logging.INFO)
     handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
     logger.addHandler(handler)
+
 
 def led_driver(led_service, master_communicator, power_communicator):
     """ Blink the serial leds if necessary. """
@@ -74,12 +78,13 @@ def led_driver(led_service, master_communicator, power_communicator):
         power = (power_communicator.get_bytes_read(), power_communicator.get_bytes_written())
         time.sleep(0.100)
 
+
 def main():
     """ Main function. """
     config = ConfigParser()
     config.read(constants.get_config_file())
 
-    defaults = {'username' : config.get('OpenMotics', 'cloud_user'),
+    defaults = {'username': config.get('OpenMotics', 'cloud_user'),
                 'password': config.get('OpenMotics', 'cloud_pass')}
 
     user_controller = UserController(constants.get_user_database_file(), defaults, 3600)
@@ -120,6 +125,12 @@ def main():
     web_interface.set_plugin_controller(plugin_controller)
     gateway_api.set_plugin_controller(plugin_controller)
 
+    metrics_collector = MetricsCollector(master_communicator, gateway_api)
+    metrics_collector.start()
+    metrics_controller = MetricsController(plugin_controller, metrics_collector)
+    metrics_controller.start()
+    plugin_controller.add_receiver('metric_receive', 'OpenMotics', metrics_controller.receiver)
+
     web_service = WebService(web_interface)
     web_service.start()
 
@@ -133,9 +144,12 @@ def main():
 
     def stop(signum, frame):
         """ This function is called on SIGTERM. """
+        _ = signum, frame
         sys.stderr.write("Shutting down")
         led_service.set_led('stat2', False)
         web_service.stop()
+        metrics_collector.stop()
+        metrics_controller.stop()
 
     signal(SIGTERM, stop)
 
