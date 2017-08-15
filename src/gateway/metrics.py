@@ -50,11 +50,14 @@ class MetricsController(object):
         self._collector_plugins = None
         self._collector_openmotics = None
         self._internal_stats = None
-        self._distributor = None
-        self._metrics_queue = Queue()
+        self._distributor_plugins = None
+        self._distributor_openmotics = None
+        self._metrics_queue_plugins = Queue()
+        self._metrics_queue_openmotics = Queue()
         self._inbound_rates = {'total': 0}
         self._outbound_rates = {'total': 0}
         self._load_definitions()
+        self._openmotics_receivers = []
 
     def start(self):
         self._collector_plugins = Thread(target=self._collect_plugins)
@@ -69,13 +72,20 @@ class MetricsController(object):
         self._internal_stats.setName('Metrics Controller collector for OpenMotics')
         self._internal_stats.daemon = True
         self._internal_stats.start()
-        self._distributor = Thread(target=self._distribute)
-        self._distributor.setName('Metrics Controller distributor')
-        self._distributor.daemon = True
-        self._distributor.start()
+        self._distributor_plugins = Thread(target=self._distribute_plugins)
+        self._distributor_plugins.setName('Metrics Controller distributor for plugins')
+        self._distributor_plugins.daemon = True
+        self._distributor_plugins.start()
+        self._distributor_openmotics = Thread(target=self._distribute_openmotics)
+        self._distributor_openmotics.setName('Metrics Controller distributor for OpenMotics')
+        self._distributor_openmotics.daemon = True
+        self._distributor_openmotics.start()
 
     def stop(self):
         self._stopped = True
+
+    def add_receiver(self, receiver):
+        self._openmotics_receivers.append(receiver)
 
     def _load_definitions(self):
         # {
@@ -119,9 +129,15 @@ class MetricsController(object):
         * TODO: Making the last values for all metrics available through a new API call
         """
         pass
-    receiver.metric_receive = {'plugin': re.compile('.*'),
-                               'metric': re.compile('.*'),
-                               'include_definition': True}
+    
+    def _put(self, metric, definition):
+        rate_key = '{0}.{1}'.format(metric['source'].lower(), metric['type'].lower())
+        if rate_key not in self._inbound_rates:
+            self._inbound_rates[rate_key] = 0
+        self._inbound_rates[rate_key] += 1
+        self._inbound_rates['total'] += 1
+        self._metrics_queue_plugins.put([metric, definition])
+        self._metrics_queue_openmotics.put([metric, definition])
 
     def _generate_internal_stats(self):
         inbound_definition = {'type': 'system',
@@ -136,39 +152,51 @@ class MetricsController(object):
                                'mtype': 'counter',
                                'unit': '',
                                'tags': ['name', 'namespace']}
+        queue_length_definition = {'type': 'system',
+                                   'name': 'queue_length',
+                                   'description': 'Metrics queue length',
+                                   'mtype': 'gauge',
+                                   'unit': '',
+                                   'tags': ['name', 'target']}
         while not self._stopped:
             now = time.time()
             try:
+                metric = {'source': 'OpenMotics',
+                          'type': 'system',
+                          'metric': 'queue_length',
+                          'timestamp': now,
+                          'name': 'gateway',
+                          'target': 'plugins',
+                          'value': self._metrics_queue_plugins.qsize()}
+                self._put(metric, queue_length_definition)
+                metric = {'source': 'OpenMotics',
+                          'type': 'system',
+                          'metric': 'queue_length',
+                          'timestamp': now,
+                          'name': 'gateway',
+                          'target': 'openmotics',
+                          'value': self._metrics_queue_openmotics.qsize()}
+                self._put(metric, queue_length_definition)
                 for key in self._inbound_rates:
-                    metric = {'plugin': 'OpenMotics',
+                    metric = {'source': 'OpenMotics',
                               'type': 'system',
                               'metric': 'metrics_in',
                               'timestamp': now,
                               'name': 'gateway',
                               'namespace': key,
                               'value': self._inbound_rates[key]}
-                    rate_key = '{0}.{1}'.format(metric['plugin'].lower(), metric['type'].lower())
-                    if rate_key not in self._inbound_rates:
-                        self._inbound_rates[rate_key] = 0
-                    self._inbound_rates[rate_key] += 1
-                    self._inbound_rates['total'] += 1
-                    self._metrics_queue.put([metric, inbound_definition])
+                    self._put(metric, inbound_definition)
                 for key in self._outbound_rates:
-                    metric = {'plugin': 'OpenMotics',
+                    metric = {'source': 'OpenMotics',
                               'type': 'system',
                               'metric': 'metrics_out',
                               'timestamp': now,
                               'name': 'gateway',
                               'namespace': key,
                               'value': self._outbound_rates[key]}
-                    rate_key = '{0}.{1}'.format(metric['plugin'].lower(), metric['type'].lower())
-                    if rate_key not in self._inbound_rates:
-                        self._inbound_rates[rate_key] = 0
-                    self._inbound_rates[rate_key] += 1
-                    self._inbound_rates['total'] += 1
-                    self._metrics_queue.put([metric, outbound_definition])
-            except:
-                pass
+                    self._put(metric, outbound_definition)
+            except Exception as ex:
+                LOGGER.error('Could not collect metric metrics: {0}'.format(ex))
             if not self._stopped:
                 time.sleep(10)
 
@@ -180,7 +208,7 @@ class MetricsController(object):
         >                       "mtype": "counter",
         >                       "unit": "Wh",
         >                       "tags": ["device", "id"]}
-        > example_metric = {"plugin": "OpenMotics",
+        > example_metric = {"source": "OpenMotics",
         >                   "type": "energy",
         >                   "metric": "power",
         >                   "timestamp": 1497677091,
@@ -192,8 +220,8 @@ class MetricsController(object):
             start = time.time()
             for metric in self._plugin_controller.collect_metrics():
                 # Validation, part 1
-                plugin = metric['plugin']
-                log = self._plugin_controller.get_logger(plugin)
+                source = metric['source']
+                log = self._plugin_controller.get_logger(source)
                 required_keys = {'type': str,
                                  'metric': str,
                                  'timestamp': (float, int),
@@ -211,7 +239,7 @@ class MetricsController(object):
                 if metric_ok is False:
                     continue
                 # Get metric definition
-                definitions = self._definitions.get(metric['plugin'])
+                definitions = self._definitions.get(metric['source'])
                 if definitions is None:
                     continue
                 definition = [_def for _def in definitions if _def['name'] == metric['metric']]
@@ -225,38 +253,42 @@ class MetricsController(object):
                         metric_ok = False
                 if metric_ok is False:
                     continue
-                rate_key = '{0}.{1}'.format(metric['plugin'].lower(), metric['type'].lower())
-                if rate_key not in self._inbound_rates:
-                    self._inbound_rates[rate_key] = 0
-                self._inbound_rates[rate_key] += 1
-                self._inbound_rates['total'] += 1
-                self._metrics_queue.put([metric, definition])
+                self._put(metric, definition)
             if not self._stopped:
-                time.sleep(max(0.1, 1 - (time.time() - start)))
+                time.sleep(max(0.01, 1 - (time.time() - start)))
 
     def _collect_openmotics(self):
         while not self._stopped:
             start = time.time()
             for metric, definition in self._metrics_collector.collect_metrics():
-                rate_key = '{0}.{1}'.format(metric['plugin'].lower(), metric['type'].lower())
-                if rate_key not in self._inbound_rates:
-                    self._inbound_rates[rate_key] = 0
-                self._inbound_rates[rate_key] += 1
-                self._inbound_rates['total'] += 1
-                self._metrics_queue.put([metric, definition])
+                self._put(metric, definition)
             if not self._stopped:
                 time.sleep(max(0.1, 1 - (time.time() - start)))
 
-    def _distribute(self):
+    def _distribute_plugins(self):
         while not self._stopped:
             try:
-                metric, definition = self._metrics_queue.get(True, 1)
+                metric, definition = self._metrics_queue_plugins.get(True, 1)
                 delivery_count = self._plugin_controller.distribute_metric(metric, definition)
                 if delivery_count > 0:
-                    rate_key = '{0}.{1}'.format(metric['plugin'].lower(), metric['type'].lower())
+                    rate_key = '{0}.{1}'.format(metric['source'].lower(), metric['type'].lower())
                     if rate_key not in self._outbound_rates:
                         self._outbound_rates[rate_key] = 0
                     self._outbound_rates[rate_key] += delivery_count
                     self._outbound_rates['total'] += delivery_count
+            except Empty:
+                time.sleep(0.1)
+
+    def _distribute_openmotics(self):
+        while not self._stopped:
+            try:
+                metric, definition = self._metrics_queue_openmotics.get(True, 1)
+                for receiver in self._openmotics_receivers:
+                    receiver(metric, definition)
+                    rate_key = '{0}.{1}'.format(metric['source'].lower(), metric['type'].lower())
+                    if rate_key not in self._outbound_rates:
+                        self._outbound_rates[rate_key] = 0
+                    self._outbound_rates[rate_key] += 1
+                    self._outbound_rates['total'] += 1
             except Empty:
                 time.sleep(0.1)

@@ -23,6 +23,7 @@ import os
 import pkgutil
 import threading
 import traceback
+from Queue import Queue, Empty
 from datetime import datetime
 from plugins.decorators import *  # Import for backwards compatibility
 
@@ -101,6 +102,7 @@ class PluginController(object):
     def __init__(self, webinterface):
         self.__webinterface = webinterface
 
+        self.__stopped = False
         self.__logs = {}
         self.__plugins = self._gather_plugins()
 
@@ -109,6 +111,9 @@ class PluginController(object):
         self.__event_receivers = []
         self.__metric_collectors = []
         self.__metric_receivers = []
+
+        self.__metric_receiver_threads = {}
+        self.__metric_receiver_queues = {}
 
         self.__receiver_mapping = {'input_status': self.__input_status_receivers,
                                    'output_status': self.__output_status_receivers,
@@ -126,14 +131,16 @@ class PluginController(object):
         for method_attribute, target in self.__receiver_mapping.iteritems():
             for method in PluginController._get_special_methods(plugin, method_attribute):
                 target.append((plugin.name, method))
+            if method_attribute == 'metric_receive':
+                self.__metric_receiver_queues[plugin.name] = Queue()
+                thread = threading.Thread(target=self.__deliver_metrics, args=(plugin.name,))
+                thread.setName('Metric delivery thread ({0})'.format(plugin.name))
+                thread.daemon = True
+                thread.start()
+                self.__metric_receiver_threads[plugin.name] = thread
 
-    def add_receiver(self, receiver, name, callback):
-        """
-        Manually adds a receiver
-        """
-        target = self.__receiver_mapping.get(receiver)
-        if target is not None:
-            target.append((name, callback))
+    def stop(self):
+        self.__stopped = True
 
     def start_plugins(self):
         """ Start the background tasks for the plugins and expose them via the webinterface. """
@@ -464,31 +471,49 @@ else:
                         if metric is None:
                             continue
                         metric = copy.deepcopy(metric)
-                        metric["plugin"] = mc[0]
+                        metric['source'] = mc[0]
                         yield metric
             except Exception as exception:
                 self.log(mc[0], "Exception while collecting metrics", exception,
                          traceback.format_exc())
 
     def distribute_metric(self, metric, definition):
-        """ Distributes metrics to all listeners """
+        """ Enqueues all metrics in a separate queue per plugin """
         delivery_count = 0
         for mr in self.__metric_receivers:
             try:
                 method = mr[1]
                 metadata = method.metric_receive
-                plugin_filter = metadata['plugin']
+                source_filter = metadata['source']
                 metric_filter = metadata['metric']
-                include_definition = metadata['include_definition']
-                if plugin_filter.match(metric['plugin']) and metric_filter.match(metric['metric']):
-                    if include_definition:
-                        method(metric, definition)
-                    else:
-                        method(metric)
+                if source_filter.match(metric['source']) and metric_filter.match(metric['metric']):
+                    self.__metric_receiver_queues[mr[0]].put([metric, definition])
                     delivery_count += 1
             except Exception as exception:
                 self.log(mr[0], "Exception while distributing metrics", exception, traceback.format_exc())
         return delivery_count
+
+    def __deliver_metrics(self, plugin):
+        """ Delivers enqueued metrics to plugin listener(s) """
+        # Yield all metrics in the Queue
+        while self.__stopped is False:
+            try:
+                data = self.__metric_receiver_queues[plugin].get(True, 1)
+                for mr in self.__metric_receivers:
+                    if mr[0] != plugin:
+                        continue
+                    try:
+                        method = mr[1]
+                        metadata = method.metric_receive
+                        include_definition = metadata['include_definition']
+                        if include_definition:
+                            method(*data)
+                        else:
+                            method(data[0])
+                    except Exception as exception:
+                        self.log(mr[0], "Exception while delivering metrics", exception, traceback.format_exc())
+            except Empty:
+                time.sleep(0.1)
 
     def get_metric_definitions(self):
         """ Loads all metric definitions of all plugins """
@@ -545,7 +570,7 @@ class PluginConfigChecker(object):
     implement the 'config' plugin interface. By specifying a configuration description, the
     PluginConfigController is able to verify if a configuration dict matches this description.
     The description is a list of dicts, each dict contains the 'name', 'type' and optionally
-    'description' keys.
+    'description' and 'i18n' keys.
 
     These are the basic types: 'str', 'int', 'bool', 'password', these types don't have additional
     keys. For the 'enum' type the user specifies the possible values in a list of strings in the
@@ -565,10 +590,9 @@ class PluginConfigChecker(object):
 
     An example of a description:
     [
-      {'name' : 'hostname', 'type' : 'str',      'description': 'The hostname of the server.'},
-      {'name' : 'port',     'type' : 'int',      'description': 'Port on the server.'},
-      {'name' : 'use_auth', 'type' : 'bool',
-       'description': 'Use authentication while connecting.'},
+      {'name' : 'hostname', 'type' : 'str',      'description': 'The hostname of the server.', 'i18n': 'hostname'},
+      {'name' : 'port',     'type' : 'int',      'description': 'Port on the server.',         'i18n': 'port'},
+      {'name' : 'use_auth', 'type' : 'bool',     'description': 'Use authentication while connecting.'},
       {'name' : 'password', 'type' : 'password', 'description': 'Your secret password.' },
       {'name' : 'enumtest', 'type' : 'enum',     'description': 'Test for enum',
        'choices': [ 'First', 'Second' ] },
@@ -599,23 +623,20 @@ class PluginConfigChecker(object):
         else:
             for item in description:
                 if 'name' not in item:
-                    raise PluginException(
-                            "The configuration item '%s' does not contain a 'name' key." % item)
+                    raise PluginException("The configuration item '%s' does not contain a 'name' key." % item)
                 if not isinstance(item['name'], basestring):
-                    raise PluginException(
-                            "The key 'name' of configuration item '%s' is not a string." % item)
+                    raise PluginException("The key 'name' of configuration item '%s' is not a string." % item)
 
                 if 'type' not in item:
-                    raise PluginException(
-                            "The configuration item '%s' does not contain a 'type' key." % item)
+                    raise PluginException("The configuration item '%s' does not contain a 'type' key." % item)
                 if not isinstance(item['type'], basestring):
-                    raise PluginException(
-                            "The key 'type' of configuration item '%s' is not a string." % item)
+                    raise PluginException("The key 'type' of configuration item '%s' is not a string." % item)
 
-                if 'description' in item and not isinstance(item['description'], str):
-                    raise PluginException(
-                            "The key 'description' of configuration item '%s' is not a string." %
-                            item)
+                if 'description' in item and not isinstance(item['description'], basestring):
+                    raise PluginException("The key 'description' of configuration item '%s' is not a string." % item)
+
+                if 'i18n' in item and not isinstance(item['i18n'], basestring):
+                    raise PluginException("The key 'i18n' of configuration item '%s' is not a string." % item)
 
                 if item['type'] == 'enum':
                     PluginConfigChecker._check_enum(item)
@@ -624,9 +645,7 @@ class PluginConfigChecker(object):
                 elif item['type'] == 'nested_enum':
                     self._check_nested_enum(item)
                 elif item['type'] not in ['str', 'int', 'bool', 'password']:
-                    raise PluginException(
-                            "Configuration item '%s' contains unknown type '%s'." %
-                            (item, item['type']))
+                    raise PluginException("Configuration item '%s' contains unknown type '%s'." % (item, item['type']))
 
     @staticmethod
     def _check_enum(item):

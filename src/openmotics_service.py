@@ -129,7 +129,8 @@ def main():
     metrics_collector.start()
     metrics_controller = MetricsController(plugin_controller, metrics_collector)
     metrics_controller.start()
-    plugin_controller.add_receiver('metric_receive', 'OpenMotics', metrics_controller.receiver)
+    metrics_controller.add_receiver(metrics_controller.receiver)
+    metrics_controller.add_receiver(web_interface.distribute_metric)
 
     web_service = WebService(web_interface)
     web_service.start()
@@ -150,6 +151,7 @@ def main():
         web_service.stop()
         metrics_collector.stop()
         metrics_controller.stop()
+        plugin_controller.stop()
 
     signal(SIGTERM, stop)
 

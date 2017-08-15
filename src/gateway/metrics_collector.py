@@ -64,7 +64,7 @@ class MetricsCollector(object):
         MetricsCollector._start_thread(self._run_thermostats, 'thermostats', 60)
         MetricsCollector._start_thread(self._run_errors, 'errors', 120)
         MetricsCollector._start_thread(self._run_pulsecounters, 'pulsecounters', 30)
-        MetricsCollector._start_thread(self._run_power_openmotics, 'power_openmotics', 10)
+        MetricsCollector._start_thread(self._run_power_openmotics, 'power_openmotics', 5)
         MetricsCollector._start_thread(self._run_power_openmotics_analytics, 'power_openmotics_analytics', 60)
         MetricsCollector._start_thread(self._load_environment_configurations, 'load_configuration', 900)
 
@@ -98,7 +98,7 @@ class MetricsCollector(object):
         if not isinstance(data, list):
             data = [data]
         for data_entry in data:
-            metric = {'plugin': 'OpenMotics',
+            metric = {'source': 'OpenMotics',
                       'type': metric_type,
                       'metric': data_entry['name'],
                       'value': data_entry['value'],

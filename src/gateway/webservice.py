@@ -15,11 +15,18 @@
 """ Includes the WebService class """
 
 
+import sys
+import os
+for egg in os.listdir('/opt/openmotics/eggs'):
+    if egg.endswith('.egg'):
+        sys.path.insert(0, '/opt/openmotics/eggs/{0}'.format(egg))
+
 import threading
 import random
 import ConfigParser
 import subprocess
 import os
+import re
 import traceback
 import inspect
 import time
@@ -28,6 +35,8 @@ import logging
 import cherrypy
 import constants
 from cherrypy.lib.static import serve_file
+from ws4py.websocket import WebSocket
+from ws4py.server.cherrypyserver import WebSocketPlugin, WebSocketTool
 from master.master_communicator import InMaintenanceModeException
 from gateway.scheduling import SchedulingController
 try:
@@ -133,6 +142,49 @@ cherrypy.config.update({'error_page.404': error_generic,
                         'request.error_response': error_unexpected})
 
 
+class OMPlugin(WebSocketPlugin):
+    def __init__(self, bus):
+        WebSocketPlugin.__init__(self, bus)
+        self.metric_receivers = {}
+
+    def start(self):
+        WebSocketPlugin.start(self)
+        self.bus.subscribe('add-metrics-receiver', self.add_metrics_receiver)
+        self.bus.subscribe('get-metrics-receivers', self.get_metrics_receivers)
+        self.bus.subscribe('remove-metrics-receiver', self.remove_metrics_receiver)
+
+    def stop(self):
+        WebSocketPlugin.stop(self)
+        self.bus.unsubscribe('add-metrics-receiver', self.add_metrics_receiver)
+        self.bus.unsubscribe('get-metrics-receivers', self.get_metrics_receivers)
+        self.bus.unsubscribe('remove-metrics-receiver', self.remove_metrics_receiver)
+
+    def add_metrics_receiver(self, client_id, receiver_ino):
+        self.metric_receivers[client_id] = receiver_ino
+
+    def get_metrics_receivers(self):
+        return self.metric_receivers
+
+    def remove_metrics_receiver(self, client_id):
+        del self.metric_receivers[client_id]
+
+
+class MetricsSocket(WebSocket):
+    """
+    Handles web socket communications for metrics
+    """
+    def opened(self):
+        cherrypy.engine.publish('add-metrics-receiver',
+                                self.client_id,
+                                {'source': re.compile(self.source if self.source is not None else '.*'),
+                                 'metric_type': re.compile(self.metric_type if self.metric_type is not None else '.*'),
+                                 'metric': re.compile(self.metric if self.metric is not None else '.*'),
+                                 'socket': self})
+
+    def closed(self, *args, **kwargs):
+        cherrypy.engine.publish('remove-metrics-receiver', self.client_id)
+
+
 class DummyToken(object):
     """ The DummyToken is used for internal calls from the plugins to the webinterface, so
     that the plugin does not required a real token. """
@@ -168,7 +220,21 @@ class WebInterface(object):
         self.__authorized_check = authorized_check
 
         self.__plugin_controller = None
+        self.__ws_metrics_registered = False
+
         self.dummy_token = DummyToken()
+
+    def distribute_metric(self, metric, definition):
+        _ = self, definition
+        try:
+            for client_id, receiver_info in cherrypy.engine.publish('get-metrics-receivers').pop().iteritems():
+                try:
+                    if receiver_info['source'].match(metric['source']) and receiver_info['metric'].match(metric['metric']) and receiver_info['metric_type'].match(metric['type']):
+                        receiver_info['socket'].send(json.dumps(metric))
+                except Exception as ex:
+                    LOGGER.error('Failed to distribute metrics to WebSocket for client {0}: {1}'.format(client_id, ex))
+        except Exception as ex:
+            LOGGER.error('Failed to distribute metrics to WebSockets: {0}'.format(ex))
 
     def set_plugin_controller(self, plugin_controller):
         """ Set the plugin controller. """
@@ -2508,6 +2574,14 @@ class WebInterface(object):
         else:
             raise cherrypy.HTTPError(401, "unauthorized")
 
+    @cherrypy.expose
+    def ws_metrics(self, token, client_id, source=None, metric_type=None, metric=None):
+        self.check_token(token)
+        cherrypy.request.ws_handler.client_id = client_id
+        cherrypy.request.ws_handler.source = source
+        cherrypy.request.ws_handler.metric = metric
+        cherrypy.request.ws_handler.metric_type = metric_type
+
 
 class WebService(object):
     """ The web service serves the gateway api over http. """
@@ -2521,8 +2595,13 @@ class WebService(object):
 
     def run(self):
         """ Run the web service: start cherrypy. """
+        OMPlugin(cherrypy.engine).subscribe()
+        cherrypy.tools.websocket = WebSocketTool()
+
         config = {'/static': {'tools.staticdir.on': True,
                               'tools.staticdir.dir': '/opt/openmotics/static'},
+                  '/ws_metrics': {'tools.websocket.on': True,
+                                  'tools.websocket.handler_cls': MetricsSocket},
                   '/': {'tools.timestampFilter.on': True,
                         'tools.sessions.on': False}}
         if cherrypy_cors is not None:
