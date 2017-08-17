@@ -20,7 +20,7 @@ import time
 import logging
 import master.master_api as master_api
 from threading import Thread
-from Queue import Queue, Empty
+from collections import deque
 from master.master_communicator import BackgroundConsumer
 from serial_utils import CommunicationTimedOutException
 
@@ -47,7 +47,7 @@ class MetricsCollector(object):
                              'sensors': {},
                              'pulse_counters': {}}
         self._gateway_api = gateway_api
-        self._metrics_queue = Queue()
+        self._metrics_queue = deque()
         master_communicator.register_consumer(
             BackgroundConsumer(master_api.output_list(), 0, self._on_output, True)
         )
@@ -58,6 +58,7 @@ class MetricsCollector(object):
     def start(self):
         self._start = time.time()
         self._stopped = False
+        MetricsCollector._start_thread(self._load_environment_configurations, 'load_configuration', 900)
         MetricsCollector._start_thread(self._run_system, 'system', 60)
         MetricsCollector._start_thread(self._run_outputs, 'outputs', 60)
         MetricsCollector._start_thread(self._run_sensors, 'sensors', 60)
@@ -66,7 +67,6 @@ class MetricsCollector(object):
         MetricsCollector._start_thread(self._run_pulsecounters, 'pulsecounters', 30)
         MetricsCollector._start_thread(self._run_power_openmotics, 'power_openmotics', 5)
         MetricsCollector._start_thread(self._run_power_openmotics_analytics, 'power_openmotics_analytics', 60)
-        MetricsCollector._start_thread(self._load_environment_configurations, 'load_configuration', 900)
 
     def stop(self):
         self._stopped = True
@@ -75,8 +75,8 @@ class MetricsCollector(object):
         # Yield all metrics in the Queue
         try:
             while True:
-                yield self._metrics_queue.get(False)
-        except Empty:
+                yield self._metrics_queue.pop()
+        except IndexError:
             pass
         
     @staticmethod
@@ -110,7 +110,7 @@ class MetricsCollector(object):
                           'mtype': data_entry['mtype'],
                           'unit': data_entry['unit'],
                           'tags': tags.keys()}
-            self._metrics_queue.put([metric, definition])
+            self._metrics_queue.appendleft([metric, definition])
 
     @staticmethod
     def _start_thread(workload, name, interval):

@@ -23,7 +23,7 @@ import os
 import pkgutil
 import threading
 import traceback
-from Queue import Queue, Empty
+from collections import deque
 from datetime import datetime
 from plugins.decorators import *  # Import for backwards compatibility
 
@@ -113,7 +113,7 @@ class PluginController(object):
         self.__metric_receivers = []
 
         self.__metric_receiver_threads = {}
-        self.__metric_receiver_queues = {}
+        self.metric_receiver_queues = {}
 
         self.__receiver_mapping = {'input_status': self.__input_status_receivers,
                                    'output_status': self.__output_status_receivers,
@@ -132,7 +132,7 @@ class PluginController(object):
             for method in PluginController._get_special_methods(plugin, method_attribute):
                 target.append((plugin.name, method))
             if method_attribute == 'metric_receive':
-                self.__metric_receiver_queues[plugin.name] = Queue()
+                self.metric_receiver_queues[plugin.name] = deque()
                 thread = threading.Thread(target=self.__deliver_metrics, args=(plugin.name,))
                 thread.setName('Metric delivery thread ({0})'.format(plugin.name))
                 thread.daemon = True
@@ -487,7 +487,7 @@ else:
                 source_filter = metadata['source']
                 metric_filter = metadata['metric']
                 if source_filter.match(metric['source']) and metric_filter.match(metric['metric']):
-                    self.__metric_receiver_queues[mr[0]].put([metric, definition])
+                    self.metric_receiver_queues[mr[0]].appendleft([metric, definition])
                     delivery_count += 1
             except Exception as exception:
                 self.log(mr[0], "Exception while distributing metrics", exception, traceback.format_exc())
@@ -498,7 +498,7 @@ else:
         # Yield all metrics in the Queue
         while self.__stopped is False:
             try:
-                data = self.__metric_receiver_queues[plugin].get(True, 1)
+                data = self.metric_receiver_queues[plugin].pop()
                 for mr in self.__metric_receivers:
                     if mr[0] != plugin:
                         continue
@@ -512,7 +512,7 @@ else:
                             method(data[0])
                     except Exception as exception:
                         self.log(mr[0], "Exception while delivering metrics", exception, traceback.format_exc())
-            except Empty:
+            except IndexError:
                 time.sleep(0.1)
 
     def get_metric_definitions(self):
