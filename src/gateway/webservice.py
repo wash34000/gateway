@@ -230,12 +230,13 @@ class WebInterface(object):
 
         self.__plugin_controller = None
         self.metrics_collector = None
+        self.__metrics_controller = None
         self.__ws_metrics_registered = False
 
         self.dummy_token = DummyToken()
 
-    def distribute_metric(self, metric, definition):
-        _ = self, definition
+    def distribute_metric(self, metric):
+        _ = self
         try:
             for client_id, receiver_info in cherrypy.engine.publish('get-metrics-receivers').pop().iteritems():
                 try:
@@ -258,6 +259,10 @@ class WebInterface(object):
     def set_metrics_collector(self, metrics_collector):
         """ Set the metrics collector """
         self.metrics_collector = metrics_collector
+
+    def set_metrics_controller(self, metrics_controller):
+        """ Sets the metrics controller """
+        self.__metrics_controller = metrics_controller
 
     def check_token(self, token):
         """ Check if the token is valid, raises HTTPError(401) if invalid. """
@@ -2592,6 +2597,24 @@ class WebInterface(object):
             return self.__success()
         else:
             raise cherrypy.HTTPError(401, "unauthorized")
+
+    @cherrypy.expose
+    def get_metric_definitions(self, token, source=None, metric_type=None, metric=None):
+        self.check_token(token)
+        source = None if source is None else re.compile(source)
+        metric_type = None if metric_type is None else re.compile(metric_type)
+        metric = None if metric is None else re.compile(metric)
+        definitions = {}
+        for _source, metric_types in self.__metrics_controller.definitions.iteritems():
+            if source is None or source.match(_source):
+                definitions[_source] = {}
+                for _metric_type, metrics in metric_types.iteritems():
+                    if metric_type is None or metric_type.match(_metric_type):
+                        definitions[_source][_metric_type] = {}
+                        for _metric, definition in metrics.iteritems():
+                            if metric is None or metric.match(_metric):
+                                definitions[_source][_metric_type][_metric] = definition
+        return self.__success(definitions=definitions)
 
     @cherrypy.expose
     def ws_metrics(self, token, client_id, source=None, metric_type=None, metric=None, interval=None):

@@ -132,33 +132,21 @@ class MetricsCollector(object):
             interval = min(interval, *[max(min_interval, i) for i in self._websocket_intervals[metric_type].values()])
         self.intervals[metric_type] = interval
 
-    def _enqueue_metrics(self, metric_type, data, tags, timestamp):
+    def _enqueue_metrics(self, metric_type, values, tags, timestamp):
         """
         metric_type = 'system'
-        data = [{'name': 'service_uptime',
-                 'description': 'OpenMotics service uptime',
-                 'mtype': 'gauge',
-                 'unit': 's',
-                 'value': service_uptime}],
+        values = {'service_uptime': service_uptime},
         tags = {'name': 'gateway'}
         timestamp = 12346789
         """
-        if not isinstance(data, list):
-            data = [data]
-        for data_entry in data:
+        for name, value in values.iteritems():
             metric = {'source': 'OpenMotics',
                       'type': metric_type,
-                      'metric': data_entry['name'],
-                      'value': data_entry['value'],
+                      'metric': name,
+                      'value': value,
                       'timestamp': timestamp}
             metric.update(tags)
-            definition = {'type': metric_type,
-                          'name': data_entry['name'],
-                          'description': data_entry['description'],
-                          'mtype': data_entry['mtype'],
-                          'unit': data_entry['unit'],
-                          'tags': tags.keys()}
-            self._metrics_queue.appendleft([metric, definition])
+            self._metrics_queue.appendleft(metric)
 
     @staticmethod
     def _start_thread(workload, name):
@@ -222,11 +210,7 @@ class MetricsCollector(object):
                         if key in outputs[output_id]:
                             tags[key] = outputs[output_id][key]
                     self._enqueue_metrics(metric_type=metric_type,
-                                          data={'name': 'output',
-                                                'description': 'Output state',
-                                                'mtype': 'gauge',
-                                                'unit': '',
-                                                'value': int(level)},
+                                          values={'output': int(level)},
                                           tags=tags,
                                           timestamp=now)
         except Exception as ex:
@@ -247,11 +231,7 @@ class MetricsCollector(object):
                         'id': input_id,
                         'name': input_name}
                 self._enqueue_metrics(metric_type='events',
-                                      data={'name': 'event',
-                                            'description': 'OpenMotics event',
-                                            'mtype': 'gauge',
-                                            'unit': 'event',
-                                            'value': 'True'},
+                                      values={'event': True},
                                       tags=tags,
                                       timestamp=now)
         except Exception as ex:
@@ -270,16 +250,8 @@ class MetricsCollector(object):
                     service_uptime = 0
                 self._last_service_uptime = service_uptime
                 self._enqueue_metrics(metric_type=metric_type,
-                                      data=[{'name': 'service_uptime',
-                                             'description': 'Service uptime',
-                                             'mtype': 'gauge',
-                                             'unit': 's',
-                                             'value': service_uptime},
-                                            {'name': 'system_uptime',
-                                             'description': 'System uptime',
-                                             'mtype': 'gauge',
-                                             'unit': 's',
-                                             'value': system_uptime}],
+                                      values={'service_uptime': service_uptime,
+                                              'system_uptime': system_uptime},
                                       tags={'name': 'gateway'},
                                       timestamp=now)
             except Exception as ex:
@@ -322,27 +294,15 @@ class MetricsCollector(object):
                         continue
                     tags = {'id': sensor_id,
                             'name': name}
-                    data = []
+                    values = {}
                     if temperatures[sensor_id] is not None:
-                        data.append({'name': 'temp',
-                                     'description': 'Temperature',
-                                     'mtype': 'gauge',
-                                     'unit': 'degree C',
-                                     'value': temperatures[sensor_id]})
+                        values['temp'] = temperatures[sensor_id]
                     if humidities[sensor_id] is not None:
-                        data.append({'name': 'hum',
-                                     'description': 'Humidity',
-                                     'mtype': 'gauge',
-                                     'unit': '%',
-                                     'value': humidities[sensor_id]})
+                        values['hum'] = humidities[sensor_id]
                     if brightnesses[sensor_id] is not None:
-                        data.append({'name': 'bright',
-                                     'description': 'Brightness',
-                                     'mtype': 'gauge',
-                                     'unit': '%',
-                                     'value': brightnesses[sensor_id]})
+                        values['bright'] = brightnesses[sensor_id]
                     self._enqueue_metrics(metric_type=metric_type,
-                                          data=data,
+                                          values=values,
                                           tags=tags,
                                           timestamp=now)
             except CommunicationTimedOutException:
@@ -359,71 +319,26 @@ class MetricsCollector(object):
             try:
                 now = time.time()
                 thermostats = self._gateway_api.get_thermostat_status()
-                tags = {'id': 'G.0',
-                        'name': 'Global configuration'}
                 self._enqueue_metrics(metric_type=metric_type,
-                                      data=[{'name': 'on',
-                                             'description': 'Indicates whether the thermostat is on',
-                                             'mtype': 'gauge',
-                                             'unit': '',
-                                             'value': thermostats['thermostats_on']},
-                                            {'name': 'cooling',
-                                             'description': 'Indicates whether the thermostat is on cooling',
-                                             'mtype': 'gauge',
-                                             'unit': '',
-                                             'value': thermostats['cooling']}],
-                                      tags=tags,
+                                      values={'on': thermostats['thermostats_on'],
+                                              'cooling': thermostats['cooling']},
+                                      tags={'id': 'G.0',
+                                            'name': 'Global configuration'},
                                       timestamp=now)
                 for thermostat in thermostats['status']:
-                    data = [{'name': 'setpoint',
-                             'description': 'Setpoint identifier (values 0-5)',
-                             'mtype': 'gauge',
-                             'unit': '',
-                             'value': int(thermostat['setpoint'])},
-                            {'name': 'output0',
-                             'description': 'State of the primary output valve',
-                             'mtype': 'gauge',
-                             'unit': '',
-                             'value': float(thermostat['output0'])},
-                            {'name': 'output1',
-                             'description': 'State of the secondairy output valve',
-                             'mtype': 'gauge',
-                             'unit': '',
-                             'value': float(thermostat['output1'])},
-                            {'name': 'mode',
-                             'description': 'Thermostat mode',
-                             'mtype': 'gauge',
-                             'unit': '',
-                             'value': int(thermostat['mode'])},
-                            {'name': 'thermostat_type',
-                             'description': 'Thermostat type',
-                             'mtype': 'gauge',
-                             'unit': '',
-                             'value': 'tbs' if thermostat['sensor_nr'] == 240 else 'normal'},
-                            {'name': 'automatic',
-                             'description': 'Automatic indicator',
-                             'mtype': 'gauge',
-                             'unit': '',
-                             'value': thermostat['automatic']},
-                            {'name': 'current_setpoint',
-                             'description': 'Current setpoint',
-                             'mtype': 'gauge',
-                             'unit': 'degree C',
-                             'value': thermostat['csetp']}]
+                    values = {'setpoint': int(thermostat['setpoint']),
+                              'output0': float(thermostat['output0']),
+                              'output1': float(thermostat['output1']),
+                              'mode': int(thermostat['mode']),
+                              'thermostat_type': 'tbs' if thermostat['sensor_nr'] == 240 else 'normal',
+                              'automatic': thermostat['automatic'],
+                              'current_setpoint': thermostat['csetp']}
                     if thermostat['outside'] is not None:
-                        data.append({'name': 'outside',
-                                     'description': 'Outside sensor value',
-                                     'mtype': 'gauge',
-                                     'unit': 'degree C',
-                                     'value': thermostat['outside']})
+                        values['outside'] = thermostat['outside']
                     if thermostat['sensor_nr'] != 240 and thermostat['act'] is not None:
-                        data.append({'name': 'temperature',
-                                     'description': 'Current temperature',
-                                     'mtype': 'gauge',
-                                     'unit': 'degree C',
-                                     'value': thermostat['act']})
+                        values['temperature'] = thermostat['act']
                     self._enqueue_metrics(metric_type=metric_type,
-                                          data=data,
+                                          values=values,
                                           tags={'id': '{0}.{1}'.format('C' if thermostats['cooling'] is True else 'H',
                                                                        thermostat['id']),
                                                 'name': thermostat['name']},
@@ -455,16 +370,11 @@ class MetricsCollector(object):
                              'R': 'Shutter',
                              'C': 'CAN',
                              'L': 'OLED'}
-                    tags = {'module_type': types[om_module[0]],
-                            'id': om_module,
-                            'name': '{0} {1}'.format(types[om_module[0]], om_module)}
                     self._enqueue_metrics(metric_type=metric_type,
-                                          data=[{'name': 'amount',
-                                                 'description': 'Amount of errors',
-                                                 'mtype': 'gauge',
-                                                 'unit': '',
-                                                 'value': int(count)}],
-                                          tags=tags,
+                                          values={'amount': int(count)},
+                                          tags={'module_type': types[om_module[0]],
+                                                'id': om_module,
+                                                'name': '{0} {1}'.format(types[om_module[0]], om_module)},
                                           timestamp=now)
             except CommunicationTimedOutException:
                 LOGGER.error('Error getting module errors: CommunicationTimedOutException')
@@ -498,15 +408,10 @@ class MetricsCollector(object):
             for counter_id in counters_data:
                 counter = counters_data[counter_id]
                 if counter['name'] != '':
-                    tags = {'name': counter['name'],
-                            'input': counter['input']}
                     self._enqueue_metrics(metric_type=metric_type,
-                                          data=[{'name': 'pulses',
-                                                 'description': 'Number of received pulses',
-                                                 'mtype': 'gauge',
-                                                 'unit': '',
-                                                 'value': int(counter['count'])}],
-                                          tags=tags,
+                                          values={'pulses': int(counter['count'])},
+                                          tags={'name': counter['name'],
+                                                'input': counter['input']},
                                           timestamp=now)
             if self._stopped:
                 return
@@ -563,47 +468,17 @@ class MetricsCollector(object):
                 device = power_data[device_id]
                 if device['name'] != '':
                     try:
-                        tags = {'brand': 'openmotics',
-                                'id': device_id,
-                                'name': device['name']}
-                        data = [{'name': 'voltage',
-                                 'description': 'Current voltage',
-                                 'mtype': 'gauge',
-                                 'unit': 'V',
-                                 'value': device['voltage']},
-                                {'name': 'current',
-                                 'description': 'Current current',
-                                 'mtype': 'gauge',
-                                 'unit': 'A',
-                                 'value': device['current']},
-                                {'name': 'frequency',
-                                 'description': 'Current frequency',
-                                 'mtype': 'gauge',
-                                 'unit': 'Hz',
-                                 'value': device['frequency']},
-                                {'name': 'power',
-                                 'description': 'Current power consumption',
-                                 'mtype': 'gauge',
-                                 'unit': 'W',
-                                 'value': device['power']},
-                                {'name': 'power_counter',
-                                 'description': 'Total energy consumed',
-                                 'mtype': 'counter',
-                                 'unit': 'Wh',
-                                 'value': float(device['counter'])},
-                                {'name': 'power_counter_day',
-                                 'description': 'Total energy consumed during daytime',
-                                 'mtype': 'counter',
-                                 'unit': 'Wh',
-                                 'value': device['counter_day']},
-                                {'name': 'power_counter_night',
-                                 'description': 'Total energy consumed during nighttime',
-                                 'mtype': 'counter',
-                                 'unit': 'Wh',
-                                 'value': device['counter_night']}]
                         self._enqueue_metrics(metric_type=metric_type,
-                                              data=data,
-                                              tags=tags,
+                                              values={'voltage': device['voltage'],
+                                                      'current': device['current'],
+                                                      'frequency': device['frequency'],
+                                                      'power': device['power'],
+                                                      'power_counter': float(device['counter']),
+                                                      'power_counter_day': device['counter_day'],
+                                                      'power_counter_night': device['counter_night']},
+                                              tags={'brand': 'openmotics',
+                                                    'id': device_id,
+                                                    'name': device['name']},
                                               timestamp=now)
                     except Exception as ex:
                         MetricsCollector._log('Error processing OpenMotics power device {0}: {1}'.format(device_id, ex))
@@ -633,16 +508,8 @@ class MetricsCollector(object):
                         length = min(len(result[str(i)]['current']), len(result[str(i)]['voltage']))
                         for j in xrange(length):
                             self._enqueue_metrics(metric_type=metric_type,
-                                                  data=[{'name': 'current',
-                                                         'description': 'Time-based current',
-                                                         'mtype': 'gauge',
-                                                         'unit': 'A',
-                                                         'value': result[str(i)]['current'][j]},
-                                                        {'name': 'voltage',
-                                                         'description': 'Time-based voltage',
-                                                         'mtype': 'gauge',
-                                                         'unit': 'V',
-                                                         'value': result[str(i)]['voltage'][j]}],
+                                                  values={'current': result[str(i)]['current'][j],
+                                                          'voltage': result[str(i)]['voltage'][j]},
                                                   tags={'id': device_id.format(i),
                                                         'name': name,
                                                         'domain': 'time'},
@@ -660,26 +527,10 @@ class MetricsCollector(object):
                         length = min(len(result[str(i)]['current'][0]), len(result[str(i)]['voltage'][0]))
                         for j in xrange(length):
                             self._enqueue_metrics(metric_type=metric_type,
-                                                  data=[{'name': 'current_harmonics',
-                                                         'description': 'Current harmonics',
-                                                         'mtype': 'gauge',
-                                                         'unit': '',
-                                                         'value': result[str(i)]['current'][0][j]},
-                                                        {'name': 'current_phase',
-                                                         'description': 'Current phase',
-                                                         'mtype': 'gauge',
-                                                         'unit': '',
-                                                         'value': result[str(i)]['current'][1][j]},
-                                                        {'name': 'voltage_harmonics',
-                                                         'description': 'Voltage harmonics',
-                                                         'mtype': 'gauge',
-                                                         'unit': '',
-                                                         'value': result[str(i)]['voltage'][0][j]},
-                                                        {'name': 'voltage_phase',
-                                                         'description': 'Voltage phase',
-                                                         'mtype': 'gauge',
-                                                         'unit': '',
-                                                         'value': result[str(i)]['voltage'][1][j]}],
+                                                  values={'current_harmonics': result[str(i)]['current'][0][j],
+                                                          'current_phase': result[str(i)]['current'][1][j],
+                                                          'voltage_harmonics': result[str(i)]['voltage'][0][j],
+                                                          'voltage_phase': result[str(i)]['voltage'][1][j]},
                                                   tags={'id': device_id.format(i),
                                                         'name': name,
                                                         'domain': 'frequency'},
@@ -767,3 +618,223 @@ class MetricsCollector(object):
             if self._stopped:
                 return
             self._pause(start, metric_type)
+
+    def get_definitions(self):
+        """
+        > example_definition = {"type": "energy",
+        >                       "name": "power",
+        >                       "description": "Total energy consumed (in kWh)",
+        >                       "mtype": "counter",
+        >                       "unit": "Wh",
+        >                       "tags": ["device", "id"]}
+        """
+        _ = self  # Easier as non-static method
+        return [
+            # system
+            {'type': 'system',
+             'name': 'service_uptime',
+             'description': 'Service uptime',
+             'mtype': 'gauge',
+             'unit': 's',
+             'tags': ['name']},
+            {'type': 'system',
+             'name': 'system_uptime',
+             'description': 'System uptime',
+             'mtype': 'gauge',
+             'unit': 's',
+             'tags': ['name']},
+            # inputs / events
+            {'type': 'events',
+             'name': 'event',
+             'description': 'OpenMotics event',
+             'mtype': 'gauge',
+             'unit': 'event',
+             'tags': ['event_type', 'id', 'name']},
+            # output
+            {'type': 'output',
+             'name': 'output',
+             'description': 'Output state',
+             'mtype': 'gauge',
+             'unit': '',
+             'tags': ['id', 'name', 'module_type', 'output_type', 'floor']},
+            # sensor
+            {'type': 'sensor',
+             'name': 'temp',
+             'description': 'Temperature',
+             'mtype': 'gauge',
+             'unit': 'degree C',
+             'tags': ['id', 'name']},
+            {'type': 'sensor',
+             'name': 'hum',
+             'description': 'Humidity',
+             'mtype': 'gauge',
+             'unit': '%',
+             'tags': ['id', 'name']},
+            {'type': 'sensor',
+             'name': 'bright',
+             'description': 'Brightness',
+             'mtype': 'gauge',
+             'unit': '%',
+             'tags': ['id', 'name']},
+            # thermostat
+            {'type': 'thermostat',
+             'name': 'on',
+             'description': 'Indicates whether the thermostat is on',
+             'mtype': 'gauge',
+             'unit': '',
+             'tags': ['id', 'name']},
+            {'type': 'thermostat',
+             'name': 'cooling',
+             'description': 'Indicates whether the thermostat is on cooling',
+             'mtype': 'gauge',
+             'unit': '',
+             'tags': ['id', 'name']},
+            {'type': 'thermostat',
+             'name': 'setpoint',
+             'description': 'Setpoint identifier (values 0-5)',
+             'mtype': 'gauge',
+             'unit': '',
+             'tags': ['id', 'name']},
+            {'type': 'thermostat',
+             'name': 'output0',
+             'description': 'State of the primary output valve',
+             'mtype': 'gauge',
+             'unit': '',
+             'tags': ['id', 'name']},
+            {'type': 'thermostat',
+             'name': 'output1',
+             'description': 'State of the secondairy output valve',
+             'mtype': 'gauge',
+             'unit': '',
+             'tags': ['id', 'name']},
+            {'type': 'thermostat',
+             'name': 'mode',
+             'description': 'Thermostat mode',
+             'mtype': 'gauge',
+             'unit': '',
+             'tags': ['id', 'name']},
+            {'type': 'thermostat',
+             'name': 'thermostat_type',
+             'description': 'Thermostat type',
+             'mtype': 'gauge',
+             'unit': '',
+             'tags': ['id', 'name']},
+            {'type': 'thermostat',
+             'name': 'automatic',
+             'description': 'Automatic indicator',
+             'mtype': 'gauge',
+             'unit': '',
+             'tags': ['id', 'name']},
+            {'type': 'thermostat',
+             'name': 'current_setpoint',
+             'description': 'Current setpoint',
+             'mtype': 'gauge',
+             'unit': 'degree C',
+             'tags': ['id', 'name']},
+            {'type': 'thermostat',
+             'name': 'outside',
+             'description': 'Outside sensor value',
+             'mtype': 'gauge',
+             'unit': 'degree C',
+             'tags': ['id', 'name']},
+            {'type': 'thermostat',
+             'name': 'temperature',
+             'description': 'Current temperature',
+             'mtype': 'gauge',
+             'unit': 'degree C',
+             'tags': ['id', 'name']},
+            # error
+            {'type': 'error',
+             'name': 'amount',
+             'description': 'Amount of errors',
+             'mtype': 'gauge',
+             'unit': '',
+             'tags': ['module_type', 'id', 'name']},
+            # counter
+            {'type': 'counter',
+             'name': 'pulses',
+             'description': 'Number of received pulses',
+             'mtype': 'gauge',
+             'unit': '',
+             'tags': ['name', 'input']},
+            # energy
+            {'type': 'energy',
+             'name': 'voltage',
+             'description': 'Current voltage',
+             'mtype': 'gauge',
+             'unit': 'V',
+             'tags': ['brand', 'id', 'name']},
+            {'type': 'energy',
+             'name': 'current',
+             'description': 'Current current',
+             'mtype': 'gauge',
+             'unit': 'A',
+             'tags': ['brand', 'id', 'name']},
+            {'type': 'energy',
+             'name': 'frequency',
+             'description': 'Current frequency',
+             'mtype': 'gauge',
+             'unit': 'Hz',
+             'tags': ['brand', 'id', 'name']},
+            {'type': 'energy',
+             'name': 'power',
+             'description': 'Current power consumption',
+             'mtype': 'gauge',
+             'unit': 'W',
+             'tags': ['brand', 'id', 'name']},
+            {'type': 'energy',
+             'name': 'power_counter',
+             'description': 'Total energy consumed',
+             'mtype': 'counter',
+             'unit': 'Wh',
+             'tags': ['brand', 'id', 'name']},
+            {'type': 'energy',
+             'name': 'power_counter_day',
+             'description': 'Total energy consumed during daytime',
+             'mtype': 'counter',
+             'unit': 'Wh',
+             'tags': ['brand', 'id', 'name']},
+            {'type': 'energy',
+             'name': 'power_counter_night',
+             'description': 'Total energy consumed during nighttime',
+             'mtype': 'counter',
+             'unit': 'Wh',
+             'tags': ['brand', 'id', 'name']},
+            # energy_analytics
+            {'type': 'energy_analytics',
+             'name': 'current',
+             'description': 'Time-based current',
+             'mtype': 'gauge',
+             'unit': 'A',
+             'tags': ['id', 'name', 'domain']},
+            {'type': 'energy_analytics',
+             'name': 'voltage',
+             'description': 'Time-based voltage',
+             'mtype': 'gauge',
+             'unit': 'V',
+             'tags': ['id', 'name', 'domain']},
+            {'type': 'energy_analytics',
+             'name': 'current_harmonics',
+             'description': 'Current harmonics',
+             'mtype': 'gauge',
+             'unit': '',
+             'tags': ['id', 'name', 'domain']},
+            {'type': 'energy_analytics',
+             'name': 'current_phase',
+             'description': 'Current phase',
+             'mtype': 'gauge',
+             'unit': '',
+             'tags': ['id', 'name', 'domain']},
+            {'type': 'energy_analytics',
+             'name': 'voltage_harmonics',
+             'description': 'Voltage harmonics',
+             'mtype': 'gauge',
+             'unit': '',
+             'tags': ['id', 'name', 'domain']},
+            {'type': 'energy_analytics',
+             'name': 'voltage_phase',
+             'description': 'Voltage phase',
+             'mtype': 'gauge',
+             'unit': '',
+             'tags': ['id', 'name', 'domain']},
+        ]

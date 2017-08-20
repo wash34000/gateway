@@ -480,7 +480,7 @@ else:
                 self.log(mc[0], "Exception while collecting metrics", exception,
                          traceback.format_exc())
 
-    def distribute_metric(self, metric, definition):
+    def distribute_metric(self, metric):
         """ Enqueues all metrics in a separate queue per plugin """
         delivery_count = 0
         for mr in self.__metric_receivers:
@@ -493,7 +493,7 @@ else:
                 if (source_filter is None or source_filter.match(metric['source'])) and \
                         (metric_filter is None or metric_filter.match(metric['metric'])) and \
                         (metric_type_filter is None or metric_type_filter.match(metric['type'])):
-                    self.metric_receiver_queues[mr[0]].appendleft([metric, definition])
+                    self.metric_receiver_queues[mr[0]].appendleft(metric)
                     delivery_count += 1
             except Exception as exception:
                 self.log(mr[0], "Exception while distributing metrics", exception, traceback.format_exc())
@@ -509,13 +509,7 @@ else:
                     if mr[0] != plugin:
                         continue
                     try:
-                        method = mr[1]
-                        metadata = method.metric_receive
-                        include_definition = metadata['include_definition']
-                        if include_definition:
-                            method(*data)
-                        else:
-                            method(data[0])
+                        mr[1](data)
                     except Exception as exception:
                         self.log(mr[0], "Exception while delivering metrics", exception, traceback.format_exc())
             except IndexError:

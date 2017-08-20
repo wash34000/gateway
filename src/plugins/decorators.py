@@ -141,7 +141,7 @@ def om_metric_data(interval=5):
     return decorate
 
 
-def om_metric_receive(source=None, metric_type=None, metric=None, include_definition=False, interval=None):
+def om_metric_receive(source=None, metric_type=None, metric=None, interval=None):
     """
     Decorator to indicate that the decorated method should be called when new data mathing the
     filter is available.
@@ -151,7 +151,6 @@ def om_metric_receive(source=None, metric_type=None, metric=None, include_defini
         method.metric_receive = {'source': None if source is None else re.compile(source),
                                  'metric_type': None if metric_type is None else re.compile(metric_type),
                                  'metric': None if metric is None else re.compile(metric),
-                                 'include_definition': include_definition,
                                  'interval': interval}
         return method
     return decorate
