@@ -32,12 +32,14 @@ class MetricsCollector(object):
     The Metrics Collector collects OpenMotics metrics and makes them available.
     """
 
-    def __init__(self, master_communicator, gateway_api):
+    def __init__(self, master_communicator, gateway_api, plugin_intervals):
         """
         :param master_communicator: Master communicator
         :type master_communicator: master.master_communicator.MasterCommunicator
         :param gateway_api: Gateway API
         :type gateway_api: gateway.gateway_api.GatewayApi
+        :param plugin_intervals: Intervals requested by plugins
+        :type plugin_intervals: list
         """
         self._start = time.time()
         self._last_service_uptime = 0
@@ -46,6 +48,29 @@ class MetricsCollector(object):
                              'outputs': {},
                              'sensors': {},
                              'pulse_counters': {}}
+        self._min_intervals = {'load_configuration': 900,
+                               'system': 60,
+                               'output': 60,
+                               'sensor': 5,
+                               'thermostat': 30,
+                               'error': 120,
+                               'counter': 30,
+                               'energy': 1,
+                               'energy_analytics': 60}
+        self.intervals = {metric_type: 900 for metric_type in self._min_intervals}
+        self._plugin_intervals = {metric_type: [] for metric_type in self._min_intervals}
+        self._websocket_intervals = {metric_type: {} for metric_type in self._min_intervals}
+        self._cloud_intervals = {metric_type: 900 for metric_type in self._min_intervals}
+        for interval_info in plugin_intervals:
+            if interval_info['source'] is not None and not interval_info['source'].match('OpenMotics'):
+                continue
+            for metric_type in self.intervals:
+                if metric_type == 'load_configuration':
+                    continue
+                if interval_info['metric_type'] is None or interval_info['metric_type'].match(metric_type):
+                    self._plugin_intervals[metric_type].append(interval_info['interval'])
+                    self._update_intervals(metric_type)
+
         self._gateway_api = gateway_api
         self._metrics_queue = deque()
         master_communicator.register_consumer(
@@ -58,15 +83,15 @@ class MetricsCollector(object):
     def start(self):
         self._start = time.time()
         self._stopped = False
-        MetricsCollector._start_thread(self._load_environment_configurations, 'load_configuration', 900)
-        MetricsCollector._start_thread(self._run_system, 'system', 60)
-        MetricsCollector._start_thread(self._run_outputs, 'outputs', 60)
-        MetricsCollector._start_thread(self._run_sensors, 'sensors', 60)
-        MetricsCollector._start_thread(self._run_thermostats, 'thermostats', 60)
-        MetricsCollector._start_thread(self._run_errors, 'errors', 120)
-        MetricsCollector._start_thread(self._run_pulsecounters, 'pulsecounters', 30)
-        MetricsCollector._start_thread(self._run_power_openmotics, 'power_openmotics', 5)
-        MetricsCollector._start_thread(self._run_power_openmotics_analytics, 'power_openmotics_analytics', 60)
+        MetricsCollector._start_thread(self._load_environment_configurations, 'load_configuration')
+        MetricsCollector._start_thread(self._run_system, 'system')
+        MetricsCollector._start_thread(self._run_outputs, 'output')
+        MetricsCollector._start_thread(self._run_sensors, 'sensor')
+        MetricsCollector._start_thread(self._run_thermostats, 'thermostat')
+        MetricsCollector._start_thread(self._run_errors, 'error')
+        MetricsCollector._start_thread(self._run_pulsecounters, 'counter')
+        MetricsCollector._start_thread(self._run_power_openmotics, 'energy')
+        MetricsCollector._start_thread(self._run_power_openmotics_analytics, 'energy_analytics')
 
     def stop(self):
         self._stopped = True
@@ -78,11 +103,34 @@ class MetricsCollector(object):
                 yield self._metrics_queue.pop()
         except IndexError:
             pass
+
+    def set_cloud_interval(self, metric_type, interval):
+        self._cloud_intervals[metric_type] = interval
+        self._update_intervals(metric_type)
+
+    def set_websocket_interval(self, client_id, metric_type, interval):
+        for mtype in self._websocket_intervals:
+            if metric_type is None or metric_type.match(mtype):
+                if interval is None:
+                    if client_id in self._websocket_intervals[mtype]:
+                        del self._websocket_intervals[mtype][client_id]
+                else:
+                    self._websocket_intervals[mtype][client_id] = interval
+                self._update_intervals(mtype)
         
     @staticmethod
     def _log(message, level='exception'):
         getattr(LOGGER, level)(message)
         print message
+
+    def _update_intervals(self, metric_type):
+        min_interval = self._min_intervals[metric_type]
+        interval = max(min_interval, self._cloud_intervals[metric_type])
+        if len(self._plugin_intervals[metric_type]) > 0:
+            interval = min(interval, *[max(min_interval, i) for i in self._plugin_intervals[metric_type]])
+        if len(self._websocket_intervals[metric_type]) > 0:
+            interval = min(interval, *[max(min_interval, i) for i in self._websocket_intervals[metric_type].values()])
+        self.intervals[metric_type] = interval
 
     def _enqueue_metrics(self, metric_type, data, tags, timestamp):
         """
@@ -113,16 +161,15 @@ class MetricsCollector(object):
             self._metrics_queue.appendleft([metric, definition])
 
     @staticmethod
-    def _start_thread(workload, name, interval):
-        print 'Starting collector for {0}'.format(name)
-        thread = Thread(target=workload, args=(interval,))
+    def _start_thread(workload, name):
+        thread = Thread(target=workload, args=(name,))
         thread.setName('Metric controller ({0})'.format(name))
         thread.daemon = True
         thread.start()
         return thread
 
-    @staticmethod
-    def _pause(start, interval):
+    def _pause(self, start, metric_type):
+        interval = self.intervals[metric_type]
         elapsed = time.time() - start
         sleep = max(0.1, interval - elapsed)
         time.sleep(sleep)
@@ -150,11 +197,11 @@ class MetricsCollector(object):
                     outputs[output_id]['status'] = 0
                 if changed is True:
                     changed_output_ids.append(output_id)
-            self._process_outputs(changed_output_ids)
+            self._process_outputs(changed_output_ids, 'output')
         except Exception as ex:
             MetricsCollector._log('Error processing outputs: {0}'.format(ex))
 
-    def _process_outputs(self, output_ids):
+    def _process_outputs(self, output_ids, metric_type):
         try:
             now = time.time()
             outputs = self._environment['outputs']
@@ -174,7 +221,7 @@ class MetricsCollector(object):
                     for key in ['module_type', 'output_type', 'floor']:
                         if key in outputs[output_id]:
                             tags[key] = outputs[output_id][key]
-                    self._enqueue_metrics(metric_type='output',
+                    self._enqueue_metrics(metric_type=metric_type,
                                           data={'name': 'output',
                                                 'description': 'Output state',
                                                 'mtype': 'gauge',
@@ -210,7 +257,7 @@ class MetricsCollector(object):
         except Exception as ex:
             MetricsCollector._log('Error processing input: {0}'.format(ex))
 
-    def _run_system(self, interval):
+    def _run_system(self, metric_type):
         while not self._stopped:
             start = time.time()
             try:
@@ -222,7 +269,7 @@ class MetricsCollector(object):
                     self._start = time.time()
                     service_uptime = 0
                 self._last_service_uptime = service_uptime
-                self._enqueue_metrics(metric_type='system',
+                self._enqueue_metrics(metric_type=metric_type,
                                       data=[{'name': 'service_uptime',
                                              'description': 'Service uptime',
                                              'mtype': 'gauge',
@@ -239,9 +286,9 @@ class MetricsCollector(object):
                 MetricsCollector._log('Error sending system data: {0}'.format(ex))
             if self._stopped:
                 return
-            MetricsCollector._pause(start, interval)
+            self._pause(start, metric_type)
 
-    def _run_outputs(self, interval):
+    def _run_outputs(self, metric_type):
         while not self._stopped:
             start = time.time()
             try:
@@ -256,12 +303,12 @@ class MetricsCollector(object):
                 LOGGER.error('Error getting output status: CommunicationTimedOutException')
             except Exception as ex:
                 MetricsCollector._log('Error getting output status: {0}'.format(ex))
-            self._process_outputs(self._environment['outputs'].keys())
+            self._process_outputs(self._environment['outputs'].keys(), metric_type)
             if self._stopped:
                 return
-            MetricsCollector._pause(start, interval)
+            self._pause(start, metric_type)
 
-    def _run_sensors(self, interval):
+    def _run_sensors(self, metric_type):
         while not self._stopped:
             start = time.time()
             try:
@@ -294,7 +341,7 @@ class MetricsCollector(object):
                                      'mtype': 'gauge',
                                      'unit': '%',
                                      'value': brightnesses[sensor_id]})
-                    self._enqueue_metrics(metric_type='sensor',
+                    self._enqueue_metrics(metric_type=metric_type,
                                           data=data,
                                           tags=tags,
                                           timestamp=now)
@@ -304,9 +351,9 @@ class MetricsCollector(object):
                 MetricsCollector._log('Error getting sensor status: {0}'.format(ex))
             if self._stopped:
                 return
-            MetricsCollector._pause(start, interval)
+            self._pause(start, metric_type)
 
-    def _run_thermostats(self, interval):
+    def _run_thermostats(self, metric_type):
         while not self._stopped:
             start = time.time()
             try:
@@ -314,7 +361,7 @@ class MetricsCollector(object):
                 thermostats = self._gateway_api.get_thermostat_status()
                 tags = {'id': 'G.0',
                         'name': 'Global configuration'}
-                self._enqueue_metrics(metric_type='thermostat',
+                self._enqueue_metrics(metric_type=metric_type,
                                       data=[{'name': 'on',
                                              'description': 'Indicates whether the thermostat is on',
                                              'mtype': 'gauge',
@@ -375,7 +422,7 @@ class MetricsCollector(object):
                                      'mtype': 'gauge',
                                      'unit': 'degree C',
                                      'value': thermostat['act']})
-                    self._enqueue_metrics(metric_type='thermostat',
+                    self._enqueue_metrics(metric_type=metric_type,
                                           data=data,
                                           tags={'id': '{0}.{1}'.format('C' if thermostats['cooling'] is True else 'H',
                                                                        thermostat['id']),
@@ -387,9 +434,9 @@ class MetricsCollector(object):
                 MetricsCollector._log('Error getting thermostat status: {0}'.format(ex))
             if self._stopped:
                 return
-            MetricsCollector._pause(start, interval)
+            self._pause(start, metric_type)
 
-    def _run_errors(self, interval):
+    def _run_errors(self, metric_type):
         while not self._stopped:
             start = time.time()
             try:
@@ -411,7 +458,7 @@ class MetricsCollector(object):
                     tags = {'module_type': types[om_module[0]],
                             'id': om_module,
                             'name': '{0} {1}'.format(types[om_module[0]], om_module)}
-                    self._enqueue_metrics(metric_type='error',
+                    self._enqueue_metrics(metric_type=metric_type,
                                           data=[{'name': 'amount',
                                                  'description': 'Amount of errors',
                                                  'mtype': 'gauge',
@@ -425,9 +472,9 @@ class MetricsCollector(object):
                 MetricsCollector._log('Error getting module errors: {0}'.format(ex))
             if self._stopped:
                 return
-            MetricsCollector._pause(start, interval)
+            self._pause(start, metric_type)
 
-    def _run_pulsecounters(self, interval):
+    def _run_pulsecounters(self, metric_type):
         while not self._stopped:
             start = time.time()
             now = time.time()
@@ -453,7 +500,7 @@ class MetricsCollector(object):
                 if counter['name'] != '':
                     tags = {'name': counter['name'],
                             'input': counter['input']}
-                    self._enqueue_metrics(metric_type='counter',
+                    self._enqueue_metrics(metric_type=metric_type,
                                           data=[{'name': 'pulses',
                                                  'description': 'Number of received pulses',
                                                  'mtype': 'gauge',
@@ -463,9 +510,9 @@ class MetricsCollector(object):
                                           timestamp=now)
             if self._stopped:
                 return
-            MetricsCollector._pause(start, interval)
+            self._pause(start, metric_type)
 
-    def _run_power_openmotics(self, interval):
+    def _run_power_openmotics(self, metric_type):
         while not self._stopped:
             start = time.time()
             now = time.time()
@@ -554,7 +601,7 @@ class MetricsCollector(object):
                                  'mtype': 'counter',
                                  'unit': 'Wh',
                                  'value': device['counter_night']}]
-                        self._enqueue_metrics(metric_type='energy',
+                        self._enqueue_metrics(metric_type=metric_type,
                                               data=data,
                                               tags=tags,
                                               timestamp=now)
@@ -562,9 +609,9 @@ class MetricsCollector(object):
                         MetricsCollector._log('Error processing OpenMotics power device {0}: {1}'.format(device_id, ex))
             if self._stopped:
                 return
-            MetricsCollector._pause(start, interval)
+            self._pause(start, metric_type)
 
-    def _run_power_openmotics_analytics(self, interval):
+    def _run_power_openmotics_analytics(self, metric_type):
         while not self._stopped:
             start = time.time()
             try:
@@ -585,7 +632,7 @@ class MetricsCollector(object):
                         timestamp = now
                         length = min(len(result[str(i)]['current']), len(result[str(i)]['voltage']))
                         for j in xrange(length):
-                            self._enqueue_metrics(metric_type='energy_analytics',
+                            self._enqueue_metrics(metric_type=metric_type,
                                                   data=[{'name': 'current',
                                                          'description': 'Time-based current',
                                                          'mtype': 'gauge',
@@ -612,7 +659,7 @@ class MetricsCollector(object):
                         timestamp = now
                         length = min(len(result[str(i)]['current'][0]), len(result[str(i)]['voltage'][0]))
                         for j in xrange(length):
-                            self._enqueue_metrics(metric_type='energy_analytics',
+                            self._enqueue_metrics(metric_type=metric_type,
                                                   data=[{'name': 'current_harmonics',
                                                          'description': 'Current harmonics',
                                                          'mtype': 'gauge',
@@ -644,9 +691,9 @@ class MetricsCollector(object):
                 MetricsCollector._log('Error getting power analytics: {0}'.format(ex))
             if self._stopped:
                 return
-            MetricsCollector._pause(start, interval)
+            self._pause(start, metric_type)
 
-    def _load_environment_configurations(self, interval=None):
+    def _load_environment_configurations(self, metric_type):
         while not self._stopped:
             start = time.time()
             # Inputs
@@ -717,6 +764,6 @@ class MetricsCollector(object):
                 LOGGER.error('Error while loading pulse counter configurations: CommunicationTimedOutException')
             except Exception as ex:
                 MetricsCollector._log('Error while loading pulse counter configurations: {0}'.format(ex))
-            if interval is None or self._stopped:
+            if self._stopped:
                 return
-            MetricsCollector._pause(start, interval)
+            self._pause(start, metric_type)

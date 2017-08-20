@@ -111,9 +111,9 @@ class PluginController(object):
         self.__event_receivers = []
         self.__metric_collectors = []
         self.__metric_receivers = []
-
         self.__metric_receiver_threads = {}
         self.metric_receiver_queues = {}
+        self.metric_intervals = []
 
         self.__receiver_mapping = {'input_status': self.__input_status_receivers,
                                    'output_status': self.__output_status_receivers,
@@ -131,6 +131,9 @@ class PluginController(object):
         for method_attribute, target in self.__receiver_mapping.iteritems():
             for method in PluginController._get_special_methods(plugin, method_attribute):
                 target.append((plugin.name, method))
+                if method_attribute == 'metric_receive':
+                    metric_receive = method.metric_receive
+                    self.metric_intervals.append(metric_receive)
             if method_attribute == 'metric_receive':
                 self.metric_receiver_queues[plugin.name] = deque()
                 thread = threading.Thread(target=self.__deliver_metrics, args=(plugin.name,))
@@ -486,7 +489,10 @@ else:
                 metadata = method.metric_receive
                 source_filter = metadata['source']
                 metric_filter = metadata['metric']
-                if source_filter.match(metric['source']) and metric_filter.match(metric['metric']):
+                metric_type_filter = metadata['metric_type']
+                if (source_filter is None or source_filter.match(metric['source'])) and \
+                        (metric_filter is None or metric_filter.match(metric['metric'])) and \
+                        (metric_type_filter is None or metric_type_filter.match(metric['type'])):
                     self.metric_receiver_queues[mr[0]].appendleft([metric, definition])
                     delivery_count += 1
             except Exception as exception:

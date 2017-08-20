@@ -232,10 +232,10 @@ class Gateway(object):
             counters = data['counters']
 
             if self.__last_pulse_counters is None:
-                ret = [0 for _ in range(0, 24)]
+                ret = [0 for _ in xrange(0, 24)]
             else:
                 ret = [Gateway.__counter_diff(counters[i], self.__last_pulse_counters[i])
-                       for i in range(0, 24)]
+                       for i in xrange(0, 24)]
 
             self.__last_pulse_counters = counters
             return ret
@@ -530,8 +530,10 @@ class ActionExecutor(object):
 
 
 def main():
-    """ The main function contains the loop that check if the vpn should be opened every 2 seconds.
-    Status data is sent when the vpn is checked. """
+    """
+    The main function contains the loop that check if the vpn should be opened every 2 seconds.
+    Status data is sent when the vpn is checked.
+    """
 
     led_service = LedService()
 

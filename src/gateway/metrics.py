@@ -57,6 +57,8 @@ class MetricsController(object):
         self._outbound_rates = {'total': 0}
         self._load_definitions()
         self._openmotics_receivers = []
+        self.cloud_cache = {}
+        self.cloud_interval = 300
 
     def start(self):
         self._collector_plugins = Thread(target=self._collect_plugins)
@@ -123,11 +125,43 @@ class MetricsController(object):
     def receiver(self, metric, definition):
         """
         Collects all metrics made available by the MetricsCollector and the plugins. These metrics
-        are cached locally for:
-        * TODO: Configurable (and optional) pushing metrics to the Cloud
-        * TODO: Making the last values for all metrics available through a new API call
+        are cached locally for configurable (and optional) pushing metrics to the Cloud.
+        > example_definition = {"type": "energy",
+        >                       "name": "power",
+        >                       "description": "Total energy consumed (in kWh)",
+        >                       "mtype": "counter",
+        >                       "unit": "Wh",
+        >                       "tags": ["device", "id"]}
+        > example_metric = {"source": "OpenMotics",
+        >                   "type": "energy",
+        >                   "metric": "power",
+        >                   "timestamp": 1497677091,
+        >                   "device": "OpenMotics energy ID1",
+        >                   "id": 0,
+        >                   "value": 1234}
         """
-        pass
+        timestamp = metric['timestamp'] - metric['timestamp'] % self.cloud_interval
+        metric_type = metric['type']
+        source = metric['source']
+        metric_name = metric['metric']
+
+        # Find all entries of e.g. the metric OpenMotics.energy.power, grouped by X minute window
+        entries = self.cloud_cache.setdefault(timestamp, {}).setdefault(source, {}).setdefault(metric_type, {}).setdefault(metric_name, [])
+        for candidate in entries[:]:  # candidate = [metric, definition]
+            found = True
+            for tag in definition['tags']:
+                if metric[tag] != candidate[0][tag]:
+                    found = False
+                    break
+            if found is True:
+                entries.remove(candidate)
+        entries.append([metric, definition])
+
+        # Clear out stale cached data
+        now = time.time()
+        for timestamp in self.cloud_cache.keys():
+            if timestamp < now - 60 * 60 * 24:
+                del self.cloud_cache[timestamp]
     
     def _put(self, metric, definition):
         rate_key = '{0}.{1}'.format(metric['source'].lower(), metric['type'].lower())
@@ -157,6 +191,12 @@ class MetricsController(object):
                                    'mtype': 'gauge',
                                    'unit': '',
                                    'tags': ['name', 'target']}
+        interval_definition = {'type': 'system',
+                               'name': 'metric_interval',
+                               'description': 'Interval on which OM metrics are collected',
+                               'mtype': 'gauge',
+                               'unit': 'seconds',
+                               'tags': ['name', 'metric_type']}
         while not self._stopped:
             now = time.time()
             try:
@@ -203,6 +243,17 @@ class MetricsController(object):
                               'namespace': key,
                               'value': self._outbound_rates[key]}
                     self._put(metric, outbound_definition)
+                for mtype in self._metrics_collector.intervals:
+                    if mtype == 'load_configuration':
+                        continue
+                    metric = {'source': 'OpenMotics',
+                              'type': 'system',
+                              'metric': 'metric_interval',
+                              'timestamp': now,
+                              'name': 'gateway',
+                              'metric_type': mtype,
+                              'value': self._metrics_collector.intervals[mtype]}
+                    self._put(metric, interval_definition)
             except Exception as ex:
                 LOGGER.error('Could not collect metric metrics: {0}'.format(ex))
             if not self._stopped:

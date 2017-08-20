@@ -125,8 +125,9 @@ def main():
     web_interface.set_plugin_controller(plugin_controller)
     gateway_api.set_plugin_controller(plugin_controller)
 
-    metrics_collector = MetricsCollector(master_communicator, gateway_api)
+    metrics_collector = MetricsCollector(master_communicator, gateway_api, plugin_controller.metric_intervals)
     metrics_collector.start()
+    web_interface.set_metrics_collector(metrics_collector)
     metrics_controller = MetricsController(plugin_controller, metrics_collector)
     metrics_controller.start()
     metrics_controller.add_receiver(metrics_controller.receiver)

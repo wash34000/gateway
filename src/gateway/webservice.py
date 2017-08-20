@@ -175,14 +175,23 @@ class MetricsSocket(WebSocket):
     """
     def opened(self):
         cherrypy.engine.publish('add-metrics-receiver',
-                                self.client_id,
-                                {'source': re.compile(self.source if self.source is not None else '.*'),
-                                 'metric_type': re.compile(self.metric_type if self.metric_type is not None else '.*'),
-                                 'metric': re.compile(self.metric if self.metric is not None else '.*'),
+                                self.metadata['client_id'],
+                                {'source': self.metadata['source'],
+                                 'metric_type': self.metadata['metric_type'],
+                                 'metric': self.metadata['metric'],
+                                 'token': self.metadata['token'],
                                  'socket': self})
+        self.metadata['interface'].metrics_collector.set_websocket_interval(self.metadata['client_id'],
+                                                                            self.metadata['metric_type'],
+                                                                            self.metadata['interval'])
 
     def closed(self, *args, **kwargs):
-        cherrypy.engine.publish('remove-metrics-receiver', self.client_id)
+        _ = args, kwargs
+        client_id = self.metadata['client_id']
+        cherrypy.engine.publish('remove-metrics-receiver', client_id)
+        self.metadata['interface'].metrics_collector.set_websocket_interval(client_id,
+                                                                            self.metadata['metric_type'],
+                                                                            None)
 
 
 class DummyToken(object):
@@ -220,6 +229,7 @@ class WebInterface(object):
         self.__authorized_check = authorized_check
 
         self.__plugin_controller = None
+        self.metrics_collector = None
         self.__ws_metrics_registered = False
 
         self.dummy_token = DummyToken()
@@ -229,8 +239,13 @@ class WebInterface(object):
         try:
             for client_id, receiver_info in cherrypy.engine.publish('get-metrics-receivers').pop().iteritems():
                 try:
-                    if receiver_info['source'].match(metric['source']) and receiver_info['metric'].match(metric['metric']) and receiver_info['metric_type'].match(metric['type']):
+                    self.check_token(receiver_info['token'])
+                    if (receiver_info['source'] is None or receiver_info['source'].match(metric['source'])) and \
+                            (receiver_info['metric'] is None or receiver_info['metric'].match(metric['metric'])) and \
+                            (receiver_info['metric_type'] is None or receiver_info['metric_type'].match(metric['type'])):
                         receiver_info['socket'].send(json.dumps(metric))
+                except cherrypy.HTTPError as ex:  # As might be caught from the `check_token` function
+                    receiver_info['socket'].close(ex.code, ex.message)
                 except Exception as ex:
                     LOGGER.error('Failed to distribute metrics to WebSocket for client {0}: {1}'.format(client_id, ex))
         except Exception as ex:
@@ -239,6 +254,10 @@ class WebInterface(object):
     def set_plugin_controller(self, plugin_controller):
         """ Set the plugin controller. """
         self.__plugin_controller = plugin_controller
+
+    def set_metrics_collector(self, metrics_collector):
+        """ Set the metrics collector """
+        self.metrics_collector = metrics_collector
 
     def check_token(self, token):
         """ Check if the token is valid, raises HTTPError(401) if invalid. """
@@ -2575,12 +2594,15 @@ class WebInterface(object):
             raise cherrypy.HTTPError(401, "unauthorized")
 
     @cherrypy.expose
-    def ws_metrics(self, token, client_id, source=None, metric_type=None, metric=None):
+    def ws_metrics(self, token, client_id, source=None, metric_type=None, metric=None, interval=None):
         self.check_token(token)
-        cherrypy.request.ws_handler.client_id = client_id
-        cherrypy.request.ws_handler.source = source
-        cherrypy.request.ws_handler.metric = metric
-        cherrypy.request.ws_handler.metric_type = metric_type
+        cherrypy.request.ws_handler.metadata = {'token': token,
+                                                'client_id': client_id,
+                                                'source': None if source is None else re.compile(source),
+                                                'metric': None if metric is None else re.compile(metric),
+                                                'metric_type': None if metric_type is None else re.compile(metric_type),
+                                                'interval': None if interval is None else int(interval),
+                                                'interface': self}
 
 
 class WebService(object):
