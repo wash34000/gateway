@@ -139,14 +139,19 @@ class MetricsCollector(object):
         tags = {'name': 'gateway'}
         timestamp = 12346789
         """
-        for name, value in values.iteritems():
-            metric = {'source': 'OpenMotics',
-                      'type': metric_type,
-                      'metric': name,
-                      'value': value,
-                      'timestamp': timestamp}
-            metric.update(tags)
-            self._metrics_queue.appendleft(metric)
+        self._metrics_queue.appendleft({'source': 'OpenMotics',
+                                        'type': metric_type,
+                                        'timestamp': timestamp,
+                                        'tags': tags,
+                                        'values': values})
+        #for name, value in values.iteritems():
+        #    metric = {'source': 'OpenMotics',
+        #              'type': metric_type,
+        #              'metric': name,
+        #              'value': value,
+        #              'timestamp': timestamp}
+        #    metric.update(tags)
+        #    self._metrics_queue.appendleft(metric)
 
     @staticmethod
     def _start_thread(workload, name):

@@ -20,8 +20,13 @@ The main module for the OpenMotics
 
 import logging
 import sys
+import os
 import time
 import threading
+
+for egg in os.listdir('/opt/openmotics/eggs'):
+    if egg.endswith('.egg'):
+        sys.path.insert(0, '/opt/openmotics/eggs/{0}'.format(egg))
 
 from serial import Serial
 from signal import signal, SIGTERM

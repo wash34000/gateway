@@ -488,12 +488,11 @@ else:
                 method = mr[1]
                 metadata = method.metric_receive
                 source_filter = metadata['source']
-                metric_filter = metadata['metric']
+                #metric_filter = metadata['metric']
                 metric_type_filter = metadata['metric_type']
                 if (source_filter is None or source_filter.match(metric['source'])) and \
-                        (metric_filter is None or metric_filter.match(metric['metric'])) and \
                         (metric_type_filter is None or metric_type_filter.match(metric['type'])):
-                    self.metric_receiver_queues[mr[0]].appendleft(metric)
+                    self.metric_receiver_queues[mr[0]].appendleft(copy.deepcopy(metric))
                     delivery_count += 1
             except Exception as exception:
                 self.log(mr[0], "Exception while distributing metrics", exception, traceback.format_exc())

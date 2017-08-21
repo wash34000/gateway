@@ -16,11 +16,6 @@
 
 
 import sys
-import os
-for egg in os.listdir('/opt/openmotics/eggs'):
-    if egg.endswith('.egg'):
-        sys.path.insert(0, '/opt/openmotics/eggs/{0}'.format(egg))
-
 import threading
 import random
 import ConfigParser
@@ -178,7 +173,7 @@ class MetricsSocket(WebSocket):
                                 self.metadata['client_id'],
                                 {'source': self.metadata['source'],
                                  'metric_type': self.metadata['metric_type'],
-                                 'metric': self.metadata['metric'],
+                                 #'metric': self.metadata['metric'],
                                  'token': self.metadata['token'],
                                  'socket': self})
         self.metadata['interface'].metrics_collector.set_websocket_interval(self.metadata['client_id'],
@@ -242,7 +237,6 @@ class WebInterface(object):
                 try:
                     self.check_token(receiver_info['token'])
                     if (receiver_info['source'] is None or receiver_info['source'].match(metric['source'])) and \
-                            (receiver_info['metric'] is None or receiver_info['metric'].match(metric['metric'])) and \
                             (receiver_info['metric_type'] is None or receiver_info['metric_type'].match(metric['type'])):
                         receiver_info['socket'].send(json.dumps(metric))
                 except cherrypy.HTTPError as ex:  # As might be caught from the `check_token` function
