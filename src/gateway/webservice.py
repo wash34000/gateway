@@ -173,7 +173,6 @@ class MetricsSocket(WebSocket):
                                 self.metadata['client_id'],
                                 {'source': self.metadata['source'],
                                  'metric_type': self.metadata['metric_type'],
-                                 #'metric': self.metadata['metric'],
                                  'token': self.metadata['token'],
                                  'socket': self})
         self.metadata['interface'].metrics_collector.set_websocket_interval(self.metadata['client_id'],
@@ -2611,12 +2610,11 @@ class WebInterface(object):
         return self.__success(definitions=definitions)
 
     @cherrypy.expose
-    def ws_metrics(self, token, client_id, source=None, metric_type=None, metric=None, interval=None):
+    def ws_metrics(self, token, client_id, source=None, metric_type=None, interval=None):
         self.check_token(token)
         cherrypy.request.ws_handler.metadata = {'token': token,
                                                 'client_id': client_id,
                                                 'source': None if source is None else re.compile(source),
-                                                'metric': None if metric is None else re.compile(metric),
                                                 'metric_type': None if metric_type is None else re.compile(metric_type),
                                                 'interval': None if interval is None else int(interval),
                                                 'interface': self}

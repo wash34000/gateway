@@ -488,7 +488,6 @@ else:
                 method = mr[1]
                 metadata = method.metric_receive
                 source_filter = metadata['source']
-                #metric_filter = metadata['metric']
                 metric_type_filter = metadata['metric_type']
                 if (source_filter is None or source_filter.match(metric['source'])) and \
                         (metric_type_filter is None or metric_type_filter.match(metric['type'])):
