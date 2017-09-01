@@ -323,7 +323,7 @@ class WebInterface(object):
         :type password: String
         :param password: Password of the user.
         """
-        if self.__authorized_check() or True:
+        if self.__authorized_check():
             self.__user_controller.create_user(username, password, 'admin', True)
             return self.__success()
         else:
@@ -336,7 +336,7 @@ class WebInterface(object):
         :returns: 'usernames': list of usernames (String).
         :rtype: dict
         """
-        if self.__authorized_check() or True:
+        if self.__authorized_check():
             return self.__success(usernames=self.__user_controller.get_usernames())
         else:
             raise cherrypy.HTTPError(401, "unauthorized")
@@ -348,7 +348,7 @@ class WebInterface(object):
         :type username: String
         :param username: Name of the user to remove.
         """
-        if self.__authorized_check() or True:
+        if self.__authorized_check():
             self.__user_controller.remove_user(username)
             return self.__success()
         else:

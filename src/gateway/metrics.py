@@ -172,7 +172,7 @@ class MetricsController(object):
         for candidate in entries[:]:  # candidate = [metric, definition]
             found = True
             for tag in definition['tags']:
-                if metric[tag] != candidate[0][tag]:
+                if metric['tags'][tag] != candidate[0]['tags'][tag]:
                     found = False
                     break
             if found is True:
