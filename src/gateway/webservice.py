@@ -15,13 +15,11 @@
 """ Includes the WebService class """
 
 
-import sys
 import threading
 import random
 import ConfigParser
 import subprocess
 import os
-import re
 import traceback
 import inspect
 import time
@@ -29,6 +27,7 @@ import requests
 import logging
 import cherrypy
 import constants
+import msgpack
 from cherrypy.lib.static import serve_file
 from ws4py.websocket import WebSocket
 from ws4py.server.cherrypyserver import WebSocketPlugin, WebSocketTool
@@ -232,12 +231,16 @@ class WebInterface(object):
     def distribute_metric(self, metric):
         _ = self
         try:
-            for client_id, receiver_info in cherrypy.engine.publish('get-metrics-receivers').pop().iteritems():
+            answers = cherrypy.engine.publish('get-metrics-receivers')
+            if len(answers) == 0:
+                return
+            for client_id, receiver_info in answers.pop().iteritems():
                 try:
                     self.check_token(receiver_info['token'])
-                    if (receiver_info['source'] is None or receiver_info['source'].match(metric['source'])) and \
-                            (receiver_info['metric_type'] is None or receiver_info['metric_type'].match(metric['type'])):
-                        receiver_info['socket'].send(json.dumps(metric))
+                    sources = self.__metrics_controller.get_filter('source', receiver_info['source'])
+                    metric_types = self.__metrics_controller.get_filter('metric_type', receiver_info['metric_type'])
+                    if metric['source'] in sources and metric['type'] in metric_types:
+                        receiver_info['socket'].send(msgpack.dumps(metric), binary=True)
                 except cherrypy.HTTPError as ex:  # As might be caught from the `check_token` function
                     receiver_info['socket'].close(ex.code, ex.message)
                 except Exception as ex:
@@ -2592,21 +2595,17 @@ class WebInterface(object):
             raise cherrypy.HTTPError(401, "unauthorized")
 
     @cherrypy.expose
-    def get_metric_definitions(self, token, source=None, metric_type=None, metric=None):
+    def get_metric_definitions(self, token, source=None, metric_type=None):
         self.check_token(token)
-        source = None if source is None else re.compile(source)
-        metric_type = None if metric_type is None else re.compile(metric_type)
-        metric = None if metric is None else re.compile(metric)
+        sources = self.__metrics_controller.get_filter('source', source)
+        metric_types = self.__metrics_controller.get_filter('metric_type', metric_type)
         definitions = {}
-        for _source, metric_types in self.__metrics_controller.definitions.iteritems():
-            if source is None or source.match(_source):
+        for _source, _metric_types in self.__metrics_controller.definitions.iteritems():
+            if _source in sources:
                 definitions[_source] = {}
-                for _metric_type, metrics in metric_types.iteritems():
-                    if metric_type is None or metric_type.match(_metric_type):
-                        definitions[_source][_metric_type] = {}
-                        for _metric, definition in metrics.iteritems():
-                            if metric is None or metric.match(_metric):
-                                definitions[_source][_metric_type][_metric] = definition
+                for _metric_type, definition in _metric_types.iteritems():
+                    if _metric_type in metric_types:
+                        definitions[_source][_metric_type] = definition
         return self.__success(definitions=definitions)
 
     @cherrypy.expose
@@ -2614,8 +2613,8 @@ class WebInterface(object):
         self.check_token(token)
         cherrypy.request.ws_handler.metadata = {'token': token,
                                                 'client_id': client_id,
-                                                'source': None if source is None else re.compile(source),
-                                                'metric_type': None if metric_type is None else re.compile(metric_type),
+                                                'source': source,
+                                                'metric_type': metric_type,
                                                 'interval': None if interval is None else int(interval),
                                                 'interface': self}
 

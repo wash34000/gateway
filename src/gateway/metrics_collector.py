@@ -32,18 +32,17 @@ class MetricsCollector(object):
     The Metrics Collector collects OpenMotics metrics and makes them available.
     """
 
-    def __init__(self, master_communicator, gateway_api, plugin_intervals):
+    def __init__(self, master_communicator, gateway_api):
         """
         :param master_communicator: Master communicator
         :type master_communicator: master.master_communicator.MasterCommunicator
         :param gateway_api: Gateway API
         :type gateway_api: gateway.gateway_api.GatewayApi
-        :param plugin_intervals: Intervals requested by plugins
-        :type plugin_intervals: list
         """
         self._start = time.time()
         self._last_service_uptime = 0
         self._stopped = True
+        self._metrics_controller = None
         self._environment = {'inputs': {},
                              'outputs': {},
                              'sensors': {},
@@ -55,21 +54,12 @@ class MetricsCollector(object):
                                'thermostat': 30,
                                'error': 120,
                                'counter': 30,
-                               'energy': 1,
+                               'energy': 5,
                                'energy_analytics': 60}
         self.intervals = {metric_type: 900 for metric_type in self._min_intervals}
         self._plugin_intervals = {metric_type: [] for metric_type in self._min_intervals}
         self._websocket_intervals = {metric_type: {} for metric_type in self._min_intervals}
         self._cloud_intervals = {metric_type: 900 for metric_type in self._min_intervals}
-        for interval_info in plugin_intervals:
-            if interval_info['source'] is not None and not interval_info['source'].match('OpenMotics'):
-                continue
-            for metric_type in self.intervals:
-                if metric_type == 'load_configuration':
-                    continue
-                if interval_info['metric_type'] is None or interval_info['metric_type'].match(metric_type):
-                    self._plugin_intervals[metric_type].append(interval_info['interval'])
-                    self._update_intervals(metric_type)
 
         self._gateway_api = gateway_api
         self._metrics_queue = deque()
@@ -104,19 +94,36 @@ class MetricsCollector(object):
         except IndexError:
             pass
 
+    def set_metrics_controller(self, metrics_controller):
+        self._metrics_controller = metrics_controller
+
     def set_cloud_interval(self, metric_type, interval):
         self._cloud_intervals[metric_type] = interval
         self._update_intervals(metric_type)
 
     def set_websocket_interval(self, client_id, metric_type, interval):
+        metric_types = self._metrics_controller.get_filter('metric_type', metric_type)
         for mtype in self._websocket_intervals:
-            if metric_type is None or metric_type.match(mtype):
+            if mtype in metric_types:
                 if interval is None:
                     if client_id in self._websocket_intervals[mtype]:
                         del self._websocket_intervals[mtype][client_id]
                 else:
                     self._websocket_intervals[mtype][client_id] = interval
                 self._update_intervals(mtype)
+
+    def set_plugin_intervals(self, plugin_intervals):
+        for interval_info in plugin_intervals:
+            sources = self._metrics_controller.get_filter('source', interval_info['source'])
+            metric_types = self._metrics_controller.get_filter('metric_type', interval_info['metric_type'])
+            if 'OpenMotics' not in sources:
+                continue
+            for metric_type in self.intervals:
+                if metric_type == 'load_configuration':
+                    continue
+                if metric_type in metric_types:
+                    self._plugin_intervals[metric_type].append(interval_info['interval'])
+                    self._update_intervals(metric_type)
         
     @staticmethod
     def _log(message, level='exception'):

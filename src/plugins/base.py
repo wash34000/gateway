@@ -20,6 +20,7 @@ import copy
 import inspect
 import logging
 import os
+import re
 import pkgutil
 import threading
 import traceback
@@ -112,6 +113,7 @@ class PluginController(object):
         self.__metric_collectors = []
         self.__metric_receivers = []
         self.__metric_receiver_threads = {}
+        self.__metrics_controller = None
         self.metric_receiver_queues = {}
         self.metric_intervals = []
 
@@ -149,6 +151,10 @@ class PluginController(object):
         """ Start the background tasks for the plugins and expose them via the webinterface. """
         for plugin in self.__plugins:
             self.__start_plugin(plugin)
+
+    def set_metrics_controller(self, metrics_controller):
+        """ Sets the metrics controller """
+        self.__metrics_controller = metrics_controller
 
     def __start_plugin(self, plugin):
         """ Start one plugin. """
@@ -487,11 +493,10 @@ else:
             try:
                 method = mr[1]
                 metadata = method.metric_receive
-                source_filter = metadata['source']
-                metric_type_filter = metadata['metric_type']
-                if (source_filter is None or source_filter.match(metric['source'])) and \
-                        (metric_type_filter is None or metric_type_filter.match(metric['type'])):
-                    self.metric_receiver_queues[mr[0]].appendleft(copy.deepcopy(metric))
+                sources = self.__metrics_controller.get_filter('source', metadata['source'])
+                metric_types = self.__metrics_controller.get_filter('metric_type', metadata['metric_type'])
+                if metric['source'] in sources and metric['type'] in metric_types:
+                    self.metric_receiver_queues[mr[0]].appendleft(metric)
                     delivery_count += 1
             except Exception as exception:
                 self.log(mr[0], "Exception while distributing metrics", exception, traceback.format_exc())

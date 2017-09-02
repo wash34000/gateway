@@ -125,22 +125,28 @@ def main():
                                  led_service.in_authorized_mode)
 
     plugin_controller = PluginController(web_interface)
-    plugin_controller.start_plugins()
 
     web_interface.set_plugin_controller(plugin_controller)
     gateway_api.set_plugin_controller(plugin_controller)
 
-    metrics_collector = MetricsCollector(master_communicator, gateway_api, plugin_controller.metric_intervals)
+    metrics_collector = MetricsCollector(master_communicator, gateway_api)
     metrics_controller = MetricsController(plugin_controller, metrics_collector)
-    metrics_controller.start()
+
+    metrics_collector.set_metrics_controller(metrics_controller)
+    metrics_collector.set_plugin_intervals(plugin_controller.metric_intervals)
+
     metrics_controller.add_receiver(metrics_controller.receiver)
     metrics_controller.add_receiver(web_interface.distribute_metric)
-    metrics_collector.start()
 
+    plugin_controller.set_metrics_controller(metrics_controller)
     web_interface.set_metrics_collector(metrics_collector)
     web_interface.set_metrics_controller(metrics_controller)
 
     web_service = WebService(web_interface)
+
+    plugin_controller.start_plugins()
+    metrics_controller.start()
+    metrics_collector.start()
     web_service.start()
 
     led_service.set_led('stat2', True)

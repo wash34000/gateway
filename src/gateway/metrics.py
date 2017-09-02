@@ -16,6 +16,7 @@
 The metrics module collects and re-distributes metric data
 """
 
+import re
 import time
 import copy
 import logging
@@ -46,6 +47,7 @@ class MetricsController(object):
         self._plugin_controller = plugin_controller
         self._metrics_collector = metrics_collector
         self.definitions = {}
+        self._definition_filters = {'source': {}, 'metric_type': {}}
         self._metrics_cache = {}
         self._collector_plugins = None
         self._collector_openmotics = None
@@ -92,6 +94,29 @@ class MetricsController(object):
 
     def add_receiver(self, receiver):
         self._openmotics_receivers.append(receiver)
+
+    def get_filter(self, filter_type, metric_filter):
+        if metric_filter in self._definition_filters[filter_type]:
+            return self._definition_filters[filter_type][metric_filter]
+        if filter_type == 'source':
+            results = []
+            re_filter = None if metric_filter is None else re.compile(metric_filter)
+            for source in self.definitions:
+                if re_filter is None or re_filter.match(source):
+                    results.append(source)
+            results = set(results)
+            self._definition_filters['source'][metric_filter] = results
+            return results
+        if filter_type == 'metric_type':
+            results = []
+            re_filter = None if metric_filter is None else re.compile(metric_filter)
+            for source in self.definitions:
+                for metric_type in self.definitions[source]:
+                    if re_filter is None or re_filter.match(metric_type):
+                        results.append(metric_type)
+            results = set(results)
+            self._definition_filters['metric_type'][metric_filter] = results
+            return results
 
     def _load_definitions(self):
         # {

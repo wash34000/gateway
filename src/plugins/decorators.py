@@ -15,7 +15,6 @@
 """ The OpenMotics plugin decorators. """
 
 import cherrypy
-import re
 
 
 def om_expose(method=None, auth=True, content_type='application/json'):
@@ -148,8 +147,8 @@ def om_metric_receive(source=None, metric_type=None, interval=None):
     """
     def decorate(method):
         """ The decorated method. """
-        method.metric_receive = {'source': None if source is None else re.compile(source),
-                                 'metric_type': None if metric_type is None else re.compile(metric_type),
+        method.metric_receive = {'source': source,
+                                 'metric_type': metric_type,
                                  'interval': interval}
         return method
     return decorate
