@@ -15,8 +15,6 @@
 """
 The users module contains the UserController class, which provides methods for creating
 and authenticating users.
-
-@author: fryckbos
 """
 
 import sqlite3
@@ -57,7 +55,8 @@ class UserController(object):
         self.create_user(self.__config['username'].lower(), self.__config['password'], "admin",
                          True)
 
-    def __hash(self, password):
+    @staticmethod
+    def __hash(password):
         """ Hash the password using sha1. """
         sha = hashlib.sha1()
         sha.update("OpenMotics")
@@ -77,7 +76,7 @@ class UserController(object):
 
         self.__cursor.execute("INSERT OR REPLACE INTO users (username, password, role, enabled) "
                               "VALUES (?, ?, ?, ?);",
-                              (username, self.__hash(password), role, int(enabled)))
+                              (username, UserController.__hash(password), role, int(enabled)))
 
     def get_usernames(self):
         """ Get all usernames.
@@ -132,8 +131,8 @@ class UserController(object):
             timeout = self.__token_timeout
 
         for _ in self.__cursor.execute("SELECT id FROM users WHERE username = ? AND "
-                                         "password = ? AND enabled = ?;",
-                                         (username, self.__hash(password), 1)):
+                                       "password = ? AND enabled = ?;",
+                                       (username, UserController.__hash(password), 1)):
             return self.__gen_token(username, time.time() + timeout)
 
         return None

@@ -15,8 +15,6 @@
 """
 The GatewayApi defines high level functions, these are used by the interface
 and call the master_api to complete the actions.
-
-@author: fryckbos
 """
 
 import os
