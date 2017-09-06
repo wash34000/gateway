@@ -55,7 +55,7 @@ class MetricsCollector(object):
                                'error': 120,
                                'counter': 30,
                                'energy': 5,
-                               'energy_analytics': 60}
+                               'energy_analytics': 300}
         self.intervals = {metric_type: 900 for metric_type in self._min_intervals}
         self._plugin_intervals = {metric_type: [] for metric_type in self._min_intervals}
         self._websocket_intervals = {metric_type: {} for metric_type in self._min_intervals}
