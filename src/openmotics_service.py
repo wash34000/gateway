@@ -24,6 +24,7 @@ import os
 import time
 import threading
 
+os.environ['PYTHON_EGG_CACHE'] = '/tmp/.eggs-cache/'
 for egg in os.listdir('/opt/openmotics/eggs'):
     if egg.endswith('.egg'):
         sys.path.insert(0, '/opt/openmotics/eggs/{0}'.format(egg))
