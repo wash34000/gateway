@@ -42,6 +42,7 @@ from gateway.gateway_api import GatewayApi
 from gateway.users import UserController
 from gateway.metrics import MetricsController
 from gateway.metrics_collector import MetricsCollector
+from gateway.config import ConfigurationController
 
 from bus.led_service import LedService
 
@@ -92,14 +93,15 @@ def main():
 
     defaults = {'username': config.get('OpenMotics', 'cloud_user'),
                 'password': config.get('OpenMotics', 'cloud_pass')}
-
-    user_controller = UserController(constants.get_user_database_file(), defaults, 3600)
-
-    led_service = LedService()
-
     controller_serial_port = config.get('OpenMotics', 'controller_serial')
     passthrough_serial_port = config.get('OpenMotics', 'passthrough_serial')
     power_serial_port = config.get('OpenMotics', 'power_serial')
+    gateway_uuid = config.get('OpenMotics', 'uuid')
+
+    user_controller = UserController(constants.get_config_database_file(), defaults, 3600)
+    config_controller = ConfigurationController(constants.get_config_database_file())
+
+    led_service = LedService()
 
     controller_serial = Serial(controller_serial_port, 115200)
     passthrough_serial = Serial(passthrough_serial_port, 115200)
@@ -123,7 +125,7 @@ def main():
 
     web_interface = WebInterface(user_controller, gateway_api,
                                  constants.get_scheduling_database_file(), maintenance_service,
-                                 led_service.in_authorized_mode)
+                                 led_service.in_authorized_mode, config_controller)
 
     plugin_controller = PluginController(web_interface)
 
@@ -131,9 +133,9 @@ def main():
     gateway_api.set_plugin_controller(plugin_controller)
 
     metrics_collector = MetricsCollector(master_communicator, gateway_api)
-    metrics_controller = MetricsController(plugin_controller, metrics_collector)
+    metrics_controller = MetricsController(plugin_controller, metrics_collector, config_controller, gateway_uuid)
 
-    metrics_collector.set_metrics_controller(metrics_controller)
+    metrics_collector.set_controllers(metrics_controller, plugin_controller)
     metrics_collector.set_plugin_intervals(plugin_controller.metric_intervals)
 
     metrics_controller.add_receiver(metrics_controller.receiver)

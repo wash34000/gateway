@@ -19,7 +19,7 @@ This module collects OpenMotics metrics and makes them available to the MetricsC
 import time
 import logging
 import master.master_api as master_api
-from threading import Thread
+from threading import Thread, Event
 from collections import deque
 from master.master_communicator import BackgroundConsumer
 from serial_utils import CommunicationTimedOutException
@@ -43,12 +43,12 @@ class MetricsCollector(object):
         self._last_service_uptime = 0
         self._stopped = True
         self._metrics_controller = None
+        self._plugin_controller = None
         self._environment = {'inputs': {},
                              'outputs': {},
                              'sensors': {},
                              'pulse_counters': {}}
-        self._min_intervals = {'load_configuration': 900,
-                               'system': 60,
+        self._min_intervals = {'system': 60,
                                'output': 60,
                                'sensor': 5,
                                'thermostat': 30,
@@ -60,6 +60,9 @@ class MetricsCollector(object):
         self._plugin_intervals = {metric_type: [] for metric_type in self._min_intervals}
         self._websocket_intervals = {metric_type: {} for metric_type in self._min_intervals}
         self._cloud_intervals = {metric_type: 900 for metric_type in self._min_intervals}
+        self._sleepers = {metric_type: {'event': Event(),
+                                        'start': 0,
+                                        'end': 0} for metric_type in self._min_intervals}
 
         self._gateway_api = gateway_api
         self._metrics_queue = deque()
@@ -73,7 +76,7 @@ class MetricsCollector(object):
     def start(self):
         self._start = time.time()
         self._stopped = False
-        MetricsCollector._start_thread(self._load_environment_configurations, 'load_configuration')
+        MetricsCollector._start_thread(self._load_environment_configurations, 'load_configuration', 900)
         MetricsCollector._start_thread(self._run_system, 'system')
         MetricsCollector._start_thread(self._run_outputs, 'output')
         MetricsCollector._start_thread(self._run_sensors, 'sensor')
@@ -94,8 +97,9 @@ class MetricsCollector(object):
         except IndexError:
             pass
 
-    def set_metrics_controller(self, metrics_controller):
+    def set_controllers(self, metrics_controller, plugin_controller):
         self._metrics_controller = metrics_controller
+        self._plugin_controller = plugin_controller
 
     def set_cloud_interval(self, metric_type, interval):
         self._cloud_intervals[metric_type] = interval
@@ -138,6 +142,7 @@ class MetricsCollector(object):
         if len(self._websocket_intervals[metric_type]) > 0:
             interval = min(interval, *[max(min_interval, i) for i in self._websocket_intervals[metric_type].values()])
         self.intervals[metric_type] = interval
+        self.maybe_wake_earlier(metric_type, interval)
 
     def _enqueue_metrics(self, metric_type, values, tags, timestamp):
         """
@@ -152,19 +157,43 @@ class MetricsCollector(object):
                                         'tags': tags,
                                         'values': values})
 
+    def maybe_wake_earlier(self, metric_type, duration):
+        if metric_type in self._sleepers:
+            current_end = self._sleepers[metric_type]['end']
+            new_end = self._sleepers[metric_type]['start'] + duration
+            self._sleepers[metric_type]['end'] = min(current_end, new_end)
+
+    def time_manager(self):
+        while True:
+            for sleep_data in self._sleepers.itervalues():
+                if not sleep_data['event'].is_set() and sleep_data['end'] < time.time():
+                    sleep_data['event'].set()
+            time.sleep(0.1)
+
     @staticmethod
-    def _start_thread(workload, name):
-        thread = Thread(target=workload, args=(name,))
+    def _start_thread(workload, name, interval=None):
+        args = [name]
+        if interval is not None:
+            args.append(interval)
+        thread = Thread(target=workload, args=args)
         thread.setName('Metric controller ({0})'.format(name))
         thread.daemon = True
         thread.start()
         return thread
 
-    def _pause(self, start, metric_type):
-        interval = self.intervals[metric_type]
-        elapsed = time.time() - start
-        sleep = max(0.1, interval - elapsed)
-        time.sleep(sleep)
+    def _pause(self, start, metric_type, interval=None):
+        if interval is None:
+            interval = self.intervals[metric_type]
+        if metric_type in self._sleepers:
+            sleep_data = self._sleepers[metric_type]
+            sleep_data['start'] = start
+            sleep_data['end'] = start + interval
+            sleep_data['event'].clear()
+            sleep_data['event'].wait()
+        else:
+            elapsed = time.time() - start
+            sleep = max(0.1, interval - elapsed)
+            time.sleep(sleep)
 
     def _on_output(self, data):
         try:
@@ -261,6 +290,39 @@ class MetricsCollector(object):
                                       timestamp=now)
             except Exception as ex:
                 MetricsCollector._log('Error sending system data: {0}'.format(ex))
+            if self._metrics_controller is not None:
+                try:
+                    self._enqueue_metrics(metric_type=metric_type,
+                                          tags={'name': 'gateway',
+                                                'section': 'plugins'},
+                                          values={'queue_length': len(self._metrics_controller.metrics_queue_plugins)},
+                                          timestamp=now)
+                    self._enqueue_metrics(metric_type=metric_type,
+                                          tags={'name': 'gateway',
+                                                'section': 'openmotics'},
+                                          values={'queue_length': len(self._metrics_controller.metrics_queue_openmotics)},
+                                          timestamp=now)
+                    for plugin in self._plugin_controller.metric_receiver_queues.keys():
+                        self._enqueue_metrics(metric_type=metric_type,
+                                              tags={'name': 'gateway',
+                                                    'section': plugin},
+                                              values={'queue_length': len(self._plugin_controller.metric_receiver_queues[plugin])},
+                                              timestamp=now)
+                    for key in set(self._metrics_controller.inbound_rates.keys()) | set(self._metrics_controller.outbound_rates.keys()):
+                        self._enqueue_metrics(metric_type=metric_type,
+                                              tags={'name': 'gateway',
+                                                    'section': key},
+                                              values={'metrics_in': self._metrics_controller.inbound_rates.get(key, 0),
+                                                      'metrics_out': self._metrics_controller.outbound_rates.get(key, 0)},
+                                              timestamp=now)
+                    for mtype in self.intervals:
+                        self._enqueue_metrics(metric_type=metric_type,
+                                              tags={'name': 'gateway',
+                                                    'section': mtype},
+                                              values={'metric_interval': self.intervals[mtype]},
+                                              timestamp=now)
+                except Exception as ex:
+                    LOGGER.error('Could not collect metric metrics: {0}'.format(ex))
             if self._stopped:
                 return
             self._pause(start, metric_type)
@@ -416,7 +478,8 @@ class MetricsCollector(object):
                     self._enqueue_metrics(metric_type=metric_type,
                                           values={'pulses': int(counter['count'])},
                                           tags={'name': counter['name'],
-                                                'input': counter['input']},
+                                                'input': counter['input'],
+                                                'id': 'P{0}'.format(counter_id)},
                                           timestamp=now)
             if self._stopped:
                 return
@@ -549,7 +612,7 @@ class MetricsCollector(object):
                 return
             self._pause(start, metric_type)
 
-    def _load_environment_configurations(self, metric_type):
+    def _load_environment_configurations(self, name, interval):
         while not self._stopped:
             start = time.time()
             # Inputs
@@ -622,7 +685,7 @@ class MetricsCollector(object):
                 MetricsCollector._log('Error while loading pulse counter configurations: {0}'.format(ex))
             if self._stopped:
                 return
-            self._pause(start, metric_type)
+            self._pause(start, name, interval)
 
     def get_definitions(self):
         """

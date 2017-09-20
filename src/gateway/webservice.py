@@ -115,6 +115,7 @@ def timestamp_filter():
     if "fe_time" in cherrypy.request.params:
         del cherrypy.request.params["fe_time"]
 
+
 cherrypy.tools.timestampFilter = cherrypy.Tool('before_handler', timestamp_filter)
 
 
@@ -129,6 +130,7 @@ def error_unexpected():
     cherrypy.response.headers["Content-Type"] = "application/json"
     cherrypy.response.status = 500
     return json.dumps({"success": False, "msg": "unknown_error"})
+
 
 cherrypy.config.update({'error_page.404': error_generic,
                         'error_page.401': error_generic,
@@ -197,7 +199,7 @@ class WebInterface(object):
     """ This class defines the web interface served by cherrypy. """
 
     def __init__(self, user_controller, gateway_api, scheduling_filename, maintenance_service,
-                 authorized_check):
+                 authorized_check, config_controller):
         """ Constructor for the WebInterface.
 
         :param user_controller: used to create and authenticate users.
@@ -210,12 +212,14 @@ class WebInterface(object):
         :type maintenance_service: master.maintenance.MaintenanceService
         :param authorized_check: check if the gateway is in authorized mode.
         :type authorized_check: () -> bool
+        :param config_controller: Configuration controller
+        :type config_controller: gateway.config.ConfigController
         """
         self.__user_controller = user_controller
+        self.__config_controller = config_controller
         self.__gateway_api = GatewayApiWrapper(gateway_api)
 
-        self.__scheduling_controller = SchedulingController(scheduling_filename,
-                                                            self.__exec_scheduled_action)
+        self.__scheduling_controller = SchedulingController(scheduling_filename, self.__exec_scheduled_action)
         self.__scheduling_controller.start()
 
         self.__maintenance_service = maintenance_service
@@ -857,7 +861,7 @@ class WebInterface(object):
         :param token: Authentication token
         :type token: str
         :param status: whether the leds should be on (true) or off (false).
-        :type status: bool
+        :type status: str
         """
         self.check_token(token)
         return self.__wrap(
@@ -2507,7 +2511,7 @@ class WebInterface(object):
         if func_name in WebInterface.__dict__:
             try:
                 WebInterface.__dict__[func_name](**kwargs)
-            except:
+            except Exception:
                 LOGGER.exception("Exception while executing scheduled action")
         else:
             LOGGER.error("Could not find function WebInterface.%s", func_name)
@@ -2569,8 +2573,7 @@ class WebInterface(object):
         :type package_data: multipart/form-data encoded byte string.
         """
         self.check_token(token)
-        return self.__wrap(lambda: self.__plugin_controller.install_plugin(
-                                                                md5, package_data.file.read()))
+        return self.__wrap(lambda: self.__plugin_controller.install_plugin(md5, package_data.file.read()))
 
     @cherrypy.expose
     def remove_plugin(self, token, name):
@@ -2583,6 +2586,31 @@ class WebInterface(object):
         """
         self.check_token(token)
         return self.__wrap(lambda: self.__plugin_controller.remove_plugin(name))
+
+    @cherrypy.expose
+    def get_settings(self, token, settings):
+        """
+        Gets a given setting
+        """
+        self.check_token(token)
+        values = {}
+        for setting in json.loads(settings):
+            value = self.__config_controller.get_setting(setting)
+            if value is not None:
+                values[setting] = value
+        return self.__success(values=values)
+
+    @cherrypy.expose
+    def set_setting(self, token, setting, value):
+        """
+        Configures a setting
+        """
+        self.check_token(token)
+        if setting not in ['cloud_enabled', 'cloud_metrics_energy', 'cloud_metrics_pulse_counters']:
+            return self.__error('Setting {0} cannot be set'.format(setting))
+        value = json.loads(value)
+        self.__config_controller.set_setting(setting, value)
+        return self.__success()
 
     @cherrypy.expose
     def self_test(self, token):
