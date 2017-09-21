@@ -58,11 +58,13 @@ class ConfigurationController(object):
         if 'settings' not in tables:
             self.__execute("CREATE TABLE settings (id INTEGER PRIMARY KEY, setting TEXT UNIQUE, data TEXT);")
         for setting, default_setting in {'cloud_enabled': True,
+                                         'cloud_endpoint': 'cloud.openmotics.com',
+                                         'cloud_endpoint_metrics': 'portal/metrics/',
+                                         'cloud_metrics_types': ['energy', 'counter'],
                                          'cloud_metrics_enabled|energy': True,
                                          'cloud_metrics_enabled|counter': True,
                                          'cloud_metrics_batch_size': 50,
-                                         'cloud_metrics_min_interval': 300,
-                                         'cloud_metrics_types': ['energy', 'counter']}.iteritems():
+                                         'cloud_metrics_min_interval': 300}.iteritems():
             if self.get_setting(setting) is None:
                 self.set_setting(setting, default_setting)
 

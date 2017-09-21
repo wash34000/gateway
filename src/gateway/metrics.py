@@ -217,8 +217,8 @@ class MetricsController(object):
         cloud_batch_size = self._config_controller.get_setting('cloud_metrics_batch_size')
         cloud_min_interval = self._config_controller.get_setting('cloud_metrics_min_interval')
         metrics_endpoint = 'https://{0}/{1}?uuid={2}'.format(
-            self._config_controller.get_setting('cloud_endpoint', 'cloud.openmotics.com'),
-            self._config_controller.get_setting('cloud_endpoint_metrics', 'portal/metrics/'),
+            self._config_controller.get_setting('cloud_endpoint'),
+            self._config_controller.get_setting('cloud_endpoint_metrics'),
             self._gateway_uuid
         )
         timestamp = int(metric['timestamp'] - metric['timestamp'] % self.cloud_intervals.get(metric_type, 900))
