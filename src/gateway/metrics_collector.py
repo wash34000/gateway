@@ -85,6 +85,10 @@ class MetricsCollector(object):
         MetricsCollector._start_thread(self._run_pulsecounters, 'counter')
         MetricsCollector._start_thread(self._run_power_openmotics, 'energy')
         MetricsCollector._start_thread(self._run_power_openmotics_analytics, 'energy_analytics')
+        thread = Thread(target=self._sleep_manager)
+        thread.setName('Metric collector - Sleep manager')
+        thread.daemon = True
+        thread.start()
 
     def stop(self):
         self._stopped = True
@@ -163,7 +167,7 @@ class MetricsCollector(object):
             new_end = self._sleepers[metric_type]['start'] + duration
             self._sleepers[metric_type]['end'] = min(current_end, new_end)
 
-    def time_manager(self):
+    def _sleep_manager(self):
         while True:
             for sleep_data in self._sleepers.itervalues():
                 if not sleep_data['event'].is_set() and sleep_data['end'] < time.time():
@@ -176,7 +180,7 @@ class MetricsCollector(object):
         if interval is not None:
             args.append(interval)
         thread = Thread(target=workload, args=args)
-        thread.setName('Metric controller ({0})'.format(name))
+        thread.setName('Metric collector ({0})'.format(name))
         thread.daemon = True
         thread.start()
         return thread
@@ -301,6 +305,14 @@ class MetricsCollector(object):
                                           tags={'name': 'gateway',
                                                 'section': 'openmotics'},
                                           values={'queue_length': len(self._metrics_controller.metrics_queue_openmotics)},
+                                          timestamp=now)
+                    self._enqueue_metrics(metric_type=metric_type,
+                                          tags={'name': 'gateway',
+                                                'section': 'cloud'},
+                                          values={'cloud_queue_length': self._metrics_controller.cloud_stats['queue'],
+                                                  'cloud_buffer_length': self._metrics_controller.cloud_stats['buffer'],
+                                                  'cloud_time_ago_send': self._metrics_controller.cloud_stats['time_ago_send'],
+                                                  'cloud_time_ago_try': self._metrics_controller.cloud_stats['time_ago_try']},
                                           timestamp=now)
                     for plugin in self._plugin_controller.metric_receiver_queues.keys():
                         self._enqueue_metrics(metric_type=metric_type,
@@ -723,6 +735,22 @@ class MetricsCollector(object):
                           'unit': ''},
                          {'name': 'metric_interval',
                           'description': 'Interval on which OM metrics are collected',
+                          'type': 'gauge',
+                          'unit': 'seconds'},
+                         {'name': 'cloud_queue_length',
+                          'description': 'Length of the memory queue of metrics to be send to the Cloud',
+                          'type': 'gauge',
+                          'unit': ''},
+                         {'name': 'cloud_buffer_length',
+                          'description': 'Length of the on-disk buffer of metrics to be send to the Cloud',
+                          'type': 'gauge',
+                          'unit': ''},
+                         {'name': 'cloud_time_ago_send',
+                          'description': 'Time passed since the last time metrics were send to the Cloud',
+                          'type': 'gauge',
+                          'unit': 'seconds'},
+                         {'name': 'cloud_time_ago_try',
+                          'description': 'Time passed since the last try sending metrics to the Cloud',
                           'type': 'gauge',
                           'unit': 'seconds'}]},
             # inputs / events

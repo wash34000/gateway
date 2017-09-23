@@ -73,6 +73,10 @@ class MetricsController(object):
         self._cloud_last_try = 0
         self._cloud_buffer_path = constants.get_buffer_file('metrics')
         self._gateway_uuid = gateway_uuid
+        self.cloud_stats = {'queue': 0,
+                            'buffer': 0,
+                            'time_ago_send': 0,
+                            'time_ago_try': 0}
 
         self.cloud_intervals = {}
         for metric_type in self._metrics_collector.intervals:
@@ -253,6 +257,12 @@ class MetricsController(object):
         time_ago_try = int(now - self._cloud_last_try)
         send_buffer = len(buffer_queue) > 0 and time_ago_send > 30 * 60 and time_ago_try > cloud_min_interval
         send_queue = len(self._cloud_queue) > 0 and (len(self._cloud_queue) > cloud_batch_size or time_ago_try > cloud_min_interval)
+
+        self.cloud_stats['queue'] = len(self._cloud_queue)
+        self.cloud_stats['buffer'] = len(buffer_queue)
+        self.cloud_stats['time_ago_send'] = time_ago_send
+        self.cloud_stats['time_ago_try'] = time_ago_try
+
         if send_buffer is True or send_queue is True:
             self._cloud_last_try = now
             try:
