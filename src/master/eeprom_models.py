@@ -24,13 +24,13 @@ from eeprom_controller import EepromModel, EepromAddress, EepromId, EepromString
                               EepromEnum, EextByte, EextString, EextBool
 
 
-def page_per_module(module_size, start_bank, start_offset, field_size):
+def page_per_module(module_size, start_page, start_offset, field_size):
     """ 
-    Returns a function that takes an id and returns an address (bank, offset). The bank is
-    calculated by adding the module id to the start_bank and the offset is calculated by adding the
+    Returns a function that takes an id and returns an address (page, offset). The page is
+    calculated by adding the module id to the start_page and the offset is calculated by adding the
     start_offset to the field_size times the id in the module (the offset id).
     """
-    return per_module(module_size, lambda mid, iid: (start_bank + mid, start_offset + field_size * iid))
+    return per_module(module_size, lambda mid, iid: (start_page + mid, start_offset + field_size * iid))
 
 
 def per_module(module_size, func):
@@ -40,9 +40,9 @@ def per_module(module_size, func):
 
     :param module_size: Size of the module
     :param func: function that takes two ids (module id, offset id) and returns an address.
-    :returns: function that takes an id and returns an address (bank, offset).
+    :returns: function that takes an id and returns an address (page, offset).
     """
-    return lambda mid: func(mid / module_size, mid % module_size)
+    return lambda iid: func(iid / module_size, iid % module_size)
 
 
 def gen_address(start_page, ids_per_page, extra_offset):
@@ -59,9 +59,9 @@ def get_led_functions():
     """ Get dict describing the enum for the CAN LED functions. """
     led_functions = {}
     for brightness in range(16):
-        for function in [(0, 'On'), (16, 'Fast blink'), (32, 'Medium blink'), (48, 'Slow blink'), (64, 'Swinging')]:
+        for functionality in [(0, 'On'), (16, 'Fast blink'), (32, 'Medium blink'), (48, 'Slow blink'), (64, 'Swinging')]:
             for inverted in [(0, ''), (128, ' Inverted')]:
-                led_functions[brightness + function[0] + inverted[0]] = "%s B%d%s" % (function[1], brightness + 1, inverted[1])
+                led_functions[brightness + functionality[0] + inverted[0]] = "%s B%d%s" % (functionality[1], brightness + 1, inverted[1])
     return led_functions
 
 
@@ -83,7 +83,7 @@ class OutputConfiguration(EepromModel):
     outputs is 8 times the number of output modules (eeprom address 0, 2).
     """
     id = EepromId(240, address=EepromAddress(0, 2, 1), multiplier=8)
-    module_type = EepromString(1, lambda mid: (33 + mid / 8, 0), read_only=True)
+    module_type = EepromString(1, lambda mid: (33 + mid / 8, 0), read_only=True, shared=True)
     name = EepromString(16, page_per_module(8, 33, 20, 16))
     timer = EepromWord(page_per_module(8, 33, 4, 2))
     floor = EepromByte(page_per_module(8, 33, 157, 1))
@@ -104,13 +104,13 @@ class InputConfiguration(EepromModel):
     inputs is 8 times the number of input modules (eeprom address 0, 1).
     """
     id = EepromId(240, address=EepromAddress(0, 1, 1), multiplier=8)
-    module_type = EepromString(1, lambda mid: (2 + mid / 8, 0), read_only=True)
+    module_type = EepromString(1, lambda mid: (2 + mid / 8, 0), read_only=True, shared=True)
     name = EepromString(8, per_module(8, lambda mid, iid: (115 + (mid / 4), 64 * (mid % 4) + 8 * iid)))
     action = EepromByte(page_per_module(8, 2, 4, 1))
     basic_actions = EepromActions(15, page_per_module(8, 2, 12, 30))
     invert = EepromByte(lambda mid: (32, mid))
     room = EextByte()
-    can = EepromString(1, lambda mid: (2 + mid / 8, 252), read_only=True)
+    can = EepromString(1, lambda mid: (2 + mid / 8, 252), read_only=True, shared=True)
 
 
 class CanLedConfiguration(EepromModel):
@@ -136,7 +136,7 @@ class ShutterConfiguration(EepromModel):
     """ Models a shutter. The maximum number of shutters is 120 (30 modules), the actual number of
     shutters is 4 times the number of shutter modules (eeprom address 0, 3).
     """
-    id = EepromId(240, address=EepromAddress(0, 3, 1), multiplier=4)
+    id = EepromId(120, address=EepromAddress(0, 3, 1), multiplier=4)
     timer_up = EepromByte(page_per_module(4, 33, 177, 2))
     timer_down = EepromByte(page_per_module(4, 33, 178, 2))
     up_down_config = EepromByte(page_per_module(4, 33, 185, 1))
@@ -357,7 +357,7 @@ class RTD10CoolingConfiguration(EepromModel):
     ventilation_speed_output = EepromByte(lambda mid: (218, mid))
     ventilation_speed_value = EepromByte(lambda mid: (218, 64 + mid))
     mode_output = EepromByte(lambda mid: (219, mid))
-    mode_value = EepromByte(lambda mid: (219, 264 + mid))
+    mode_value = EepromByte(lambda mid: (219, 64 + mid))
     on_off_output = EepromByte(lambda mid: (219, 100 + mid))
     poke_angle_output = EepromByte(lambda mid: (220, mid))
     poke_angle_value = EepromByte(lambda mid: (220, 64 + mid))

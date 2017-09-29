@@ -82,6 +82,9 @@ class GatewayApiWrapper(object):
     """
 
     def __init__(self, gateway_api):
+        """
+        :type gateway_api: gateway.gateway_api.GatewayApi
+        """
         self.__gateway_api = gateway_api
 
     def __getattr__(self, name):
@@ -142,15 +145,15 @@ class WebInterface(object):
         """ Constructor for the WebInterface.
 
         :param user_controller: used to create and authenticate users.
-        :type user_controller: instance of :class`UserController`.
+        :type user_controller: gateway.users.UserController
         :param gateway_api: used to communicate with the master.
-        :type gateway_api: instance of :class`GatewayApi`.
+        :type gateway_api: gateway.gateway_api.GatewayApi
         :param scheduling_filename: the filename of the scheduling controller database.
-        :type scheduling_filename: string.
+        :type scheduling_filename: basestring
         :param maintenance_service: used when opening maintenance mode.
-        :type maintenance_service: instance of :class`MaintenanceService`.
+        :type maintenance_service: master.maintenance.MaintenanceService
         :param authorized_check: check if the gateway is in authorized mode.
-        :type authorized_check: function (called without arguments).
+        :type authorized_check: () => bool
         """
         self.__user_controller = user_controller
         self.__gateway_api = GatewayApiWrapper(gateway_api)

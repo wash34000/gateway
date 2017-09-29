@@ -15,13 +15,12 @@
 """
 Contains the EEPROM extensions. This is used to store data that does not fit into the master. The
 data is stored in a sqlite database on the gateways filesystem.
-
-@author: fryckbos
 """
 
 import sqlite3
 import os.path
 from threading import Lock
+
 
 class EepromExtension(object):
     """ Provides the interface for reading and writing EepromExtension objects to the sqlite
@@ -68,8 +67,8 @@ class EepromExtension(object):
 
         with self.__lock:
             for row in self.__cursor.execute("SELECT value FROM extensions WHERE "
-                                              "model=? AND model_id=? AND field=?",
-                                              (eeprom_model_name, model_id, field_name)):
+                                             "model=? AND model_id=? AND field=?",
+                                             (eeprom_model_name, model_id, field_name)):
                 return field_type.decode(row[0])
 
         return field_type.default_value()
