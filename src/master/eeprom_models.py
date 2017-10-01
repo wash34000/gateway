@@ -13,9 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """
-Contains the EepromModels.
-
-@author: fryckbos
+Contains the EepromModels
 """
 
 from eeprom_controller import EepromModel, EepromAddress, EepromId, EepromString, \
@@ -79,7 +77,8 @@ class RoomConfiguration(EepromModel):
 
 
 class OutputConfiguration(EepromModel):
-    """ Models an output. The maximum number of inputs is 240 (30 modules), the actual number of
+    """
+    Models an output. The maximum number of inputs is 240 (30 modules), the actual number of
     outputs is 8 times the number of output modules (eeprom address 0, 2).
     """
     id = EepromId(240, address=EepromAddress(0, 2, 1), multiplier=8)
@@ -100,7 +99,8 @@ class OutputConfiguration(EepromModel):
 
 
 class InputConfiguration(EepromModel):
-    """ Models an input. The maximum number of inputs is 240 (30 modules), the actual number of
+    """
+    Models an input. The maximum number of inputs is 240 (30 modules), the actual number of
     inputs is 8 times the number of input modules (eeprom address 0, 1).
     """
     id = EepromId(240, address=EepromAddress(0, 1, 1), multiplier=8)
@@ -114,7 +114,8 @@ class InputConfiguration(EepromModel):
 
 
 class CanLedConfiguration(EepromModel):
-    """ Models a CAN LED configuration. Each configuration defines the CAN LED that will be driven
+    """
+    Models a CAN LED configuration. Each configuration defines the CAN LED that will be driven
     and the the function to drive the LED. The LED function will be activated when:
     the number of lights on is 0 (id = 0), the number of lights on is greater than 0 (id = 1), ...,
     the number of lights on is greater than 14 (id = 15), the number of outputs on is 0 (id = 16),
@@ -133,7 +134,8 @@ class CanLedConfiguration(EepromModel):
 
 
 class ShutterConfiguration(EepromModel):
-    """ Models a shutter. The maximum number of shutters is 120 (30 modules), the actual number of
+    """
+    Models a shutter. The maximum number of shutters is 120 (30 modules), the actual number of
     shutters is 4 times the number of shutter modules (eeprom address 0, 3).
     """
     id = EepromId(120, address=EepromAddress(0, 3, 1), multiplier=4)
