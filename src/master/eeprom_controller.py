@@ -276,15 +276,17 @@ class EepromModel(object):
 
     def __init__(self, id=None):
         self.check_id(id)
-        self._id = id
+        self.id = id
         self._fields = {'eeprom': [], 'eext': []}
         self._loaded_fields = []
-        address_cache = self.__class__.get_address_cache(self._id)
+        address_cache = self.__class__.get_address_cache(self.id)
         for field_name, field_type in self.__class__.get_field_dict(include_eeprom=True).iteritems():
-            setattr(self, field_name, EepromDataContainer(field_type, address_cache[field_name]))
+            setattr(self, '_{0}'.format(field_name), EepromDataContainer(field_type, address_cache[field_name]))
+            self._add_property(field_name)
             self._fields['eeprom'].append(field_name)
         for field_name, field_type in self.__class__.get_field_dict(include_eext=True).iteritems():
-            setattr(self, field_name, EextDataContainer(field_type))
+            setattr(self, '_{0}'.format(field_name), EextDataContainer(field_type))
+            self._add_property(field_name)
             self._fields['eext'].append(field_name)
 
     def load_from_system(self, eeprom_file, eeprom_extension, fields=None):
@@ -293,22 +295,22 @@ class EepromModel(object):
         :type eeprom_extension: master.eeprom_extension.EepromExtension
         :type fields: list of basestring
         """
+        expected_fields = [] if fields is None else fields[:]
         self._loaded_fields = []
         addresses = []
         for field_name in self._fields['eeprom']:
             if fields is not None:
-                if field_name not in fields:
+                if field_name not in expected_fields:
                     continue
-                fields.remove(field_name)
-            field = getattr(self, field_name)
+            field = getattr(self, '_{0}'.format(field_name))
             addresses.append(field.address)
         data = eeprom_file.read(addresses)
         for field_name in self._fields['eeprom']:
             if fields is not None:
-                if field_name not in fields:
+                if field_name not in expected_fields:
                     continue
-                fields.remove(field_name)
-            field = getattr(self, field_name)
+                expected_fields.remove(field_name)
+            field = getattr(self, '_{0}'.format(field_name))
             if field.composed:
                 field.load_bytes([data[address] for address in field.addresses])
             else:
@@ -316,15 +318,15 @@ class EepromModel(object):
             self._loaded_fields.append(field_name)
         for field_name in self._fields['eext']:
             if fields is not None:
-                if field_name not in fields:
+                if field_name not in expected_fields:
                     continue
-                fields.remove(field_name)
-            data = eeprom_extension.read_data(self.__class__.__name__, self._id, field_name)
+                expected_fields.remove(field_name)
+            data = eeprom_extension.read_data(self.__class__.__name__, self.id, field_name)
             if data is not None:
-                field = getattr(self, field_name)
+                field = getattr(self, '_{0}'.format(field_name))
                 field.load_bytes(data)
                 self._loaded_fields.append(field_name)
-        if fields is not None and len(fields) > 0:
+        if len(expected_fields) > 0:
             raise RuntimeError('Unknown fields: {0}'.format(', '.join(fields)))
 
     def get_eeprom_data(self):
@@ -332,7 +334,7 @@ class EepromModel(object):
         for field_name in self._fields['eeprom']:
             if field_name not in self._loaded_fields:
                 continue
-            field = getattr(self, field_name)
+            field = getattr(self, '_{0}'.format(field_name))
             if field.composed:
                 data += field.get_bytes()
             else:
@@ -344,8 +346,8 @@ class EepromModel(object):
         for field_name in self._fields['eext']:
             if field_name not in self._loaded_fields:
                 continue
-            field = getattr(self, field_name)
-            data.append((self.get_name(), self._id, field_name, field.get_bytes()))
+            field = getattr(self, '_{0}'.format(field_name))
+            data.append((self.get_name(), field_name, self.id, field.get_bytes()))
         return data
 
     @classmethod
@@ -364,9 +366,9 @@ class EepromModel(object):
         self._loaded_fields = []
         for field_name, value in data_dict.iteritems():
             self._loaded_fields.append(field_name)
-            if not hasattr(self, field_name):
-                raise TypeError('Field {0} is not available'.format(field_name))
-            field = getattr(self, field_name)
+            if not hasattr(self, '_{0}'.format(field_name)):
+                raise TypeError('Field `{0}` is not available'.format(field_name))
+            field = getattr(self, '_{0}'.format(field_name))
             field.deserialize(value)
 
     def to_dict(self):
@@ -374,12 +376,24 @@ class EepromModel(object):
 
     def serialize(self):
         data = {}
-        if self._id is not None:
-            data['id'] = self._id
+        if self.id is not None:
+            data['id'] = self.id
         for field_name in self._loaded_fields:
-            field = getattr(self, field_name)
+            field = getattr(self, '_{0}'.format(field_name))
             data[field] = field.serialize()
         return data
+
+    def _add_property(self, field_name):
+        setattr(self.__class__, field_name, property(lambda s: s._get_property(field_name),
+                                                     lambda s, v: s._set_property(field_name, v)))
+
+    def _get_property(self, field_name):
+        field = getattr(self, '_{0}'.format(field_name))
+        return field.serialize()
+
+    def _set_property(self, field_name, value):
+        field = getattr(self, '_{0}'.format(field_name))
+        field.deserialize(value)
 
     @classmethod
     def get_fields(cls, include_id=False, include_eeprom=False, include_eext=False):
@@ -471,8 +485,8 @@ class EepromModel(object):
             if address.length != 1:
                 raise TypeError('Length of max id address in EepromModel {0} is not 1'.format(cls.get_name()))
             eeprom_data = eeprom_file.read([address])
-            max_id = ord(eeprom_data[address].bytes[0])
-            return max_id * eeprom_id.get_multiplier()
+            amount_of_modules = ord(eeprom_data[address].bytes[0])
+            return amount_of_modules * eeprom_id.get_multiplier() - 1
 
 
 class EepromId(object):
@@ -662,8 +676,8 @@ class EepromDataType(object):
 
 def remove_tail(byte_str, delimiter='\xff'):
     """ Returns a new string where all instance of the delimiter at the end of the string are removed. """
-    while byte_str[-1] == delimiter:
-        byte_str = byte_str[:-1]
+    while len(byte_str) > len(delimiter) and byte_str[-len(delimiter):] == delimiter:
+        byte_str = byte_str[:-len(delimiter)]
     return byte_str
 
 
@@ -936,7 +950,7 @@ class EextDataContainer(object):
         return self._data
 
     def serialize(self):
-        return self._data_type.decode(self._data.bytes)
+        return self._data_type.decode(self._data)
 
     def deserialize(self, data):
         self._data = self._data_type.encode(data)

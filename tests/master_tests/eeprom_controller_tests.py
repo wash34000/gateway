@@ -233,11 +233,10 @@ class EepromControllerTest(unittest.TestCase):
 
     def test_read_all_fields(self):
         """ Test read_all with a field. """
-        controller = get_eeprom_controller_dummy(
-                        ["", "", "",
-                         "\x00" * 4 + "helloworld\x01\x00\x02" + "\x00" * 239,
-                         "\x00" * 4 + "secondpage\x02\x00\x03" + "\x00" * 239,
-                         "\x00" * 4 + "anotherone\x04\x00\x05" + "\x00" * 239])
+        controller = get_eeprom_controller_dummy(["", "", "",
+                                                  "\x00" * 4 + "helloworld\x01\x00\x02" + "\x00" * 239,
+                                                  "\x00" * 4 + "secondpage\x02\x00\x03" + "\x00" * 239,
+                                                  "\x00" * 4 + "anotherone\x04\x00\x05" + "\x00" * 239])
 
         models = controller.read_all(Model5, ["name", "link"])
 
@@ -261,13 +260,13 @@ class EepromControllerTest(unittest.TestCase):
     def test_get_max_id(self):
         """ Test get_max_id. """
         controller = get_eeprom_controller_dummy(["\x05" + "\x00" * 254])
-        self.assertEquals(10, Model4.get_max_id(controller._eeprom_file))
+        self.assertEquals(9, Model4.get_max_id(controller._eeprom_file))
 
         controller = get_eeprom_controller_dummy(["\x10" + "\x00" * 254])
-        self.assertEquals(32, Model4.get_max_id(controller._eeprom_file))
+        self.assertEquals(31, Model4.get_max_id(controller._eeprom_file))
 
         controller = get_eeprom_controller_dummy([])
-        self.assertEquals(10, Model1.get_max_id(controller._eeprom_file))
+        self.assertEquals(9, Model1.get_max_id(controller._eeprom_file))
 
         try:
             Model2.get_max_id(controller._eeprom_file)
@@ -382,7 +381,7 @@ class EepromControllerTest(unittest.TestCase):
     def test_ext_only(self):
         """ Test writing and reading a model that only has an id and EextDataType fields. """
         controller = get_eeprom_controller_dummy([])
-        ids = Model9.id.get_max_id()
+        ids = Model9.id.get_max_id() + 1
 
         batch = []
         for i in range(ids):
@@ -396,7 +395,7 @@ class EepromControllerTest(unittest.TestCase):
         for i in range(ids):
             self.assertEquals(i, models[i].id)
             self.assertEquals('Room {0}'.format(i), models[i].name)
-            self.assertEquals(i/2, models[i].floor)
+            self.assertEquals(i / 2, models[i].floor)
 
 
 class MasterCommunicator(object):
@@ -936,8 +935,8 @@ class EepromModelTest(unittest.TestCase):
         self.assertEquals(2, data[2].address.length)
         self.assertEquals("\x02\x00", data[2].bytes)
 
-    def test_to_eeprom_data_readonly(self):
-        """ Test to_eeprom_data with a read only field. """
+    def test_get_eeprom_data_readonly(self):
+        """ Test get_eeprom_data with a read only field. """
         class RoModel(EepromModel):
             """ Dummy model. """
             id = EepromId(10)
@@ -945,7 +944,7 @@ class EepromModelTest(unittest.TestCase):
             other = EepromByte((0, 0), read_only=True)
 
         model = RoModel.deserialize({'id': 1, 'name': u"test", 'other': 4})
-        data = model.to_eeprom_data()
+        data = model.get_eeprom_data()
 
         self.assertEquals(1, len(data))
         self.assertEquals(1, data[0].address.bank)
@@ -964,13 +963,13 @@ class CompositeDataTypeTest(unittest.TestCase):
 
         self.assertEquals(2, len(addresses))
 
-        self.assertEquals(1, addresses[0].bank)
-        self.assertEquals(2, addresses[0].offset)
-        self.assertEquals(1, addresses[0].length)
+        self.assertEquals(1, addresses['one'].bank)
+        self.assertEquals(2, addresses['one'].offset)
+        self.assertEquals(1, addresses['one'].length)
 
-        self.assertEquals(1, addresses[1].bank)
-        self.assertEquals(3, addresses[1].offset)
-        self.assertEquals(1, addresses[1].length)
+        self.assertEquals(1, addresses['two'].bank)
+        self.assertEquals(3, addresses['two'].offset)
+        self.assertEquals(1, addresses['two'].length)
 
     def test_get_addresses_id(self):
         """ Test get_addresses with an id. """
@@ -980,13 +979,13 @@ class CompositeDataTypeTest(unittest.TestCase):
 
         self.assertEquals(2, len(addresses))
 
-        self.assertEquals(1, addresses[0].bank)
-        self.assertEquals(15, addresses[0].offset)
-        self.assertEquals(1, addresses[0].length)
+        self.assertEquals(1, addresses['one'].bank)
+        self.assertEquals(15, addresses['one'].offset)
+        self.assertEquals(1, addresses['one'].length)
 
-        self.assertEquals(1, addresses[1].bank)
-        self.assertEquals(25, addresses[1].offset)
-        self.assertEquals(1, addresses[1].length)
+        self.assertEquals(1, addresses['two'].bank)
+        self.assertEquals(25, addresses['two'].offset)
+        self.assertEquals(1, addresses['two'].length)
 
     def test_get_name(self):
         """ Test get_name. """
