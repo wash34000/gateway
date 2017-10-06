@@ -243,11 +243,11 @@ class MetricsCollector(object):
                         level = 0
                     tags = {'id': output_id,
                             'name': output_name}
-                    for key in ['module_type', 'output_type', 'floor']:
+                    for key in ['module_type', 'type', 'floor']:
                         if key in outputs[output_id]:
                             tags[key] = outputs[output_id][key]
                     self._enqueue_metrics(metric_type=metric_type,
-                                          values={'output': int(level)},
+                                          values={'value': int(level)},
                                           tags=tags,
                                           timestamp=now)
         except Exception as ex:
@@ -264,11 +264,11 @@ class MetricsCollector(object):
                 return
             input_name = inputs[input_id]['name']
             if input_name != '':
-                tags = {'event_type': 'input',
+                tags = {'type': 'input',
                         'id': input_id,
                         'name': input_name}
-                self._enqueue_metrics(metric_type='events',
-                                      values={'event': True},
+                self._enqueue_metrics(metric_type='event',
+                                      values={'value': True},
                                       tags=tags,
                                       timestamp=now)
         except Exception as ex:
@@ -409,7 +409,7 @@ class MetricsCollector(object):
                               'output0': float(thermostat['output0']),
                               'output1': float(thermostat['output1']),
                               'mode': int(thermostat['mode']),
-                              'thermostat_type': 'tbs' if thermostat['sensor_nr'] == 240 else 'normal',
+                              'type': 'tbs' if thermostat['sensor_nr'] == 240 else 'normal',
                               'automatic': thermostat['automatic'],
                               'current_setpoint': thermostat['csetp']}
                     if thermostat['outside'] is not None:
@@ -450,8 +450,8 @@ class MetricsCollector(object):
                              'C': 'CAN',
                              'L': 'OLED'}
                     self._enqueue_metrics(metric_type=metric_type,
-                                          values={'amount': int(count)},
-                                          tags={'module_type': types[om_module[0]],
+                                          values={'value': int(count)},
+                                          tags={'type': types[om_module[0]],
                                                 'id': om_module,
                                                 'name': '{0} {1}'.format(types[om_module[0]], om_module)},
                                           timestamp=now)
@@ -488,7 +488,7 @@ class MetricsCollector(object):
                 counter = counters_data[counter_id]
                 if counter['name'] != '':
                     self._enqueue_metrics(metric_type=metric_type,
-                                          values={'pulses': int(counter['count'])},
+                                          values={'value': int(counter['count'])},
                                           tags={'name': counter['name'],
                                                 'input': counter['input'],
                                                 'id': 'P{0}'.format(counter_id)},
@@ -553,10 +553,10 @@ class MetricsCollector(object):
                                                       'current': device['current'],
                                                       'frequency': device['frequency'],
                                                       'power': device['power'],
-                                                      'power_counter': float(device['counter']),
-                                                      'power_counter_day': device['counter_day'],
-                                                      'power_counter_night': device['counter_night']},
-                                              tags={'brand': 'openmotics',
+                                                      'counter': float(device['counter']),
+                                                      'counter_day': device['counter_day'],
+                                                      'counter_night': device['counter_night']},
+                                              tags={'type': 'openmotics',
                                                     'id': device_id,
                                                     'name': device['name']},
                                               timestamp=now)
@@ -592,7 +592,7 @@ class MetricsCollector(object):
                                                           'voltage': result[str(i)]['voltage'][j]},
                                                   tags={'id': device_id.format(i),
                                                         'name': name,
-                                                        'domain': 'time'},
+                                                        'type': 'time'},
                                                   timestamp=timestamp)
                             timestamp += 0.250  # Stretch actual data by 1000 for visualtisation purposes
                     result = self._gateway_api.get_energy_frequency(power_module['id'])
@@ -613,7 +613,7 @@ class MetricsCollector(object):
                                                           'voltage_phase': result[str(i)]['voltage'][1][j]},
                                                   tags={'id': device_id.format(i),
                                                         'name': name,
-                                                        'domain': 'frequency'},
+                                                        'type': 'frequency'},
                                                   timestamp=timestamp)
                             timestamp += 0.250  # Stretch actual data by 1000 for visualtisation purposes
             except CommunicationTimedOutException:
@@ -754,16 +754,16 @@ class MetricsCollector(object):
                           'type': 'gauge',
                           'unit': 'seconds'}]},
             # inputs / events
-            {'type': 'events',
-             'tags': ['event_type', 'id', 'name'],
-             'metrics': [{'name': 'event',
+            {'type': 'event',
+             'tags': ['type', 'id', 'name'],
+             'metrics': [{'name': 'value',
                           'description': 'OpenMotics event',
                           'type': 'gauge',
                           'unit': 'event'}]},
             # output
             {'type': 'output',
-             'tags': ['id', 'name', 'module_type', 'output_type', 'floor'],
-             'metrics': [{'name': 'output',
+             'tags': ['id', 'name', 'module_type', 'type', 'floor'],
+             'metrics': [{'name': 'value',
                           'description': 'Output state',
                           'type': 'gauge',
                           'unit': ''}]},
@@ -809,7 +809,7 @@ class MetricsCollector(object):
                           'description': 'Thermostat mode',
                           'type': 'gauge',
                           'unit': ''},
-                         {'name': 'thermostat_type',
+                         {'name': 'type',
                           'description': 'Thermostat type',
                           'type': 'gauge',
                           'unit': ''},
@@ -831,64 +831,52 @@ class MetricsCollector(object):
                           'unit': 'degree C'}]},
             # error
             {'type': 'error',
-             'tags': ['module_type', 'id', 'name'],
-             'metrics': [{'name': 'amount',
+             'tags': ['type', 'id', 'name'],
+             'metrics': [{'name': 'value',
                           'description': 'Amount of errors',
                           'type': 'gauge',
                           'unit': ''}]},
             # counter
             {'type': 'counter',
              'tags': ['name', 'input'],
-             'metrics': [{'name': 'pulses',
+             'metrics': [{'name': 'value',
                           'description': 'Number of received pulses',
                           'type': 'gauge',
                           'unit': ''}]},
             # energy
             {'type': 'energy',
-             'tags': ['brand', 'id', 'name'],
+             'tags': ['type', 'id', 'name'],
              'metrics': [{'name': 'voltage',
                           'description': 'Current voltage',
                           'type': 'gauge',
                           'unit': 'V'},
-                         {'type': 'energy',
-                          'name': 'current',
+                         {'name': 'current',
                           'description': 'Current current',
                           'mtype': 'gauge',
-                          'unit': 'A',
-                          'tags': ['brand', 'id', 'name']},
-                         {'type': 'energy',
-                          'name': 'frequency',
+                          'unit': 'A'},
+                         {'name': 'frequency',
                           'description': 'Current frequency',
                           'mtype': 'gauge',
-                          'unit': 'Hz',
-                          'tags': ['brand', 'id', 'name']},
-                         {'type': 'energy',
-                          'name': 'power',
+                          'unit': 'Hz'},
+                         {'name': 'power',
                           'description': 'Current power consumption',
                           'mtype': 'gauge',
-                          'unit': 'W',
-                          'tags': ['brand', 'id', 'name']},
-                         {'type': 'energy',
-                          'name': 'power_counter',
+                          'unit': 'W'},
+                         {'name': 'counter',
                           'description': 'Total energy consumed',
                           'mtype': 'counter',
-                          'unit': 'Wh',
-                          'tags': ['brand', 'id', 'name']},
-                         {'type': 'energy',
-                          'name': 'power_counter_day',
+                          'unit': 'Wh'},
+                         {'name': 'counter_day',
                           'description': 'Total energy consumed during daytime',
                           'mtype': 'counter',
-                          'unit': 'Wh',
-                          'tags': ['brand', 'id', 'name']},
-                         {'type': 'energy',
-                          'name': 'power_counter_night',
+                          'unit': 'Wh'},
+                         {'name': 'counter_night',
                           'description': 'Total energy consumed during nighttime',
                           'mtype': 'counter',
-                          'unit': 'Wh',
-                          'tags': ['brand', 'id', 'name']}]},
+                          'unit': 'Wh'}]},
             # energy_analytics
             {'type': 'energy_analytics',
-             'tags': ['id', 'name', 'domain'],
+             'tags': ['id', 'name', 'type'],
              'metrics': [{'name': 'current',
                           'description': 'Time-based current',
                           'type': 'gauge',
