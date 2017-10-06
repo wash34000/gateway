@@ -920,20 +920,21 @@ class EepromModelTest(unittest.TestCase):
         data = model6.get_eeprom_data()
 
         self.assertEquals(3, len(data))
-        self.assertEquals(3, data[0].address.bank)
-        self.assertEquals(4, data[0].address.offset)
-        self.assertEquals(10, data[0].address.length)
-        self.assertEquals("test" + "\xff" * 6, data[0].bytes)
-
-        self.assertEquals(3, data[1].address.bank)
-        self.assertEquals(14, data[1].address.offset)
-        self.assertEquals(1, data[1].address.length)
-        self.assertEquals(str(chr(1)), data[1].bytes)
-
-        self.assertEquals(3, data[2].address.bank)
-        self.assertEquals(15, data[2].address.offset)
-        self.assertEquals(2, data[2].address.length)
-        self.assertEquals("\x02\x00", data[2].bytes)
+        for item in data:
+            if item.address.offset == 4:
+                self.assertEquals(3, item.address.bank)
+                self.assertEquals(10, item.address.length)
+                self.assertEquals("test" + "\xff" * 6, item.bytes)
+            elif item.address.offset == 14:
+                self.assertEquals(3, item.address.bank)
+                self.assertEquals(1, item.address.length)
+                self.assertEquals(str(chr(1)), item.bytes)
+            elif item.address.offset == 15:
+                self.assertEquals(3, item.address.bank)
+                self.assertEquals(2, item.address.length)
+                self.assertEquals("\x02\x00", item.bytes)
+            else:
+                self.assertFalse(True)
 
     def test_get_eeprom_data_readonly(self):
         """ Test get_eeprom_data with a read only field. """
@@ -941,7 +942,7 @@ class EepromModelTest(unittest.TestCase):
             """ Dummy model. """
             id = EepromId(10)
             name = EepromString(100, lambda id: (1, 2 + id))
-            other = EepromByte((0, 0), read_only=True)
+            other = EepromByte(lambda id: (2, 2 + id), read_only=True)
 
         model = RoModel.deserialize({'id': 1, 'name': u"test", 'other': 4})
         data = model.get_eeprom_data()

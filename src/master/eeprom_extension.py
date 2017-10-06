@@ -58,7 +58,7 @@ class EepromExtension(object):
         :type data: list of tuple[basestring, int, basestring, basestring]
         """
         for data_entry in data:
-            model_name, field_name, model_id, value = data_entry
+            model_name, model_id, field_name, value = data_entry
             model_id = 0 if model_id is None else model_id
             with self.__lock:
                 self.__cursor.execute("INSERT INTO extensions (model, model_id, field, value) "

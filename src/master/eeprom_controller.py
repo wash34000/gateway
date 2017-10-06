@@ -311,7 +311,7 @@ class EepromModel(object):
                     continue
                 expected_fields.remove(field_name)
             field = getattr(self, '_{0}'.format(field_name))
-            if field.composed:
+            if field.composed is True:
                 field.load_bytes([data[address] for address in field.addresses])
             else:
                 field.load_bytes(data[field.address])
@@ -325,7 +325,7 @@ class EepromModel(object):
             if data is not None:
                 field = getattr(self, '_{0}'.format(field_name))
                 field.load_bytes(data)
-                self._loaded_fields.append(field_name)
+            self._loaded_fields.append(field_name)
         if len(expected_fields) > 0:
             raise RuntimeError('Unknown fields: {0}'.format(', '.join(fields)))
 
@@ -335,10 +335,11 @@ class EepromModel(object):
             if field_name not in self._loaded_fields:
                 continue
             field = getattr(self, '_{0}'.format(field_name))
-            if field.composed:
-                data += field.get_bytes()
-            else:
-                data.append(field.get_bytes())
+            if field.read_only is False:
+                if field.composed is True:
+                    data += field.get_bytes()
+                else:
+                    data.append(field.get_bytes())
         return data
 
     def get_eext_data(self):
@@ -347,7 +348,7 @@ class EepromModel(object):
             if field_name not in self._loaded_fields:
                 continue
             field = getattr(self, '_{0}'.format(field_name))
-            data.append((self.get_name(), field_name, self.id, field.get_bytes()))
+            data.append((self.get_name(), self.id, field_name, field.get_bytes()))
         return data
 
     @classmethod
@@ -369,7 +370,7 @@ class EepromModel(object):
             if not hasattr(self, '_{0}'.format(field_name)):
                 raise TypeError('Field `{0}` is not available'.format(field_name))
             field = getattr(self, '_{0}'.format(field_name))
-            field.deserialize(value)
+            field.deserialize(value, check_writability=False)
 
     def to_dict(self):
         return self.serialize()
@@ -380,7 +381,7 @@ class EepromModel(object):
             data['id'] = self.id
         for field_name in self._loaded_fields:
             field = getattr(self, '_{0}'.format(field_name))
-            data[field] = field.serialize()
+            data[field_name] = field.serialize()
         return data
 
     def _add_property(self, field_name):
@@ -536,6 +537,7 @@ class CompositeDataType(object):
         self.data_types = data_types
         for data_type in self.data_types:
             data_type[1].read_only |= read_only
+        self.read_only = read_only
 
     def get_addresses(self, id, field_name):
         """ Get all EepromDataType addresses in the composite data type. """
@@ -562,6 +564,7 @@ class EepromDataContainer(object):
             self.addresses = []
             self._composed_data = {}
             self._composed_fields = []
+            self.read_only = data_type.read_only
             for data_type in data_type.data_types:
                 field_name, field_type = data_type
                 self._composed_fields.append(field_name)
@@ -572,12 +575,13 @@ class EepromDataContainer(object):
             self.address = address
             self._data = None
             self._data_type = data_type
+            self.read_only = data_type.read_only
 
     def load_bytes(self, data):
         """
         :type data: master.eeprom_controller.EepromData or list of master.eeprom_controller.EepromData
         """
-        if self.composed:
+        if self.composed is True:
             if not isinstance(data, list):
                 raise RuntimeError('Parameter `data` should be: list of EepromData')
             for item in data:
@@ -589,20 +593,22 @@ class EepromDataContainer(object):
             self._data = data
 
     def get_bytes(self):
-        if self.composed:
+        if self.composed is True:
             return [self._composed_data[field_name].get_bytes() for field_name in self._composed_fields]
         return self._data
 
     def serialize(self):
-        if self.composed:
+        if self.composed is True:
             return [self._composed_data[field_name].serialize() for field_name in self._composed_fields]
         return self._data_type.decode(self._data.bytes)
 
-    def deserialize(self, data):
-        if self.composed:
+    def deserialize(self, data, check_writability=True):
+        if self.composed is True:
             for i in xrange(len(data)):
-                self._composed_data[self._composed_fields[i]].deserialize(data[i])
+                self._composed_data[self._composed_fields[i]].deserialize(data[i], check_writability=check_writability)
         else:
+            if check_writability is True:
+                self._data_type.check_writable()
             self._data = EepromData(self.address, self._data_type.encode(data))
 
 
@@ -641,7 +647,7 @@ class EepromDataType(object):
         if self.read_only:
             raise TypeError('EepromDataType is not writable')
 
-    def get_address(self, id=None, field_name=None):
+    def get_address(self, id, field_name):
         """
         Calculate the address for this data type.
         :rtype: master.eeprom_controller.EepromAddress
@@ -649,11 +655,11 @@ class EepromDataType(object):
         length = self.get_length()
         if id is None:
             if self._addr_tuple is None:
-                raise TypeError('EepromDataType expects an id')
+                raise TypeError('EepromDataType `{0}` expects an id'.format(field_name))
             bank, address = self._addr_tuple
         else:
             if self._addr_func is None:
-                raise TypeError('EepromDataType did not expect an id')
+                raise TypeError('EepromDataType `{0}` did not expect an id'.format(field_name))
             bank, address = self._addr_func(id)
         return EepromAddress(bank, address, length, self._shared, field_name)
 
@@ -705,7 +711,6 @@ class EepromString(EepromDataType):
         return str(remove_tail(data))
 
     def encode(self, field):
-        self.check_writable()
         return append_tail(field, self._length)
 
     def get_length(self):
@@ -725,7 +730,6 @@ class EepromByte(EepromDataType):
         return ord(data[0])
 
     def encode(self, field):
-        self.check_writable()
         return str(chr(field))
 
     def get_length(self):
@@ -745,7 +749,6 @@ class EepromWord(EepromDataType):
         return ord(data[1]) * 256 + ord(data[0])
 
     def encode(self, field):
-        self.check_writable()
         return ''.join([chr(int(field) % 256), chr(int(field) / 256)])
 
     def get_length(self):
@@ -768,7 +771,6 @@ class EepromTemp(EepromDataType):
         return float(value) / 2 - 32
 
     def encode(self, field):
-        self.check_writable()
         if field is None:
             value = 255
         else:
@@ -798,7 +800,6 @@ class EepromSignedTemp(EepromDataType):
             return multiplier * float(value & 15) / 2.0
 
     def encode(self, field):
-        self.check_writable()
         if field < -7.5 or field > 7.5:
             raise ValueError('SignedTemp should be in [-7.5, 7.5], was {0}'.format(field))
 
@@ -829,7 +830,6 @@ class EepromTime(EepromDataType):
         return "{0:02d}:{1:02d}".format(hours, minutes)
 
     def encode(self, field):
-        self.check_writable()
         split = [int(x) for x in field.split(':')]
         if len(split) != 2:
             raise ValueError('Time is not in HH:MM format: {0}'.format(field))
@@ -855,7 +855,6 @@ class EepromCSV(EepromDataType):
         return ','.join([str(ord(b)) for b in remove_tail(data, '\xff')])
 
     def encode(self, field):
-        self.check_writable()
         actions = '' if len(field) == 0 else ''.join([chr(int(x)) for x in field.split(",")])
         return append_tail(actions, self._length, '\xff')
 
@@ -880,7 +879,6 @@ class EepromActions(EepromDataType):
         return ','.join([str(ord(b)) for b in remove_tail(data, '\xff\xff')])
 
     def encode(self, field):
-        self.check_writable()
         actions = '' if len(field) == 0 else ''.join([chr(int(x)) for x in field.split(',')])
         return append_tail(actions, 2 * self._length, '\xff\xff')
 
@@ -901,7 +899,6 @@ class EepromIBool(EepromDataType):
         return ord(data[0]) < 255
 
     def encode(self, field):
-        self.check_writable()
         value = 0 if field is True else 255
         return str(chr(value))
 
@@ -926,7 +923,6 @@ class EepromEnum(EepromDataType):
         return 'UNKNOWN'
 
     def encode(self, field):
-        self.check_writable()
         for key, value in self._enum_values.iteritems():
             if field == value:
                 return str(chr(key))
@@ -950,9 +946,12 @@ class EextDataContainer(object):
         return self._data
 
     def serialize(self):
+        if self._data is None:
+            return self._data_type.default_value()
         return self._data_type.decode(self._data)
 
-    def deserialize(self, data):
+    def deserialize(self, data, check_writability=True):
+        _ = check_writability
         self._data = self._data_type.encode(data)
 
 
