@@ -84,12 +84,6 @@ class GatewayApi(object):
         self.__shutter_status = ShutterStatus()
 
         self.__master_communicator.register_consumer(
-                BackgroundConsumer(master_api.output_list(), 0, self.__update_outputs, True)
-        )
-        self.__master_communicator.register_consumer(
-                BackgroundConsumer(master_api.input_list(), 0, self.__update_inputs)
-        )
-        self.__master_communicator.register_consumer(
                 BackgroundConsumer(master_api.module_initialize(), 0, self.__update_modules)
         )
         self.__master_communicator.register_consumer(
@@ -490,7 +484,7 @@ class GatewayApi(object):
                                                                  {'id': i}))
         return outputs
 
-    def __update_outputs(self, ol_output):
+    def on_outputs(self, ol_output):
         """ Update the OutputStatus when an OL is received. """
         on_outputs = ol_output['outputs']
 
@@ -779,7 +773,7 @@ class GatewayApi(object):
 
     # Input functions
 
-    def __update_inputs(self, api_data):
+    def on_inputs(self, api_data):
         """ Update the InputStatus with data from an IL message. """
         data_set = (api_data['input'], api_data['output'])
         self.__input_status.add_data(data_set)

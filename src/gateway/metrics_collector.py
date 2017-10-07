@@ -18,10 +18,8 @@ This module collects OpenMotics metrics and makes them available to the MetricsC
 
 import time
 import logging
-import master.master_api as master_api
 from threading import Thread, Event
 from collections import deque
-from master.master_communicator import BackgroundConsumer
 from serial_utils import CommunicationTimedOutException
 
 LOGGER = logging.getLogger("openmotics")
@@ -32,10 +30,8 @@ class MetricsCollector(object):
     The Metrics Collector collects OpenMotics metrics and makes them available.
     """
 
-    def __init__(self, master_communicator, gateway_api):
+    def __init__(self, gateway_api):
         """
-        :param master_communicator: Master communicator
-        :type master_communicator: master.master_communicator.MasterCommunicator
         :param gateway_api: Gateway API
         :type gateway_api: gateway.gateway_api.GatewayApi
         """
@@ -66,12 +62,6 @@ class MetricsCollector(object):
 
         self._gateway_api = gateway_api
         self._metrics_queue = deque()
-        master_communicator.register_consumer(
-            BackgroundConsumer(master_api.output_list(), 0, self._on_output, True)
-        )
-        master_communicator.register_consumer(
-            BackgroundConsumer(master_api.input_list(), 0, self._on_input)
-        )
 
     def start(self):
         self._start = time.time()
@@ -199,7 +189,7 @@ class MetricsCollector(object):
             sleep = max(0.1, interval - elapsed)
             time.sleep(sleep)
 
-    def _on_output(self, data):
+    def on_output(self, data):
         try:
             on_outputs = {entry[0]: entry[1] for entry in data['outputs']}
             outputs = self._environment['outputs']
@@ -253,7 +243,7 @@ class MetricsCollector(object):
         except Exception as ex:
             MetricsCollector._log('Error processing outputs {0}: {1}'.format(output_ids, ex))
 
-    def _on_input(self, data):
+    def on_input(self, data):
         self._process_input(data['input'])
 
     def _process_input(self, input_id):

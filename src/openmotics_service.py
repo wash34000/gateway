@@ -47,8 +47,9 @@ from gateway.config import ConfigurationController
 from bus.led_service import LedService
 
 from master.maintenance import MaintenanceService
-from master.master_communicator import MasterCommunicator
+from master.master_communicator import MasterCommunicator, BackgroundConsumer
 from master.passthrough import PassthroughService
+from master import master_api
 
 from power.power_communicator import PowerCommunicator
 from power.power_controller import PowerController
@@ -132,7 +133,7 @@ def main():
     web_interface.set_plugin_controller(plugin_controller)
     gateway_api.set_plugin_controller(plugin_controller)
 
-    metrics_collector = MetricsCollector(master_communicator, gateway_api)
+    metrics_collector = MetricsCollector(gateway_api)
     metrics_controller = MetricsController(plugin_controller, metrics_collector, config_controller, gateway_uuid)
 
     metrics_collector.set_controllers(metrics_controller, plugin_controller)
@@ -146,6 +147,21 @@ def main():
     web_interface.set_metrics_controller(metrics_controller)
 
     web_service = WebService(web_interface)
+
+    def _on_output(*args, **kwargs):
+        metrics_collector.on_output(*args, **kwargs)
+        gateway_api.on_outputs(*args, **kwargs)
+    
+    def _on_input(*args, **kwargs):
+        metrics_collector.on_input(*args, **kwargs)
+        gateway_api.on_inputs(*args, **kwargs)
+
+    master_communicator.register_consumer(
+        BackgroundConsumer(master_api.output_list(), 0, _on_output, True)
+    )
+    master_communicator.register_consumer(
+        BackgroundConsumer(master_api.input_list(), 0, _on_input)
+    )
 
     plugin_controller.start_plugins()
     metrics_controller.start()
