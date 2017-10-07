@@ -657,7 +657,7 @@ class MetricsCollector(object):
                                                                                'd': 'dimmer',
                                                                                'D': 'dimmer'}[config['module_type']],
                                                                'floor': config['floor'],
-                                                               'output_type': 'relay' if config['type'] == 0 else 'light'}
+                                                               'type': 'relay' if config['type'] == 0 else 'light'}
                 for output_id in self._environment['outputs'].keys():
                     if output_id not in ids:
                         del self._environment['outputs'][output_id]
