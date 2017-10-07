@@ -682,7 +682,7 @@ class EepromDataType(object):
 
 def remove_tail(byte_str, delimiter='\xff'):
     """ Returns a new string where all instance of the delimiter at the end of the string are removed. """
-    while len(byte_str) > len(delimiter) and byte_str[-len(delimiter):] == delimiter:
+    while len(byte_str) >= len(delimiter) and byte_str[-len(delimiter):] == delimiter:
         byte_str = byte_str[:-len(delimiter)]
     return byte_str
 
