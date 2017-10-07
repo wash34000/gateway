@@ -15,8 +15,6 @@
 """
 The GatewayApi defines high level functions, these are used by the interface
 and call the master_api to complete the actions.
-
-@author: fryckbos
 """
 
 import os
@@ -85,12 +83,6 @@ class GatewayApi(object):
         self.__thermostat_status = None
         self.__shutter_status = ShutterStatus()
 
-        self.__master_communicator.register_consumer(
-                BackgroundConsumer(master_api.output_list(), 0, self.__update_outputs, True)
-        )
-        self.__master_communicator.register_consumer(
-                BackgroundConsumer(master_api.input_list(), 0, self.__update_inputs)
-        )
         self.__master_communicator.register_consumer(
                 BackgroundConsumer(master_api.module_initialize(), 0, self.__update_modules)
         )
@@ -493,7 +485,7 @@ class GatewayApi(object):
                                                                  {'id': i}))
         return outputs
 
-    def __update_outputs(self, ol_output):
+    def on_outputs(self, ol_output):
         """ Update the OutputStatus when an OL is received. """
         on_outputs = ol_output['outputs']
 
@@ -782,7 +774,7 @@ class GatewayApi(object):
 
     # Input functions
 
-    def __update_inputs(self, api_data):
+    def on_inputs(self, api_data):
         """ Update the InputStatus with data from an IL message. """
         data_set = (api_data['input'], api_data['output'])
         self.__input_status.add_data(data_set)
@@ -1126,7 +1118,7 @@ class GatewayApi(object):
     def get_full_backup(self):
         """ Get a backup (tar) of the master eeprom and the sqlite databases.
 
-        :returns: Tar containing 4 files: master.eep, users.db, scheduled.db, power.db and
+        :returns: Tar containing 4 files: master.eep, config.db, scheduled.db, power.db and
         eeprom_extensions.db as a string of bytes.
         """
         import shutil
@@ -1153,14 +1145,12 @@ class GatewayApi(object):
             with open("%s/master.eep" % tmp_dir, "w") as eeprom_file:
                 eeprom_file.write(self.get_master_backup())
 
-            backup_sqlite_db(constants.get_user_database_file(),
-                             "%s/users.db" % tmp_dir)
-            backup_sqlite_db(constants.get_scheduling_database_file(),
-                             "%s/scheduled.db" % tmp_dir)
-            backup_sqlite_db(constants.get_power_database_file(),
-                             "%s/power.db" % tmp_dir)
-            backup_sqlite_db(constants.get_eeprom_extension_database_file(),
-                             "%s/eeprom_extensions.db" % tmp_dir)
+            for filename, source in {'config.db': constants.get_config_database_file(),
+                                     'scheduled.db': constants.get_scheduling_database_file(),
+                                     'power.db': constants.get_power_database_file(),
+                                     'eeprom_extensions.db': constants.get_eeprom_extension_database_file()}.iteritems():
+                target = "{0}/{1}".format(tmp_dir, filename)
+                backup_sqlite_db(source, target)
 
             retcode = subprocess.call("cd %s; tar cf backup.tar *" % tmp_dir, shell=True)
             if retcode != 0:
@@ -1176,7 +1166,7 @@ class GatewayApi(object):
         """ Restore a full backup containing the master eeprom and the sqlite databases.
 
         :param data: The eeprom backup to restore.
-        :type data: tar containing 4 files: master.eep, users.db, scheduled.db, power.db and\
+        :type data: tar containing 4 files: master.eep, config.db, scheduled.db, power.db and\
         eeprom_extensions.db as a string of bytes.
         :returns: dict with 'output' key.
         """
@@ -1197,14 +1187,14 @@ class GatewayApi(object):
                 eeprom_content = eeprom_file.read()
                 self.master_restore(eeprom_content)
 
-            shutil.copyfile("%s/users.db" % tmp_dir,
-                            constants.get_user_database_file())
-            shutil.copyfile("%s/scheduled.db" % tmp_dir,
-                            constants.get_scheduling_database_file())
-            shutil.copyfile("%s/power.db" % tmp_dir,
-                            constants.get_power_database_file())
-            shutil.copyfile("%s/eeprom_extensions.db" % tmp_dir,
-                            constants.get_eeprom_extension_database_file())
+            for filename, target in {'config.db': constants.get_config_database_file(),
+                                     'users.db': constants.get_config_database_file(),
+                                     'scheduled.db': constants.get_scheduling_database_file(),
+                                     'power.db': constants.get_power_database_file(),
+                                     'eeprom_extensions.db': constants.get_eeprom_extension_database_file()}.iteritems():
+                source = "{0}/{1}".format(tmp_dir, filename)
+                if os.path.exists(source):
+                    shutil.copyfile(source, constants.get_config_database_file())
 
             return {'output': 'Restore complete'}
 

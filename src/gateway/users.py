@@ -15,15 +15,13 @@
 """
 The users module contains the UserController class, which provides methods for creating
 and authenticating users.
-
-@author: fryckbos
 """
 
 import sqlite3
 import hashlib
 import uuid
 import time
-import os.path
+from random import randint
 
 
 class UserController(object):
@@ -38,26 +36,35 @@ class UserController(object):
         :param token_timeout: the number of seconds a token is valid.
         """
         self.__config = config
-        new_database = not os.path.exists(db_filename)
-        self.__connection = sqlite3.connect(db_filename, detect_types=sqlite3.PARSE_DECLTYPES,
-                                            check_same_thread=False, isolation_level=None)
+        self.__connection = sqlite3.connect(db_filename,
+                                            detect_types=sqlite3.PARSE_DECLTYPES,
+                                            check_same_thread=False,
+                                            isolation_level=None)
         self.__cursor = self.__connection.cursor()
         self.__token_timeout = token_timeout
         self.__tokens = {}
-        if new_database:
-            self.__create_tables()
+        self.__check_tables()
 
-    def __create_tables(self):
-        """ Create the users and tokens table,
-        populate the users table with the OpenMotics cloud credentials.
-        """
-        self.__cursor.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT UNIQUE, "
-                              "password TEXT, role TEXT, enabled INTEGER);")
         # Create the user for the cloud
-        self.create_user(self.__config['username'].lower(), self.__config['password'], "admin",
-                         True)
+        self.create_user(self.__config['username'].lower(), self.__config['password'], "admin", True)
 
-    def __hash(self, password):
+    def __execute(self, *args, **kwargs):
+        try:
+            return self.__cursor.execute(*args, **kwargs)
+        except sqlite3.OperationalError:
+            time.sleep(randint(1, 20) / 10.0)
+            return self.__cursor.execute(*args, **kwargs)
+
+    def __check_tables(self):
+        """
+        Creates tables and execute migrations
+        """
+        tables = [table[0] for table in self.__execute("SELECT name FROM sqlite_master WHERE type='table';")]
+        if 'users' not in tables:
+            self.__execute("CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT UNIQUE, password TEXT, role TEXT, enabled INTEGER);")
+
+    @staticmethod
+    def __hash(password):
         """ Hash the password using sha1. """
         sha = hashlib.sha1()
         sha.update("OpenMotics")
@@ -75,9 +82,8 @@ class UserController(object):
         """
         username = username.lower()
 
-        self.__cursor.execute("INSERT OR REPLACE INTO users (username, password, role, enabled) "
-                              "VALUES (?, ?, ?, ?);",
-                              (username, self.__hash(password), role, int(enabled)))
+        self.__execute("INSERT OR REPLACE INTO users (username, password, role, enabled) VALUES (?, ?, ?, ?);",
+                       (username, UserController.__hash(password), role, int(enabled)))
 
     def get_usernames(self):
         """ Get all usernames.
@@ -85,7 +91,7 @@ class UserController(object):
         :returns: a list of strings.
         """
         usernames = []
-        for row in self.__cursor.execute("SELECT username FROM users;"):
+        for row in self.__execute("SELECT username FROM users;"):
             usernames.append(row[0])
         return usernames
 
@@ -99,7 +105,7 @@ class UserController(object):
         if self.get_role(username) == "admin" and self.__get_num_admins() == 1:
             raise Exception("Cannot delete last admin account")
         else:
-            self.__cursor.execute("DELETE FROM users WHERE username = ?;", (username,))
+            self.__execute("DELETE FROM users WHERE username = ?;", (username,))
 
             to_remove = []
             for token in self.__tokens:
@@ -111,7 +117,7 @@ class UserController(object):
 
     def __get_num_admins(self):
         """ Get the number of admin users in the system. """
-        for row in self.__cursor.execute("SELECT count(*) FROM users WHERE role = ?", ("admin", )):
+        for row in self.__execute("SELECT count(*) FROM users WHERE role = ?", ("admin", )):
             return row[0]
 
         return 0
@@ -131,9 +137,8 @@ class UserController(object):
         if timeout is None:
             timeout = self.__token_timeout
 
-        for _ in self.__cursor.execute("SELECT id FROM users WHERE username = ? AND "
-                                         "password = ? AND enabled = ?;",
-                                         (username, self.__hash(password), 1)):
+        for _ in self.__execute("SELECT id FROM users WHERE username = ? AND password = ? AND enabled = ?;",
+                                (username, UserController.__hash(password), 1)):
             return self.__gen_token(username, time.time() + timeout)
 
         return None
@@ -146,8 +151,7 @@ class UserController(object):
         """ Get the role for a certain user. Returns None is user was not found. """
         username = username.lower()
 
-        for row in self.__cursor.execute("SELECT role FROM users WHERE username = ?;",
-                                         (username,)):
+        for row in self.__execute("SELECT role FROM users WHERE username = ?;", (username,)):
             return row[0]
 
         return None
@@ -176,6 +180,5 @@ class UserController(object):
             return self.__tokens[token][1] >= time.time()
 
     def close(self):
-        """ Commit the changes and close the database connection. """
-        self.__connection.commit()
+        """ Cose the database connection. """
         self.__connection.close()
