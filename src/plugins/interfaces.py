@@ -18,6 +18,7 @@ import inspect
 
 from plugins.base import PluginException
 
+
 class PluginInterface(object):
     """ Definition of a plugin interface. Contains a name, version and a list
     of PluginMethods defined by the interface.
@@ -62,12 +63,12 @@ INTERFACES = [
     PluginInterface("webui", "1.0", [
         PluginMethod("html_index", True, [])
     ]),
-
     PluginInterface("config", "1.0", [
         PluginMethod("get_config_description", True, []),
         PluginMethod("get_config", True, []),
         PluginMethod("set_config", True, ["config"])
     ]),
+    PluginInterface("metrics", "1.0", [])
 ]
 
 
@@ -99,27 +100,26 @@ def check_interface(plugin, interface):
             raise PluginException("Plugin '%s' has no method named '%s'" %
                                   (plugin_name, method.name))
 
-        elif not (hasattr(plugin_method, 'exposed') and hasattr(plugin_method, 'auth') and
-                  hasattr(plugin_method, 'orig')):
+        if not (hasattr(plugin_method, 'exposed') and hasattr(plugin_method, 'auth') and
+                hasattr(plugin_method, 'orig')):
             raise PluginException("Plugin '%s' does not expose method '%s'" %
                                   (plugin_name, method.name))
 
-        elif plugin_method.auth != method.auth:
+        if plugin_method.auth != method.auth:
             raise PluginException("Plugin '%s': authentication for method '%s' does not match the "
                                   "interface authentication (%s required)." %
                                   (plugin_name, method.name, method.auth))
 
-        else:
-            argspec = inspect.getargspec(plugin_method.orig)
-            if len(argspec.args) == 0 or argspec.args[0] != "self":
-                raise PluginException("Method '%s' on plugin '%s' lacks 'self' as first argument."
-                                      % (method.name, plugin_name))
+        argspec = inspect.getargspec(plugin_method.orig)
+        if len(argspec.args) == 0 or argspec.args[0] != "self":
+            raise PluginException("Method '%s' on plugin '%s' lacks 'self' as first argument."
+                                  % (method.name, plugin_name))
 
-            if argspec.args[1:] != method.arguments:
-                raise PluginException(
-                        "Plugin '%s': the arguments for method '%s': %s do not match the interface"
-                        " arguments: %s." % (plugin_name, method.name, argspec.args[1:],
-                                             method.arguments))
+        if argspec.args[1:] != method.arguments:
+            raise PluginException(
+                    "Plugin '%s': the arguments for method '%s': %s do not match the interface"
+                    " arguments: %s." % (plugin_name, method.name, argspec.args[1:],
+                                         method.arguments))
 
 
 def check_interfaces(plugin):
@@ -147,3 +147,11 @@ def check_interfaces(plugin):
                                       (name, version))
             else:
                 check_interface(plugin, interface)
+
+
+def has_interface(plugin, name, version):
+    for interface in plugin.interfaces:
+        interface_name, interface_version = interface
+        if interface_name == name and interface_version == version:
+            return True
+    return False

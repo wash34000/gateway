@@ -15,12 +15,11 @@
 """
 The LedService class communicates over dbus with the led service
 and can be used to set the status of the leds or read the authorized mode.
-
-@author: fryckbos
 """
 
 import dbus
 import sys
+
 
 def check_for_errors(default_ret):
     """ Decorator that checks if dbus is active and catches exceptions.
@@ -30,9 +29,9 @@ def check_for_errors(default_ret):
         """ Wrapped function. """
         def new_func(self, *args, **kwargs):
             """ New function checks bus and catches exceptions. """
-            if self.bus == None:
-                self.bus = self.get_bus()
-            if self.bus != None:
+            if self.bus is None:
+                self.bus = LedService.get_bus()
+            if self.bus is not None:
                 try:
                     return func(self, *args, **kwargs)
                 except:
@@ -42,16 +41,19 @@ def check_for_errors(default_ret):
         return new_func
     return wrapped
 
+
 class LedService(object):
     """ Communicates with the leds service using dbus. """
 
     LEDS = ['uart4', 'uart5', 'vpn', 'stat1', 'stat2', 'alive', 'cloud']
 
     def __init__(self):
-        self.bus = self.get_bus()
+        self.bus = LedService.get_bus()
 
-    def get_bus(self):
-        """" Try to get the dbus interface to the led_service.
+    @staticmethod
+    def get_bus():
+        """"
+        Try to get the dbus interface to the led_service.
 
         :returns: None on Exception
         """
