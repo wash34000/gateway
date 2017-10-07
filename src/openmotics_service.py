@@ -25,9 +25,9 @@ import time
 import threading
 
 os.environ['PYTHON_EGG_CACHE'] = '/tmp/.eggs-cache/'
-for egg in os.listdir('/opt/openmotics/eggs'):
+for egg in os.listdir('/opt/openmotics/python/eggs'):
     if egg.endswith('.egg'):
-        sys.path.insert(0, '/opt/openmotics/eggs/{0}'.format(egg))
+        sys.path.insert(0, '/opt/openmotics/python/eggs/{0}'.format(egg))
 
 from serial import Serial
 from signal import signal, SIGTERM
