@@ -27,29 +27,28 @@ class EepromExtension(object):
     database. """
 
     def __init__(self, db_filename):
-        self.__lock = Lock()
+        self._lock = Lock()
         create_tables = not os.path.exists(db_filename)
-        self.__connection = sqlite3.connect(db_filename,
-                                            detect_types=sqlite3.PARSE_DECLTYPES,
-                                            check_same_thread=False,
-                                            isolation_level=None)
-        self.__cursor = self.__connection.cursor()
+        self._connection = sqlite3.connect(db_filename,
+                                           detect_types=sqlite3.PARSE_DECLTYPES,
+                                           check_same_thread=False,
+                                           isolation_level=None)
+        self._cursor = self._connection.cursor()
         if create_tables is True:
-            self.__create_tables()
+            self._create_tables()
 
-    def __create_tables(self):
+    def _create_tables(self):
         """ Create the extensions table. """
-        with self.__lock:
-            self.__cursor.execute("CREATE TABLE extensions (id INTEGER PRIMARY KEY, model TEXT, "
-                                  "model_id INTEGER, field TEXT, value TEXT, "
-                                  "UNIQUE(model, model_id, field) ON CONFLICT REPLACE);")
+        with self._lock:
+            self._cursor.execute("CREATE TABLE extensions (id INTEGER PRIMARY KEY, model TEXT, "
+                                 "model_id INTEGER, field TEXT, value TEXT, "
+                                 "UNIQUE(model, model_id, field) ON CONFLICT REPLACE);")
 
     def read_data(self, eeprom_model_name, model_id, field_name):
         model_id = 0 if model_id is None else model_id
-        with self.__lock:
-            for row in self.__cursor.execute("SELECT value FROM extensions WHERE "
-                                             "model=? AND model_id=? AND field=?",
-                                             (eeprom_model_name, model_id, field_name)):
+        with self._lock:
+            for row in self._cursor.execute("SELECT value FROM extensions WHERE model=? AND model_id=? AND field=?",
+                                            (eeprom_model_name, model_id, field_name)):
                 return row[0]
         return None
 
@@ -60,13 +59,12 @@ class EepromExtension(object):
         for data_entry in data:
             model_name, model_id, field_name, value = data_entry
             model_id = 0 if model_id is None else model_id
-            with self.__lock:
-                self.__cursor.execute("INSERT INTO extensions (model, model_id, field, value) "
-                                      "VALUES (?, ?, ?, ?)",
-                                      (model_name, model_id, field_name, value))
+            with self._lock:
+                self._cursor.execute("INSERT INTO extensions (model, model_id, field, value) VALUES (?, ?, ?, ?)",
+                                     (model_name, model_id, field_name, value))
 
     def close(self):
         """ Commit the changes and close the database connection. """
-        with self.__lock:
-            self.__connection.commit()
-            self.__connection.close()
+        with self._lock:
+            self._connection.commit()
+            self._connection.close()

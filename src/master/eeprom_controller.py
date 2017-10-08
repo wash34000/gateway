@@ -693,8 +693,7 @@ def append_tail(byte_str, length, delimiter='\xff'):
     """
     if len(byte_str) < length:
         return str(byte_str) + delimiter * ((length - len(byte_str)) / len(delimiter))
-    else:
-        return str(byte_str)
+    return str(byte_str)
 
 
 class EepromString(EepromDataType):

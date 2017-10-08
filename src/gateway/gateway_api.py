@@ -461,7 +461,7 @@ class GatewayApi(object):
 
         :type led_type: byte
         :param led_type: The module type: output/dimmer (0), input (1), sensor/temperatur (2).
-        :type led_id: bytes
+        :type led_id: byte
         :param led_id: The id of the output/input/sensor.
         :returns: dict with 'status' ('OK').
         """
