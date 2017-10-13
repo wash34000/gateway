@@ -146,7 +146,7 @@ def main():
     web_interface.set_metrics_collector(metrics_collector)
     web_interface.set_metrics_controller(metrics_controller)
 
-    web_service = WebService(web_interface)
+    web_service = WebService(web_interface, config_controller)
 
     def _on_output(*args, **kwargs):
         metrics_collector.on_output(*args, **kwargs)

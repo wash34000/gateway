@@ -303,7 +303,10 @@ class EepromModel(object):
                 if field_name not in expected_fields:
                     continue
             field = getattr(self, '_{0}'.format(field_name))
-            addresses.append(field.address)
+            if field.composed is True:
+                addresses += field.addresses
+            else:
+                addresses.append(field.address)
         data = eeprom_file.read(addresses)
         for field_name in self._fields['eeprom']:
             if fields is not None:

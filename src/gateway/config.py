@@ -64,7 +64,8 @@ class ConfigurationController(object):
                                          'cloud_metrics_enabled|energy': True,
                                          'cloud_metrics_enabled|counter': True,
                                          'cloud_metrics_batch_size': 50,
-                                         'cloud_metrics_min_interval': 300}.iteritems():
+                                         'cloud_metrics_min_interval': 300,
+                                         'cors_enabled': False}.iteritems():
             if self.get_setting(setting) is None:
                 self.set_setting(setting, default_setting)
 
