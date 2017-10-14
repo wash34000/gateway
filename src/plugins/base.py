@@ -41,6 +41,47 @@ except ImportError:
 LOGGER = logging.getLogger("openmotics")
 
 
+class WebInterfaceWrapper(object):
+    def __init__(self, webinterface, logger):
+        self.__webinterface = webinterface
+        self.__logger = logger
+        self.__warned = False
+
+    def __getattr__(self, attribute):
+        if hasattr(self.__webinterface, attribute):
+            func = getattr(self.__webinterface, attribute)
+            if callable(func) and hasattr(func, 'plugin_exposed') and func.plugin_exposed is True:
+                new_func = self.parameter_wrapper(func)
+                setattr(self, attribute, new_func)
+                return new_func
+        raise AttributeError()
+
+    def check_token(self, token):
+        return self.__webinterface._user_controller.check_token(token)
+
+    def warn(self):
+        if self.__warned is False:
+            self.__logger('[W] Deprecation warning:')
+            self.__logger('[W] - Plugins should not pass \'token\' to API calls')
+            self.__logger('[W] - Plugins should use keyword arguments for API calls')
+            self.__warned = True
+
+    def parameter_wrapper(self, func):
+        spec = inspect.getargspec(func)
+        args_length = len(spec.args) - 1  # Don't count `self`
+
+        def wrapper(*args, **kwargs):
+            args = list(args)
+            if 'token' in kwargs:
+                del kwargs['token']
+                self.warn()
+            elif len(args) > 0 and (len(args) + len(kwargs) > args_length or len(kwargs) == 0):
+                del args[0]
+                self.warn()
+            return func(*args, **kwargs)
+        return wrapper
+
+
 class OMPluginBase(object):
     """ Base class for an OpenMotics plugin. Every plugin package should contain a
     module with the name 'main' that contains a class that extends this class.
@@ -100,7 +141,7 @@ class PluginException(Exception):
 class PluginController(object):
     """ The controller keeps track of all plugins in the system. """
 
-    def __init__(self, webinterface):
+    def __init__(self, webinterface, config_controller):
         self.__webinterface = webinterface
 
         self.__stopped = False
@@ -114,6 +155,7 @@ class PluginController(object):
         self.__metric_receivers = []
         self.__metric_receiver_threads = {}
         self.__metrics_controller = None
+        self.__config_controller = config_controller
         self.metric_receiver_queues = {}
         self.metric_intervals = []
 
@@ -159,7 +201,7 @@ class PluginController(object):
     def __start_plugin(self, plugin):
         """ Start one plugin. """
         self.__start_background_tasks(plugin)
-        PluginController.__expose_plugin(plugin)
+        self.__expose_plugin(plugin)
 
     def _gather_plugins(self):
         """ Scan the plugins package for installed plugins in the form of subpackages. """
@@ -194,7 +236,9 @@ class PluginController(object):
             else:
                 try:
                     plugin_class = per_name[name][0][2]
-                    plugins.append(plugin_class(self.__webinterface, self.get_logger(name)))
+                    logger = self.get_logger(name)
+                    plugins.append(plugin_class(WebInterfaceWrapper(self.__webinterface, logger),
+                                                logger))
                 except Exception as exception:
                     self.log(name, "Could not initialize plugin", exception,
                              traceback.format_exc())
@@ -429,15 +473,13 @@ else:
             self.log(plugin_name, "Exception in background thread", exception,
                      traceback.format_exc())
 
-    @staticmethod
-    def __expose_plugin(plugin):
+    def __expose_plugin(self, plugin):
         """ Expose the plugins using cherrypy. """
-        root_config = {'tools.sessions.on': False}
-        if cherrypy_cors is not None:
-            root_config['cors.expose.on'] = True
+        root_config = {'tools.sessions.on': False,
+                       'tools.cors.on': self.__config_controller.get_setting('cors_enabled', False)}
 
         cherrypy.tree.mount(plugin,
-                            "/plugins/%s" % plugin.name,
+                            '/plugins/{0}'.format(plugin.name),
                             {"/": root_config})
 
     def process_input_status(self, input_status_inst):

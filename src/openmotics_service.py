@@ -128,7 +128,7 @@ def main():
                                  constants.get_scheduling_database_file(), maintenance_service,
                                  led_service.in_authorized_mode, config_controller)
 
-    plugin_controller = PluginController(web_interface)
+    plugin_controller = PluginController(web_interface, config_controller)
 
     web_interface.set_plugin_controller(plugin_controller)
     gateway_api.set_plugin_controller(plugin_controller)

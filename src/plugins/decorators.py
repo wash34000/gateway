@@ -37,33 +37,21 @@ def om_expose(method=None, auth=True, content_type='application/json'):
     def method_to_expose(self, ...):
         ...
     """
-    def decorate(mthd):
-        """ The decorated method. """
-        if auth:
-            def _exposed(self, token, *args, **kwargs):
-                """ Exposed with token. """
-                self.webinterface.check_token(token)
-                result = mthd(self, *args, **kwargs)
-                cherrypy.response.headers["Content-Type"] = content_type
-                return result
-        else:
-            def _exposed(*args, **kwargs):
-                """ Exposed without token. """
-                result = mthd(*args, **kwargs)
-                cherrypy.response.headers["Content-Type"] = content_type
-                return result
-
+    def decorate(func):
+        def _exposed(*args, **kwargs):
+            result = func(*args, **kwargs)
+            cherrypy.response.headers["Content-Type"] = content_type
+            return result
+        if auth is True:
+            _exposed = cherrypy.tools.authenticated()(_exposed)
         _exposed.exposed = True
         _exposed.auth = auth
-        _exposed.orig = mthd
+        _exposed.orig = func
         return _exposed
 
-    if method:
-        # Actual decorator: @om_expose
+    if method is not None:
         return decorate(method)
-    else:
-        # Decorator factory: @om_expose(...)
-        return decorate
+    return decorate
 
 
 def input_status(method):

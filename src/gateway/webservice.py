@@ -129,8 +129,10 @@ def authentication_handler(pass_token=False):
                 raise RuntimeError()
             token = header.replace('Bearer ', '')
         _self = request.handler.callable.__self__
-        if request.remote.ip != '127.0.0.1' and not _self._user_controller.check_token(token):
-            raise RuntimeError()
+        if request.remote.ip != '127.0.0.1':
+            check_token = _self._user_controller.check_token if hasattr(_self, '_user_controller') else _self.webinterface.check_token
+            if not check_token(token):
+                raise RuntimeError()
         if pass_token is True:
             request.params['token'] = token
     except Exception:
@@ -141,7 +143,7 @@ def authentication_handler(pass_token=False):
 
 
 cherrypy.tools.timestamp_filter = cherrypy.Tool('before_handler', timestamp_handler)
-cherrypy.tools.cors = cherrypy.Tool('before_handler', cors_handler)
+cherrypy.tools.cors = cherrypy.Tool('before_handler', cors_handler, priority=10)
 cherrypy.tools.authenticated = cherrypy.Tool('before_handler', authentication_handler)
 cherrypy.tools.params = cherrypy.Tool('before_handler', params_handler)
 
