@@ -27,16 +27,12 @@ import traceback
 from collections import deque
 from datetime import datetime
 from plugins.decorators import *  # Import for backwards compatibility
+from gateway.webservice import params_parser
 
 try:
     import json
 except ImportError:
     import simplejson as json
-try:
-    import cherrypy_cors
-    cherrypy_cors.install()
-except ImportError:
-    cherrypy_cors = None
 
 LOGGER = logging.getLogger("openmotics")
 
@@ -71,14 +67,21 @@ class WebInterfaceWrapper(object):
         args_length = len(spec.args) - 1  # Don't count `self`
 
         def wrapper(*args, **kwargs):
+            # 1. Try to remove a possible "token" parameter, which is now deprecated
             args = list(args)
             if 'token' in kwargs:
                 del kwargs['token']
                 self.warn()
-            elif len(args) > 0 and (len(args) + len(kwargs) > args_length or len(kwargs) == 0):
-                del args[0]
+            elif len(args) > 0:
                 self.warn()
-            return func(*args, **kwargs)
+                if len(args) + len(kwargs) > args_length or len(kwargs) == 0:
+                    del args[0]
+            # 2. Convert to kwargs, so it's possible to do parameter parsing
+            for i in xrange(len(args)):
+                kwargs[spec.args[i + 1]] = args[i]
+            if func.check is not None:
+                params_parser(kwargs, func.check)
+            return func(**kwargs)
         return wrapper
 
 

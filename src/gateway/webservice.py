@@ -82,19 +82,27 @@ cherrypy.config.update({'error_page.404': error_generic,
                         'request.error_response': error_unexpected})
 
 
+def params_parser(params, param_types):
+    for key in set(params).intersection(set(param_types)):
+        value = params[key]
+        if value is None:
+            continue
+        if isinstance(value, basestring) and value.lower() in ['null', 'none']:
+            params[key] = None
+        else:
+            if param_types[key] == bool:
+                params[key] = str(value).lower() not in ['false', '0', '0.0', 'no']
+            elif param_types[key] == 'json':
+                params[key] = json.loads(value)
+            else:
+                params[key] = param_types[key](value)
+
+
 def params_handler(**kwargs):
     """ Convert specified request params. """
     request = cherrypy.request
     try:
-        for key in set(kwargs).intersection(request.params):
-            value = request.params[key]
-            if isinstance(value, basestring) and value.lower() in ['null', 'none']:
-                request.params[key] = None
-            else:
-                if kwargs[key] == bool:
-                    request.params[key] = str(value).lower() not in ['false', '0', '0.0', 'no']
-                else:
-                    request.params[key] = kwargs[key](value)
+        params_parser(request.params, kwargs)
     except ValueError:
         cherrypy.response.headers['Content-Type'] = 'application/json'
         cherrypy.response.status = 406
@@ -186,6 +194,7 @@ def openmotics_api(auth=False, check=None, pass_token=False, plugin_exposed=True
             func = cherrypy.tools.params(**check)(func)
         func.exposed = True
         func.plugin_exposed = plugin_exposed
+        func.check = check
         return func
     return wrapper
 
@@ -915,107 +924,103 @@ class WebInterface(object):
         """
         return self._gateway_api.master_clear_error_list
 
-    @openmotics_api(auth=True, check=types(id=int))
+    @openmotics_api(auth=True, check=types(id=int, fields='json'))
     def get_output_configuration(self, id, fields=None):
         """
         Get a specific output_configuration defined by its id.
 
         :param id: The id of the output_configuration
         :type id: int
-        :param fields: The field of the output_configuration to get. (None gets all fields)
-        :type fields: str
+        :param fields: The fields of the output_configuration to get. (None gets all fields)
+        :type fields: list
         :returns: 'config': output_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'floor' (Byte), 'module_type' (String[1]), 'name' (String[16]), 'room' (Byte), 'timer' (Word), 'type' (Byte)
         :rtype: dict
         """
-        fields = None if fields is None else json.loads(fields)
         return {'config': self._gateway_api.get_output_configuration(id, fields)}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(fields='json'))
     def get_output_configurations(self, fields=None):
         """
         Get all output_configurations.
 
         :param fields: The field of the output_configuration to get. (None gets all fields)
-        :type fields: str
+        :type fields: list
         :returns: 'config': list of output_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'floor' (Byte), 'module_type' (String[1]), 'name' (String[16]), 'room' (Byte), 'timer' (Word), 'type' (Byte)
         :rtype: dict
         """
-        fields = None if fields is None else json.loads(fields)
         return {'config': self._gateway_api.get_output_configurations(fields)}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(config='json'))
     def set_output_configuration(self, config):
         """
         Set one output_configuration.
 
         :param config: The output_configuration to set: dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'floor' (Byte), 'name' (String[16]), 'room' (Byte), 'timer' (Word), 'type' (Byte)
-        :type config: str
+        :type config: dict
         """
-        self._gateway_api.set_output_configuration(json.loads(config))
+        self._gateway_api.set_output_configuration(config)
         return {}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(config='json'))
     def set_output_configurations(self, config):
         """
         Set multiple output_configurations.
 
         :param config: The list of output_configurations to set: list of output_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'floor' (Byte), 'name' (String[16]), 'room' (Byte), 'timer' (Word), 'type' (Byte)
-        :type config: str
+        :type config: list
         """
-        self._gateway_api.set_output_configurations(json.loads(config))
+        self._gateway_api.set_output_configurations(config)
         return {}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(id=int, fields='json'))
     def get_shutter_configuration(self, id, fields=None):
         """
         Get a specific shutter_configuration defined by its id.
 
         :param id: The id of the shutter_configuration
         :type id: Id
-        :param fields: The field of the shutter_configuration to get. (None gets all fields)
-        :type fields: str
+        :param fields: The fields of the shutter_configuration to get. (None gets all fields)
+        :type fields: list
         :returns: 'config': shutter_configuration dict: contains 'id' (Id), 'group_1' (Byte), 'group_2' (Byte), 'name' (String[16]), 'room' (Byte), 'timer_down' (Byte), 'timer_up' (Byte), 'up_down_config' (Byte)
         :rtype: dict
         """
-        fields = None if fields is None else json.loads(fields)
-        return {'config': self._gateway_api.get_shutter_configuration(int(id), fields)}
+        return {'config': self._gateway_api.get_shutter_configuration(id, fields)}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(fields='json'))
     def get_shutter_configurations(self, fields=None):
         """
         Get all shutter_configurations.
 
-        :param fields: The field of the shutter_configuration to get. (None gets all fields)
-        :type fields: str
+        :param fields: The fields of the shutter_configuration to get. (None gets all fields)
+        :type fields: list
         :returns: 'config': list of shutter_configuration dict: contains 'id' (Id), 'group_1' (Byte), 'group_2' (Byte), 'name' (String[16]), 'room' (Byte), 'timer_down' (Byte), 'timer_up' (Byte), 'up_down_config' (Byte)
         :rtype: dict
         """
-        fields = None if fields is None else json.loads(fields)
         return {'config': self._gateway_api.get_shutter_configurations(fields)}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(confi='json'))
     def set_shutter_configuration(self, config):
         """
         Set one shutter_configuration.
 
         :param config: The shutter_configuration to set: shutter_configuration dict: contains 'id' (Id), 'group_1' (Byte), 'group_2' (Byte), 'name' (String[16]), 'room' (Byte), 'timer_down' (Byte), 'timer_up' (Byte), 'up_down_config' (Byte)
-        :type config: str
+        :type config: dict
         """
-        self._gateway_api.set_shutter_configuration(json.loads(config))
+        self._gateway_api.set_shutter_configuration(config)
         return {}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(config='json'))
     def set_shutter_configurations(self, config):
         """
         Set multiple shutter_configurations.
 
         :param config: The list of shutter_configurations to set: list of shutter_configuration dict: contains 'id' (Id), 'group_1' (Byte), 'group_2' (Byte), 'name' (String[16]), 'room' (Byte), 'timer_down' (Byte), 'timer_up' (Byte), 'up_down_config' (Byte)
-        :type config: str
+        :type config: list
         """
-        self._gateway_api.set_shutter_configurations(json.loads(config))
+        self._gateway_api.set_shutter_configurations(config)
         return {}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(id=int, fields='json'))
     def get_shutter_group_configuration(self, id, fields=None):
         """
         Get a specific shutter_group_configuration defined by its id.
@@ -1023,49 +1028,47 @@ class WebInterface(object):
         :param id: The id of the shutter_group_configuration
         :type id: int
         :param fields: The field of the shutter_group_configuration to get. (None gets all fields)
-        :type fields: str
+        :type fields: list
         :returns: 'config': shutter_group_configuration dict: contains 'id' (Id), 'room' (Byte), 'timer_down' (Byte), 'timer_up' (Byte)
         :rtype: dict
         """
-        fields = None if fields is None else json.loads(fields)
-        return {'config': self._gateway_api.get_shutter_group_configuration(int(id), fields)}
+        return {'config': self._gateway_api.get_shutter_group_configuration(id, fields)}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(fields='json'))
     def get_shutter_group_configurations(self, fields=None):
         """
         Get all shutter_group_configurations.
 
         :param fields: The field of the shutter_group_configuration to get. (None gets all fields)
-        :type fields: str
+        :type fields: list
         :returns: 'config': list of shutter_group_configuration dict: contains 'id' (Id), 'room' (Byte), 'timer_down' (Byte), 'timer_up' (Byte)
         :rtype: dict
         """
-        fields = None if fields is None else json.loads(fields)
         return {'config': self._gateway_api.get_shutter_group_configurations(fields)}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(config='json'))
     def set_shutter_group_configuration(self, config):
         """
         Set one shutter_group_configuration.
 
         :param config: The shutter_group_configuration to set: shutter_group_configuration dict: contains 'id' (Id), 'room' (Byte), 'timer_down' (Byte), 'timer_up' (Byte)
-        :type config: str
+        :type config: dict
         """
-        self._gateway_api.set_shutter_group_configuration(json.loads(config))
+        self._gateway_api.set_shutter_group_configuration(config)
         return {}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(config='json'))
     def set_shutter_group_configurations(self, config):
         """
         Set multiple shutter_group_configurations.
 
         :param config: The list of shutter_group_configurations to set: list of shutter_group_configuration dict: contains 'id' (Id), 'room' (Byte), 'timer_down' (Byte), 'timer_up' (Byte)
-        :type config: str
+        :type config: list
         """
-        self._gateway_api.set_shutter_group_configurations(json.loads(config))
+        self._gateway_api.set_shutter_group_configurations(config)
         return {}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(id=int, fields='json'))
     def get_input_configuration(self, id, fields=None):
         """
         Get a specific input_configuration defined by its id.
@@ -1073,49 +1076,47 @@ class WebInterface(object):
         :param id: The id of the input_configuration
         :type id: int
         :param fields: The field of the input_configuration to get. (None gets all fields)
-        :type fields: str
+        :type fields: list
         :returns: 'config': input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'module_type' (String[1]), 'name' (String[8]), 'room' (Byte)
         :rtype: dict
         """
-        fields = None if fields is None else json.loads(fields)
-        return {'config': self._gateway_api.get_input_configuration(int(id), fields)}
+        return {'config': self._gateway_api.get_input_configuration(id, fields)}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(fields='json'))
     def get_input_configurations(self, fields=None):
         """
         Get all input_configurations.
 
         :param fields: The field of the input_configuration to get. (None gets all fields)
-        :type fields: str | None
+        :type fields: list
         :returns: 'config': list of input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'module_type' (String[1]), 'name' (String[8]), 'room' (Byte)
         :rtype: dict
         """
-        fields = None if fields is None else json.loads(fields)
         return {'config': self._gateway_api.get_input_configurations(fields)}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(config='json'))
     def set_input_configuration(self, config):
         """
         Set one input_configuration.
 
         :param config: The input_configuration to set: input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'name' (String[8]), 'room' (Byte)
-        :type config: str
+        :type config: dict
         """
-        self._gateway_api.set_input_configuration(json.loads(config))
+        self._gateway_api.set_input_configuration(config)
         return {}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(config='json'))
     def set_input_configurations(self, config):
         """
         Set multiple input_configurations.
 
         :param config: The list of input_configurations to set: list of input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'name' (String[8]), 'room' (Byte)
-        :type config: str
+        :type config: list
         """
-        self._gateway_api.set_input_configurations(json.loads(config))
+        self._gateway_api.set_input_configurations(config)
         return {}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(id=int, fields='json'))
     def get_thermostat_configuration(self, id, fields=None):
         """
         Get a specific thermostat_configuration defined by its id.
@@ -1123,49 +1124,47 @@ class WebInterface(object):
         :param id: The id of the thermostat_configuration
         :type id: int
         :param fields: The field of the thermostat_configuration to get. (None gets all fields)
-        :type fields: str
+        :type fields: list
         :returns: 'config': thermostat_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'room' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
         :rtype: dict
         """
-        fields = None if fields is None else json.loads(fields)
-        return {'config': self._gateway_api.get_thermostat_configuration(int(id), fields)}
+        return {'config': self._gateway_api.get_thermostat_configuration(id, fields)}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(fields='json'))
     def get_thermostat_configurations(self, fields=None):
         """
         Get all thermostat_configurations.
 
         :param fields: The field of the thermostat_configuration to get. (None gets all fields)
-        :type fields: str | None
+        :type fields: list
         :returns: 'config': list of thermostat_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'room' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
         :rtype: dict
         """
-        fields = None if fields is None else json.loads(fields)
         return {'config': self._gateway_api.get_thermostat_configurations(fields)}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(config='json'))
     def set_thermostat_configuration(self, config):
         """
         Set one thermostat_configuration.
 
         :param config: The thermostat_configuration to set: thermostat_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'room' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
-        :type config: str
+        :type config: dict
         """
-        self._gateway_api.set_thermostat_configuration(json.loads(config))
+        self._gateway_api.set_thermostat_configuration(config)
         return {}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(config='json'))
     def set_thermostat_configurations(self, config):
         """
         Set multiple thermostat_configurations.
 
         :param config: The list of thermostat_configurations to set: list of thermostat_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'room' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
-        :type config: str
+        :type config: list
         """
-        self._gateway_api.set_thermostat_configurations(json.loads(config))
+        self._gateway_api.set_thermostat_configurations(config)
         return {}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(id=int, fields='json'))
     def get_sensor_configuration(self, id, fields=None):
         """
         Get a specific sensor_configuration defined by its id.
@@ -1173,49 +1172,47 @@ class WebInterface(object):
         :param id: The id of the sensor_configuration
         :type id: int
         :param fields: The field of the sensor_configuration to get. (None gets all fields)
-        :type fields: str | None
+        :type fields: list
         :returns: 'config': sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees)), 'room' (Byte), 'virtual' (Boolean)
         :rtype: dict
         """
-        fields = None if fields is None else json.loads(fields)
-        return {'config': self._gateway_api.get_sensor_configuration(int(id), fields)}
+        return {'config': self._gateway_api.get_sensor_configuration(id, fields)}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(fields='json'))
     def get_sensor_configurations(self, fields=None):
         """
         Get all sensor_configurations.
 
         :param fields: The field of the sensor_configuration to get. (None gets all fields)
-        :type fields: str | None
+        :type fields: list
         :returns: 'config': list of sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees)), 'room' (Byte), 'virtual' (Boolean)
         :rtype: dict
         """
-        fields = None if fields is None else json.loads(fields)
         return {'config': self._gateway_api.get_sensor_configurations(fields)}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(config='json'))
     def set_sensor_configuration(self, config):
         """
         Set one sensor_configuration.
 
         :param config: The sensor_configuration to set: sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees)), 'room' (Byte), 'virtual' (Boolean)
-        :type config: str
+        :type config: dict
         """
-        self._gateway_api.set_sensor_configuration(json.loads(config))
+        self._gateway_api.set_sensor_configuration(config)
         return {}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(config='json'))
     def set_sensor_configurations(self, config):
         """
         Set multiple sensor_configurations.
 
         :param config: The list of sensor_configurations to set: list of sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees)), 'room' (Byte), 'virtual' (Boolean)
-        :type config: str
+        :type config: list
         """
-        self._gateway_api.set_sensor_configurations(json.loads(config))
+        self._gateway_api.set_sensor_configurations(config)
         return {}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(id=int, fields='json'))
     def get_pump_group_configuration(self, id, fields=None):
         """
         Get a specific pump_group_configuration defined by its id.
@@ -1223,49 +1220,47 @@ class WebInterface(object):
         :param id: The id of the pump_group_configuration
         :type id: int
         :param fields: The field of the pump_group_configuration to get. (None gets all fields)
-        :type fields: str | None
+        :type fields: list
         :returns: 'config': pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32]), 'room' (Byte)
         :rtype: dict
         """
-        fields = None if fields is None else json.loads(fields)
-        return {'config': self._gateway_api.get_pump_group_configuration(int(id), fields)}
+        return {'config': self._gateway_api.get_pump_group_configuration(id, fields)}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(fields='json'))
     def get_pump_group_configurations(self, fields=None):
         """
         Get all pump_group_configurations.
 
         :param fields: The field of the pump_group_configuration to get. (None gets all fields)
-        :type fields: str
+        :type fields: list
         :returns: 'config': list of pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32]), 'room' (Byte)
         :rtype: dict
         """
-        fields = None if fields is None else json.loads(fields)
         return {'config': self._gateway_api.get_pump_group_configurations(fields)}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(config='json'))
     def set_pump_group_configuration(self, config):
         """
         Set one pump_group_configuration.
 
         :param config: The pump_group_configuration to set: pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32]), 'room' (Byte)
-        :type config: str
+        :type config: dict
         """
-        self._gateway_api.set_pump_group_configuration(json.loads(config))
+        self._gateway_api.set_pump_group_configuration(config)
         return {}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(config='json'))
     def set_pump_group_configurations(self, config):
         """
         Set multiple pump_group_configurations.
 
         :param config: The list of pump_group_configurations to set: list of pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32]), 'room' (Byte)
-        :type config: str
+        :type config: list
         """
-        self._gateway_api.set_pump_group_configurations(json.loads(config))
+        self._gateway_api.set_pump_group_configurations(config)
         return {}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(id=int, fields='json'))
     def get_cooling_configuration(self, id, fields=None):
         """
         Get a specific cooling_configuration defined by its id.
@@ -1273,49 +1268,47 @@ class WebInterface(object):
         :param id: The id of the cooling_configuration
         :type id: int
         :param fields: The field of the cooling_configuration to get. (None gets all fields)
-        :type fields: str | None
+        :type fields: list
         :returns: 'config': cooling_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'room' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
         :rtype: dict
         """
-        fields = None if fields is None else json.loads(fields)
-        return {'config': self._gateway_api.get_cooling_configuration(int(id), fields)}
+        return {'config': self._gateway_api.get_cooling_configuration(id, fields)}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(fields='json'))
     def get_cooling_configurations(self, fields=None):
         """
         Get all cooling_configurations.
 
         :param fields: The field of the cooling_configuration to get. (None gets all fields)
-        :type fields: str | None
+        :type fields: list
         :returns: 'config': list of cooling_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'room' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
         :rtype: dict
         """
-        fields = None if fields is None else json.loads(fields)
         return {'config': self._gateway_api.get_cooling_configurations(fields)}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(config='json'))
     def set_cooling_configuration(self, config):
         """
         Set one cooling_configuration.
 
         :param config: The cooling_configuration to set: cooling_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'room' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
-        :type config: str
+        :type config: dict
         """
-        self._gateway_api.set_cooling_configuration(json.loads(config))
+        self._gateway_api.set_cooling_configuration(config)
         return {}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(config='json'))
     def set_cooling_configurations(self, config):
         """
         Set multiple cooling_configurations.
 
         :param config: The list of cooling_configurations to set: list of cooling_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'room' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
-        :type config: str
+        :type config: list
         """
-        self._gateway_api.set_cooling_configurations(json.loads(config))
+        self._gateway_api.set_cooling_configurations(config)
         return {}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(id=int, fields='json'))
     def get_cooling_pump_group_configuration(self, id, fields=None):
         """
         Get a specific cooling_pump_group_configuration defined by its id.
@@ -1323,73 +1316,70 @@ class WebInterface(object):
         :param id: The id of the cooling_pump_group_configuration
         :type id: int
         :param fields: The field of the cooling_pump_group_configuration to get. (None gets all fields)
-        :type fields: str | None
+        :type fields: list
         :returns: 'config': cooling_pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32]), 'room' (Byte)
         :rtype: dict
         """
-        fields = None if fields is None else json.loads(fields)
-        return {'config': self._gateway_api.get_cooling_pump_group_configuration(int(id), fields)}
+        return {'config': self._gateway_api.get_cooling_pump_group_configuration(id, fields)}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(fields='json'))
     def get_cooling_pump_group_configurations(self, fields=None):
         """
         Get all cooling_pump_group_configurations.
 
         :param fields: The field of the cooling_pump_group_configuration to get. (None gets all fields)
-        :type fields: str | None
+        :type fields: list
         :returns: 'config': list of cooling_pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32]), 'room' (Byte)
         :rtype: dict
         """
-        fields = None if fields is None else json.loads(fields)
         return {'config': self._gateway_api.get_cooling_pump_group_configurations(fields)}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(config='json'))
     def set_cooling_pump_group_configuration(self, config):
         """
         Set one cooling_pump_group_configuration.
 
         :param config: The cooling_pump_group_configuration to set: cooling_pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32]), 'room' (Byte)
-        :type config: str
+        :type config: dict
         """
-        self._gateway_api.set_cooling_pump_group_configuration(json.loads(config))
+        self._gateway_api.set_cooling_pump_group_configuration(config)
         return {}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(config='json'))
     def set_cooling_pump_group_configurations(self, config):
         """
         Set multiple cooling_pump_group_configurations.
 
         :param config: The list of cooling_pump_group_configurations to set: list of cooling_pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32]), 'room' (Byte)
-        :type config: str
+        :type config: list
         """
-        self._gateway_api.set_cooling_pump_group_configurations(json.loads(config))
+        self._gateway_api.set_cooling_pump_group_configurations(config)
         return {}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(fields='json'))
     def get_global_rtd10_configuration(self, fields=None):
         """
         Get the global_rtd10_configuration.
 
         :param fields: The field of the global_rtd10_configuration to get. (None gets all fields)
-        :type fields: str | None
+        :type fields: list
         :returns: 'config': global_rtd10_configuration dict: contains 'output_value_cooling_16' (Byte), 'output_value_cooling_16_5' (Byte), 'output_value_cooling_17' (Byte), 'output_value_cooling_17_5' (Byte), 'output_value_cooling_18' (Byte), 'output_value_cooling_18_5' (Byte), 'output_value_cooling_19' (Byte), 'output_value_cooling_19_5' (Byte), 'output_value_cooling_20' (Byte), 'output_value_cooling_20_5' (Byte), 'output_value_cooling_21' (Byte), 'output_value_cooling_21_5' (Byte), 'output_value_cooling_22' (Byte), 'output_value_cooling_22_5' (Byte), 'output_value_cooling_23' (Byte), 'output_value_cooling_23_5' (Byte), 'output_value_cooling_24' (Byte), 'output_value_heating_16' (Byte), 'output_value_heating_16_5' (Byte), 'output_value_heating_17' (Byte), 'output_value_heating_17_5' (Byte), 'output_value_heating_18' (Byte), 'output_value_heating_18_5' (Byte), 'output_value_heating_19' (Byte), 'output_value_heating_19_5' (Byte), 'output_value_heating_20' (Byte), 'output_value_heating_20_5' (Byte), 'output_value_heating_21' (Byte), 'output_value_heating_21_5' (Byte), 'output_value_heating_22' (Byte), 'output_value_heating_22_5' (Byte), 'output_value_heating_23' (Byte), 'output_value_heating_23_5' (Byte), 'output_value_heating_24' (Byte)
         :rtype: dict
         """
-        fields = None if fields is None else json.loads(fields)
         return {'config': self._gateway_api.get_global_rtd10_configuration(fields)}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(config='json'))
     def set_global_rtd10_configuration(self, config):
         """
         Set the global_rtd10_configuration.
 
         :param config: The global_rtd10_configuration to set: global_rtd10_configuration dict: contains 'output_value_cooling_16' (Byte), 'output_value_cooling_16_5' (Byte), 'output_value_cooling_17' (Byte), 'output_value_cooling_17_5' (Byte), 'output_value_cooling_18' (Byte), 'output_value_cooling_18_5' (Byte), 'output_value_cooling_19' (Byte), 'output_value_cooling_19_5' (Byte), 'output_value_cooling_20' (Byte), 'output_value_cooling_20_5' (Byte), 'output_value_cooling_21' (Byte), 'output_value_cooling_21_5' (Byte), 'output_value_cooling_22' (Byte), 'output_value_cooling_22_5' (Byte), 'output_value_cooling_23' (Byte), 'output_value_cooling_23_5' (Byte), 'output_value_cooling_24' (Byte), 'output_value_heating_16' (Byte), 'output_value_heating_16_5' (Byte), 'output_value_heating_17' (Byte), 'output_value_heating_17_5' (Byte), 'output_value_heating_18' (Byte), 'output_value_heating_18_5' (Byte), 'output_value_heating_19' (Byte), 'output_value_heating_19_5' (Byte), 'output_value_heating_20' (Byte), 'output_value_heating_20_5' (Byte), 'output_value_heating_21' (Byte), 'output_value_heating_21_5' (Byte), 'output_value_heating_22' (Byte), 'output_value_heating_22_5' (Byte), 'output_value_heating_23' (Byte), 'output_value_heating_23_5' (Byte), 'output_value_heating_24' (Byte)
-        :type config: str
+        :type config: dict
         """
-        self._gateway_api.set_global_rtd10_configuration(json.loads(config))
+        self._gateway_api.set_global_rtd10_configuration(config)
         return {}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(id=int, fields='json'))
     def get_rtd10_heating_configuration(self, id, fields=None):
         """
         Get a specific rtd10_heating_configuration defined by its id.
@@ -1397,49 +1387,47 @@ class WebInterface(object):
         :param id: The id of the rtd10_heating_configuration
         :type id: int
         :param fields: The field of the rtd10_heating_configuration to get. (None gets all fields)
-        :type fields: str | None
+        :type fields: list
         :returns: 'config': rtd10_heating_configuration dict: contains 'id' (Id), 'mode_output' (Byte), 'mode_value' (Byte), 'on_off_output' (Byte), 'poke_angle_output' (Byte), 'poke_angle_value' (Byte), 'room' (Byte), 'temp_setpoint_output' (Byte), 'ventilation_speed_output' (Byte), 'ventilation_speed_value' (Byte)
         :rtype: dict
         """
-        fields = None if fields is None else json.loads(fields)
-        return {'config': self._gateway_api.get_rtd10_heating_configuration(int(id), fields)}
+        return {'config': self._gateway_api.get_rtd10_heating_configuration(id, fields)}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(fields='json'))
     def get_rtd10_heating_configurations(self, fields=None):
         """
         Get all rtd10_heating_configurations.
 
         :param fields: The field of the rtd10_heating_configuration to get. (None gets all fields)
-        :type fields: str
+        :type fields: list
         :returns: 'config': list of rtd10_heating_configuration dict: contains 'id' (Id), 'mode_output' (Byte), 'mode_value' (Byte), 'on_off_output' (Byte), 'poke_angle_output' (Byte), 'poke_angle_value' (Byte), 'room' (Byte), 'temp_setpoint_output' (Byte), 'ventilation_speed_output' (Byte), 'ventilation_speed_value' (Byte)
         :rtype: dict
         """
-        fields = None if fields is None else json.loads(fields)
         return {'config': self._gateway_api.get_rtd10_heating_configurations(fields)}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(config='json'))
     def set_rtd10_heating_configuration(self, config):
         """
         Set one rtd10_heating_configuration.
 
         :param config: The rtd10_heating_configuration to set: rtd10_heating_configuration dict: contains 'id' (Id), 'mode_output' (Byte), 'mode_value' (Byte), 'on_off_output' (Byte), 'poke_angle_output' (Byte), 'poke_angle_value' (Byte), 'room' (Byte), 'temp_setpoint_output' (Byte), 'ventilation_speed_output' (Byte), 'ventilation_speed_value' (Byte)
-        :type config: str
+        :type config: dict
         """
-        self._gateway_api.set_rtd10_heating_configuration(json.loads(config))
+        self._gateway_api.set_rtd10_heating_configuration(config)
         return {}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(config='json'))
     def set_rtd10_heating_configurations(self, config):
         """
         Set multiple rtd10_heating_configurations.
 
         :param config: The list of rtd10_heating_configurations to set: list of rtd10_heating_configuration dict: contains 'id' (Id), 'mode_output' (Byte), 'mode_value' (Byte), 'on_off_output' (Byte), 'poke_angle_output' (Byte), 'poke_angle_value' (Byte), 'room' (Byte), 'temp_setpoint_output' (Byte), 'ventilation_speed_output' (Byte), 'ventilation_speed_value' (Byte)
-        :type config: str
+        :type config: list
         """
-        self._gateway_api.set_rtd10_heating_configurations(json.loads(config))
+        self._gateway_api.set_rtd10_heating_configurations(config)
         return {}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(id=int, fields='json'))
     def get_rtd10_cooling_configuration(self, id, fields=None):
         """
         Get a specific rtd10_cooling_configuration defined by its id.
@@ -1447,49 +1435,47 @@ class WebInterface(object):
         :param id: The id of the rtd10_cooling_configuration
         :type id: int
         :param fields: The field of the rtd10_cooling_configuration to get. (None gets all fields)
-        :type fields: str
+        :type fields: list
         :returns: 'config': rtd10_cooling_configuration dict: contains 'id' (Id), 'mode_output' (Byte), 'mode_value' (Byte), 'on_off_output' (Byte), 'poke_angle_output' (Byte), 'poke_angle_value' (Byte), 'room' (Byte), 'temp_setpoint_output' (Byte), 'ventilation_speed_output' (Byte), 'ventilation_speed_value' (Byte)
         :rtype: dict
         """
-        fields = None if fields is None else json.loads(fields)
-        return {'config': self._gateway_api.get_rtd10_cooling_configuration(int(id), fields)}
+        return {'config': self._gateway_api.get_rtd10_cooling_configuration(id, fields)}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(fields='json'))
     def get_rtd10_cooling_configurations(self, fields=None):
         """
         Get all rtd10_cooling_configurations.
 
         :param fields: The field of the rtd10_cooling_configuration to get. (None gets all fields)
-        :type fields: str
+        :type fields: list
         :returns: 'config': list of rtd10_cooling_configuration dict: contains 'id' (Id), 'mode_output' (Byte), 'mode_value' (Byte), 'on_off_output' (Byte), 'poke_angle_output' (Byte), 'poke_angle_value' (Byte), 'room' (Byte), 'temp_setpoint_output' (Byte), 'ventilation_speed_output' (Byte), 'ventilation_speed_value' (Byte)
         :rtype: dict
         """
-        fields = None if fields is None else json.loads(fields)
         return {'config': self._gateway_api.get_rtd10_cooling_configurations(fields)}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(config='json'))
     def set_rtd10_cooling_configuration(self, config):
         """
         Set one rtd10_cooling_configuration.
 
         :param config: The rtd10_cooling_configuration to set: rtd10_cooling_configuration dict: contains 'id' (Id), 'mode_output' (Byte), 'mode_value' (Byte), 'on_off_output' (Byte), 'poke_angle_output' (Byte), 'poke_angle_value' (Byte), 'room' (Byte), 'temp_setpoint_output' (Byte), 'ventilation_speed_output' (Byte), 'ventilation_speed_value' (Byte)
-        :type config: str
+        :type config: dict
         """
-        self._gateway_api.set_rtd10_cooling_configuration(json.loads(config))
+        self._gateway_api.set_rtd10_cooling_configuration(config)
         return {}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(config='json'))
     def set_rtd10_cooling_configurations(self, config):
         """
         Set multiple rtd10_cooling_configurations.
 
         :param config: The list of rtd10_cooling_configurations to set: list of rtd10_cooling_configuration dict: contains 'id' (Id), 'mode_output' (Byte), 'mode_value' (Byte), 'on_off_output' (Byte), 'poke_angle_output' (Byte), 'poke_angle_value' (Byte), 'room' (Byte), 'temp_setpoint_output' (Byte), 'ventilation_speed_output' (Byte), 'ventilation_speed_value' (Byte)
-        :type config: str
+        :type config: list
         """
-        self._gateway_api.set_rtd10_cooling_configurations(json.loads(config))
+        self._gateway_api.set_rtd10_cooling_configurations(config)
         return {}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(id=int, fields='json'))
     def get_group_action_configuration(self, id, fields=None):
         """
         Get a specific group_action_configuration defined by its id.
@@ -1497,49 +1483,47 @@ class WebInterface(object):
         :param id: The id of the group_action_configuration
         :type id: int
         :param fields: The field of the group_action_configuration to get. (None gets all fields)
-        :type fields: str
+        :type fields: list
         :returns: 'config': group_action_configuration dict: contains 'id' (Id), 'actions' (Actions[16]), 'name' (String[16])
         :rtype: dict
         """
-        fields = None if fields is None else json.loads(fields)
-        return {'config': self._gateway_api.get_group_action_configuration(int(id), fields)}
+        return {'config': self._gateway_api.get_group_action_configuration(id, fields)}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(fields='json'))
     def get_group_action_configurations(self, fields=None):
         """
         Get all group_action_configurations.
 
         :param fields: The field of the group_action_configuration to get. (None gets all fields)
-        :type fields: str
+        :type fields: list
         :returns: 'config': list of group_action_configuration dict: contains 'id' (Id), 'actions' (Actions[16]), 'name' (String[16])
         :rtype: dict
         """
-        fields = None if fields is None else json.loads(fields)
         return {'config': self._gateway_api.get_group_action_configurations(fields)}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(config='json'))
     def set_group_action_configuration(self, config):
         """
         Set one group_action_configuration.
 
         :param config: The group_action_configuration to set: group_action_configuration dict: contains 'id' (Id), 'actions' (Actions[16]), 'name' (String[16])
-        :type config: str
+        :type config: dict
         """
-        self._gateway_api.set_group_action_configuration(json.loads(config))
+        self._gateway_api.set_group_action_configuration(config)
         return {}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(config='json'))
     def set_group_action_configurations(self, config):
         """
         Set multiple group_action_configurations.
 
         :param config: The list of group_action_configurations to set: list of group_action_configuration dict: contains 'id' (Id), 'actions' (Actions[16]), 'name' (String[16])
-        :type config: str
+        :type config: list
         """
-        self._gateway_api.set_group_action_configurations(json.loads(config))
+        self._gateway_api.set_group_action_configurations(config)
         return {}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(id=int, fields='json'))
     def get_scheduled_action_configuration(self, id, fields=None):
         """
         Get a specific scheduled_action_configuration defined by its id.
@@ -1547,49 +1531,47 @@ class WebInterface(object):
         :param id: The id of the scheduled_action_configuration
         :type id: int
         :param fields: The field of the scheduled_action_configuration to get. (None gets all fields)
-        :type fields: str
+        :type fields: list
         :returns: 'config': scheduled_action_configuration dict: contains 'id' (Id), 'action' (Actions[1]), 'day' (Byte), 'hour' (Byte), 'minute' (Byte)
         :rtype: dict
         """
-        fields = None if fields is None else json.loads(fields)
-        return {'config': self._gateway_api.get_scheduled_action_configuration(int(id), fields)}
+        return {'config': self._gateway_api.get_scheduled_action_configuration(id, fields)}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(fields='json'))
     def get_scheduled_action_configurations(self, fields=None):
         """
         Get all scheduled_action_configurations.
 
         :param fields: The field of the scheduled_action_configuration to get. (None gets all fields)
-        :type fields: str
+        :type fields: list
         :returns: 'config': list of scheduled_action_configuration dict: contains 'id' (Id), 'action' (Actions[1]), 'day' (Byte), 'hour' (Byte), 'minute' (Byte)
         :rtype: dict
         """
-        fields = None if fields is None else json.loads(fields)
         return {'config': self._gateway_api.get_scheduled_action_configurations(fields)}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(config='json'))
     def set_scheduled_action_configuration(self, config):
         """
         Set one scheduled_action_configuration.
 
         :param config: The scheduled_action_configuration to set: scheduled_action_configuration dict: contains 'id' (Id), 'action' (Actions[1]), 'day' (Byte), 'hour' (Byte), 'minute' (Byte)
-        :type config: str
+        :type config: dict
         """
-        self._gateway_api.set_scheduled_action_configuration(json.loads(config))
+        self._gateway_api.set_scheduled_action_configuration(config)
         return {}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(config='json'))
     def set_scheduled_action_configurations(self, config):
         """
         Set multiple scheduled_action_configurations.
 
         :param config: The list of scheduled_action_configurations to set: list of scheduled_action_configuration dict: contains 'id' (Id), 'action' (Actions[1]), 'day' (Byte), 'hour' (Byte), 'minute' (Byte)
-        :type config: str
+        :type config: list
         """
-        self._gateway_api.set_scheduled_action_configurations(json.loads(config))
+        self._gateway_api.set_scheduled_action_configurations(config)
         return {}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(id=int, fields='json'))
     def get_pulse_counter_configuration(self, id, fields=None):
         """
         Get a specific pulse_counter_configuration defined by its id.
@@ -1597,121 +1579,116 @@ class WebInterface(object):
         :param id: The id of the pulse_counter_configuration
         :type id: int
         :param fields: The field of the pulse_counter_configuration to get. (None gets all fields)
-        :type fields: str
+        :type fields: list
         :returns: 'config': pulse_counter_configuration dict: contains 'id' (Id), 'input' (Byte), 'name' (String[16]), 'room' (Byte)
         :rtype: dict
         """
-        fields = None if fields is None else json.loads(fields)
-        return {'config': self._gateway_api.get_pulse_counter_configuration(int(id), fields)}
+        return {'config': self._gateway_api.get_pulse_counter_configuration(id, fields)}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(fields='json'))
     def get_pulse_counter_configurations(self, fields=None):
         """
         Get all pulse_counter_configurations.
 
         :param fields: The field of the pulse_counter_configuration to get. (None gets all fields)
-        :type fields: str
+        :type fields: list
         :returns: 'config': list of pulse_counter_configuration dict: contains 'id' (Id), 'input' (Byte), 'name' (String[16]), 'room' (Byte)
         :rtype: dict
         """
-        fields = None if fields is None else json.loads(fields)
         return {'config': self._gateway_api.get_pulse_counter_configurations(fields)}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(config='json'))
     def set_pulse_counter_configuration(self, config):
         """
         Set one pulse_counter_configuration.
 
         :param config: The pulse_counter_configuration to set: pulse_counter_configuration dict: contains 'id' (Id), 'input' (Byte), 'name' (String[16]), 'room' (Byte)
-        :type config: str
+        :type config: dict
         """
-        self._gateway_api.set_pulse_counter_configuration(json.loads(config))
+        self._gateway_api.set_pulse_counter_configuration(config)
         return {}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(config='json'))
     def set_pulse_counter_configurations(self, config):
         """
         Set multiple pulse_counter_configurations.
 
         :param config: The list of pulse_counter_configurations to set: list of pulse_counter_configuration dict: contains 'id' (Id), 'input' (Byte), 'name' (String[16]), 'room' (Byte)
-        :type config: str
+        :type config: list
         """
-        self._gateway_api.set_pulse_counter_configurations(json.loads(config))
+        self._gateway_api.set_pulse_counter_configurations(config)
         return {}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(fields='json'))
     def get_startup_action_configuration(self, fields=None):
         """
         Get the startup_action_configuration.
 
         :param fields: The field of the startup_action_configuration to get. (None gets all fields)
-        :type fields: str
+        :type fields: list
         :returns: 'config': startup_action_configuration dict: contains 'actions' (Actions[100])
         :rtype: dict
         """
-        fields = None if fields is None else json.loads(fields)
         return {'config': self._gateway_api.get_startup_action_configuration(fields)}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(config='json'))
     def set_startup_action_configuration(self, config):
         """
         Set the startup_action_configuration.
 
         :param config: The startup_action_configuration to set: startup_action_configuration dict: contains 'actions' (Actions[100])
-        :type config: str
+        :type config: dict
         """
-        self._gateway_api.set_startup_action_configuration(json.loads(config))
+        self._gateway_api.set_startup_action_configuration(config)
         return {}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(fields='json'))
     def get_dimmer_configuration(self, fields=None):
         """
         Get the dimmer_configuration.
 
         :param fields: The field of the dimmer_configuration to get. (None gets all fields)
-        :type fields: str
+        :type fields: list
         :returns: 'config': dimmer_configuration dict: contains 'dim_memory' (Byte), 'dim_step' (Byte), 'dim_wait_cycle' (Byte), 'min_dim_level' (Byte)
         :rtype: dict
         """
-        fields = None if fields is None else json.loads(fields)
         return {'config': self._gateway_api.get_dimmer_configuration(fields)}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(config='json'))
     def set_dimmer_configuration(self, config):
         """
         Set the dimmer_configuration.
 
         :param config: The dimmer_configuration to set: dimmer_configuration dict: contains 'dim_memory' (Byte), 'dim_step' (Byte), 'dim_wait_cycle' (Byte), 'min_dim_level' (Byte)
-        :type config: str
+        :type config: dict
         """
-        self._gateway_api.set_dimmer_configuration(json.loads(config))
+        self._gateway_api.set_dimmer_configuration(config)
         return {}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(fields='json'))
     def get_global_thermostat_configuration(self, fields=None):
         """
         Get the global_thermostat_configuration.
 
         :param fields: The field of the global_thermostat_configuration to get. (None gets all fields)
-        :type fields: str
+        :type fields: list
         :returns: 'config': global_thermostat_configuration dict: contains 'outside_sensor' (Byte), 'pump_delay' (Byte), 'switch_to_cooling_output_0' (Byte), 'switch_to_cooling_output_1' (Byte), 'switch_to_cooling_output_2' (Byte), 'switch_to_cooling_output_3' (Byte), 'switch_to_cooling_value_0' (Byte), 'switch_to_cooling_value_1' (Byte), 'switch_to_cooling_value_2' (Byte), 'switch_to_cooling_value_3' (Byte), 'switch_to_heating_output_0' (Byte), 'switch_to_heating_output_1' (Byte), 'switch_to_heating_output_2' (Byte), 'switch_to_heating_output_3' (Byte), 'switch_to_heating_value_0' (Byte), 'switch_to_heating_value_1' (Byte), 'switch_to_heating_value_2' (Byte), 'switch_to_heating_value_3' (Byte), 'threshold_temp' (Temp)
         :rtype: str
         """
-        fields = None if fields is None else json.loads(fields)
         return {'config': self._gateway_api.get_global_thermostat_configuration(fields)}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(config='json'))
     def set_global_thermostat_configuration(self, config):
         """
         Set the global_thermostat_configuration.
 
         :param config: The global_thermostat_configuration to set: global_thermostat_configuration dict: contains 'outside_sensor' (Byte), 'pump_delay' (Byte), 'switch_to_cooling_output_0' (Byte), 'switch_to_cooling_output_1' (Byte), 'switch_to_cooling_output_2' (Byte), 'switch_to_cooling_output_3' (Byte), 'switch_to_cooling_value_0' (Byte), 'switch_to_cooling_value_1' (Byte), 'switch_to_cooling_value_2' (Byte), 'switch_to_cooling_value_3' (Byte), 'switch_to_heating_output_0' (Byte), 'switch_to_heating_output_1' (Byte), 'switch_to_heating_output_2' (Byte), 'switch_to_heating_output_3' (Byte), 'switch_to_heating_value_0' (Byte), 'switch_to_heating_value_1' (Byte), 'switch_to_heating_value_2' (Byte), 'switch_to_heating_value_3' (Byte), 'threshold_temp' (Temp)
-        :type config: str
+        :type config: dict
         """
-        self._gateway_api.set_global_thermostat_configuration(json.loads(config))
+        self._gateway_api.set_global_thermostat_configuration(config)
         return {}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(id=int, fields='json'))
     def get_can_led_configuration(self, id, fields=None):
         """
         Get a specific can_led_configuration defined by its id.
@@ -1719,49 +1696,47 @@ class WebInterface(object):
         :param id: The id of the can_led_configuration
         :type id: int
         :param fields: The field of the can_led_configuration to get. (None gets all fields)
-        :type fields: str
+        :type fields: list
         :returns: 'config': can_led_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'room' (Byte)
         :rtype: dict
         """
-        fields = None if fields is None else json.loads(fields)
-        return {'config': self._gateway_api.get_can_led_configuration(int(id), fields)}
+        return {'config': self._gateway_api.get_can_led_configuration(id, fields)}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(fields='json'))
     def get_can_led_configurations(self, fields=None):
         """
         Get all can_led_configurations.
 
         :param fields: The field of the can_led_configuration to get. (None gets all fields)
-        :type fields: str
+        :type fields: list
         :returns: 'config': list of can_led_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'room' (Byte)
         :rtype: dict
         """
-        fields = None if fields is None else json.loads(fields)
         return {'config': self._gateway_api.get_can_led_configurations(fields)}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(config='json'))
     def set_can_led_configuration(self, config):
         """
         Set one can_led_configuration.
 
         :param config: The can_led_configuration to set: can_led_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'room' (Byte)
-        :type config: str
+        :type config: dict
         """
-        self._gateway_api.set_can_led_configuration(json.loads(config))
+        self._gateway_api.set_can_led_configuration(config)
         return {}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(config='json'))
     def set_can_led_configurations(self, config):
         """
         Set multiple can_led_configurations.
 
         :param config: The list of can_led_configurations to set: list of can_led_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'room' (Byte)
-        :type config: str
+        :type config: list
         """
-        self._gateway_api.set_can_led_configurations(json.loads(config))
+        self._gateway_api.set_can_led_configurations(config)
         return {}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(id=int, fields='json'))
     def get_room_configuration(self, id, fields=None):
         """
         Get a specific room_configuration defined by its id.
@@ -1769,46 +1744,44 @@ class WebInterface(object):
         :param id: The id of the room_configuration
         :type id: int
         :param fields: The field of the room_configuration to get. (None gets all fields)
-        :type fields: str
+        :type fields: list
         :returns: 'config': room_configuration dict: contains 'id' (Id), 'floor' (Byte), 'name' (String)
         :rtype: dict
         """
-        fields = None if fields is None else json.loads(fields)
-        return {'config': self._gateway_api.get_room_configuration(int(id), fields)}
+        return {'config': self._gateway_api.get_room_configuration(id, fields)}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(fields='json'))
     def get_room_configurations(self, fields=None):
         """
         Get all room_configurations.
 
         :param fields: The field of the room_configuration to get. (None gets all fields)
-        :type fields: str
+        :type fields: list
         :returns: 'config': list of room_configuration dict: contains 'id' (Id), 'floor' (Byte), 'name' (String)
         :rtype: dict
         """
-        fields = None if fields is None else json.loads(fields)
         return {'config': self._gateway_api.get_room_configurations(fields)}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(config='json'))
     def set_room_configuration(self, config):
         """
         Set one room_configuration.
 
         :param config: The room_configuration to set: room_configuration dict: contains 'id' (Id), 'floor' (Byte), 'name' (String)
-        :type config: str
+        :type config: dict
         """
-        self._gateway_api.set_room_configuration(json.loads(config))
+        self._gateway_api.set_room_configuration(config)
         return {}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(config='json'))
     def set_room_configurations(self, config):
         """
         Set multiple room_configurations.
 
         :param config: The list of room_configurations to set: list of room_configuration dict: contains 'id' (Id), 'floor' (Byte), 'name' (String)
-        :type config: str
+        :type config: list
         """
-        self._gateway_api.set_room_configurations(json.loads(config))
+        self._gateway_api.set_room_configurations(config)
         return {}
 
     @openmotics_api(auth=True)
@@ -1894,7 +1867,7 @@ class WebInterface(object):
         """
         return self._gateway_api.in_power_address_mode()
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(module_id=int, voltage=float))
     def set_power_voltage(self, module_id, voltage):
         """
         Set the voltage for a given module.
@@ -1904,7 +1877,7 @@ class WebInterface(object):
         :param voltage: The voltage to set for the power module.
         :type voltage: float
         """
-        return self._gateway_api.set_power_voltage(int(module_id), float(voltage))
+        return self._gateway_api.set_power_voltage(module_id, voltage)
 
     @openmotics_api(auth=True)
     def get_pulse_counter_status(self):
@@ -1916,7 +1889,7 @@ class WebInterface(object):
         """
         return {'counters': self._gateway_api.get_pulse_counter_status()}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(module_id=int, input_id=int))
     def get_energy_time(self, module_id, input_id=None):
         """
         Gets 1 period of given module and optional input (no input means all).
@@ -1924,16 +1897,14 @@ class WebInterface(object):
         :param module_id: The id of the power module.
         :type module_id: int
         :param input_id: The id of the input on the given power module
-        :type input_id: int | None
+        :type input_id: int or None
         :returns: A dict with the input_id(s) as key, and as value another dict with
                   (up to 80) voltage and current samples.
         :rtype: dict
         """
-        module_id = int(module_id)
-        input_id = int(input_id) if input_id is not None else None
         return self._gateway_api.get_energy_time(module_id, input_id)
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(module_id=int, input_id=int))
     def get_energy_frequency(self, module_id, input_id=None):
         """
         Gets the frequency components for a given module and optional input (no input means all)
@@ -1946,11 +1917,9 @@ class WebInterface(object):
                   voltage and current the 20 frequency components
         :rtype: dict
         """
-        module_id = int(module_id)
-        input_id = int(input_id) if input_id is not None else None
         return self._gateway_api.get_energy_frequency(module_id, input_id)
 
-    @openmotics_api(auth=True, plugin_exposed=False)
+    @openmotics_api(auth=True, check=types(address=int), plugin_exposed=False)
     def do_raw_energy_command(self, address, mode, command, data):
         """
         Perform a raw energy module command, for debugging purposes.
@@ -1966,8 +1935,6 @@ class WebInterface(object):
         :returns: dict with 'data': comma separated list of Bytes
         :rtype: dict
         """
-        address = int(address)
-
         if mode not in ['S', 'G']:
             raise ValueError("mode not in [S, G]: %s" % mode)
 
@@ -2068,7 +2035,7 @@ class WebInterface(object):
             raise RuntimeError("Could not determine timezone.")
         return {'timezone': path[20:]}
 
-    @openmotics_api(auth=True, plugin_exposed=False)
+    @openmotics_api(auth=True, check=types(headers='json', auth='json', timeout=int), plugin_exposed=False)
     def do_url_action(self, url, method='GET', headers=None, data=None, auth=None, timeout=10):
         """
         Execute an url action.
@@ -2088,9 +2055,6 @@ class WebInterface(object):
         :returns: 'headers': response headers, 'data': response body.
         :rtype: dict
         """
-        headers = json.loads(headers) if headers is not None else None
-        auth = json.loads(auth) if auth is not None else None
-
         response = requests.request(method, url,
                                     headers=headers,
                                     data=data,
@@ -2102,7 +2066,7 @@ class WebInterface(object):
         return {'headers': response.headers._store,
                 'data': response.text}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(timestamp=int, action='json'))
     def schedule_action(self, timestamp, action):
         """
         Schedule an action at a given point in the future. An action can be any function of the
@@ -2114,12 +2078,9 @@ class WebInterface(object):
 
         :param timestamp: UNIX timestamp.
         :type timestamp: int
-        :param action: JSON encoded dict (see above).
-        :type action: str
+        :param action: action
+        :type action: dict
         """
-        timestamp = int(timestamp)
-        action = json.loads(action)
-
         if not ('type' in action and action['type'] == 'basic' and 'action' in action):
             raise RuntimeError("action does not contain the required keys 'type' and 'action'")
         func_name = action['action']
@@ -2172,7 +2133,7 @@ class WebInterface(object):
 
         return {'actions': actions}
 
-    @openmotics_api(auth=True)
+    @openmotics_api(auth=True, check=types(id=int))
     def remove_scheduled_action(self, id):
         """
         Remove a scheduled action when the id of the action is given.
@@ -2251,26 +2212,25 @@ class WebInterface(object):
         """
         return self._plugin_controller.remove_plugin(name)
 
-    @openmotics_api(auth=True, plugin_exposed=False)
+    @openmotics_api(auth=True, check=types(settings='json'), plugin_exposed=False)
     def get_settings(self, settings):
         """
         Gets a given setting
         """
         values = {}
-        for setting in json.loads(settings):
+        for setting in settings:
             value = self._config_controller.get_setting(setting)
             if value is not None:
                 values[setting] = value
         return {'values': values}
 
-    @openmotics_api(auth=True, plugin_exposed=False)
+    @openmotics_api(auth=True, check=types(value='json'), plugin_exposed=False)
     def set_setting(self, setting, value):
         """
         Configures a setting
         """
         if setting not in ['cloud_enabled', 'cloud_metrics_energy', 'cloud_metrics_pulse_counters']:
             raise RuntimeError('Setting {0} cannot be set'.format(setting))
-        value = json.loads(value)
         self._config_controller.set_setting(setting, value)
         return {}
 
