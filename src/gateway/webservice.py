@@ -280,6 +280,7 @@ class WebInterface(object):
         self.metrics_collector = None
         self._metrics_controller = None
         self._ws_metrics_registered = False
+        self._power_dirty = False
 
     def distribute_metric(self, metric):
         try:
@@ -465,6 +466,16 @@ class WebInterface(object):
         :rtype: dict
         """
         return self._gateway_api.get_modules()
+
+    @openmotics_api(auth=True)
+    def get_features(self):
+        """
+        Returns all available features this Gateway supports. This allows to make flexible clients
+        """
+        return {'features': [
+            'metrics',     # Advanced metrics (including metrics over websockets)
+            'dirty_flag'   # A dirty flag that can be used to trigger syncs on power & master
+        ]}
 
     @openmotics_api(auth=True, check=types(type=int, id=int))
     def flash_leds(self, type, id):
@@ -1801,6 +1812,16 @@ class WebInterface(object):
         return {}
 
     @openmotics_api(auth=True)
+    def get_reset_dirty_flag(self):
+        """
+        Gets the dirty flags, and immediately clears them
+        """
+        power_dirty = self._power_dirty
+        self._power_dirty = False
+        return {'eeprom': self._gateway_api.get_reset_eeprom_dirty_flag(),
+                'power': power_dirty}
+
+    @openmotics_api(auth=True)
     def get_power_modules(self):
         """
         Get information on the power modules. The times format is a comma seperated list of
@@ -1860,6 +1881,7 @@ class WebInterface(object):
         """
         Stop the address mode on the power modules.
         """
+        self._power_dirty = True
         return self._gateway_api.stop_power_address_mode()
 
     @openmotics_api(auth=True)

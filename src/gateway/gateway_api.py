@@ -2039,6 +2039,11 @@ class GatewayApi(object):
 
     # End of auto generated functions
 
+    def get_reset_eeprom_dirty_flag(self):
+        dirty = self.__eeprom_controller.dirty
+        self.__eeprom_controller.dirty = False
+        return dirty
+
     # Power functions
 
     def get_power_modules(self):

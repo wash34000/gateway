@@ -37,6 +37,7 @@ class EepromController(object):
         """
         self._eeprom_file = eeprom_file
         self._eeprom_extension = eeprom_extension
+        self.dirty = False
 
     def invalidate_cache(self):
         """ Invalidate the cache, this should happen when maintenance mode was used. """
@@ -102,12 +103,14 @@ class EepromController(object):
         if len(eeprom_data) > 0:
             self._eeprom_file.write(eeprom_data)
             self._eeprom_file.activate()
+            self.dirty = True
         # Write the extensions
         eext_data = []
         for eeprom_model in eeprom_models:
             eext_data += eeprom_model.get_eext_data()
         if len(eext_data) > 0:
             self._eeprom_extension.write_data(eext_data)
+            self.dirty = True
 
 
 class EepromFile(object):
