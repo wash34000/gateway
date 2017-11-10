@@ -27,13 +27,21 @@ import requests
 import logging
 import cherrypy
 import constants
+import msgpack
 from cherrypy.lib.static import serve_file
+from ws4py.websocket import WebSocket
+from ws4py.server.cherrypyserver import WebSocketPlugin, WebSocketTool
 from master.master_communicator import InMaintenanceModeException
 from gateway.scheduling import SchedulingController
 try:
     import json
 except ImportError:
     import simplejson as json
+try:
+    import cherrypy_cors
+    cherrypy_cors.install()
+except ImportError:
+    cherrypy_cors = None
 
 LOGGER = logging.getLogger("openmotics")
 
@@ -107,6 +115,7 @@ def timestamp_filter():
     if "fe_time" in cherrypy.request.params:
         del cherrypy.request.params["fe_time"]
 
+
 cherrypy.tools.timestampFilter = cherrypy.Tool('before_handler', timestamp_filter)
 
 
@@ -122,10 +131,62 @@ def error_unexpected():
     cherrypy.response.status = 500
     return json.dumps({"success": False, "msg": "unknown_error"})
 
+
 cherrypy.config.update({'error_page.404': error_generic,
                         'error_page.401': error_generic,
                         'error_page.503': error_generic,
                         'request.error_response': error_unexpected})
+
+
+class OMPlugin(WebSocketPlugin):
+    def __init__(self, bus):
+        WebSocketPlugin.__init__(self, bus)
+        self.metric_receivers = {}
+
+    def start(self):
+        WebSocketPlugin.start(self)
+        self.bus.subscribe('add-metrics-receiver', self.add_metrics_receiver)
+        self.bus.subscribe('get-metrics-receivers', self.get_metrics_receivers)
+        self.bus.subscribe('remove-metrics-receiver', self.remove_metrics_receiver)
+
+    def stop(self):
+        WebSocketPlugin.stop(self)
+        self.bus.unsubscribe('add-metrics-receiver', self.add_metrics_receiver)
+        self.bus.unsubscribe('get-metrics-receivers', self.get_metrics_receivers)
+        self.bus.unsubscribe('remove-metrics-receiver', self.remove_metrics_receiver)
+
+    def add_metrics_receiver(self, client_id, receiver_ino):
+        self.metric_receivers[client_id] = receiver_ino
+
+    def get_metrics_receivers(self):
+        return self.metric_receivers
+
+    def remove_metrics_receiver(self, client_id):
+        del self.metric_receivers[client_id]
+
+
+class MetricsSocket(WebSocket):
+    """
+    Handles web socket communications for metrics
+    """
+    def opened(self):
+        cherrypy.engine.publish('add-metrics-receiver',
+                                self.metadata['client_id'],
+                                {'source': self.metadata['source'],
+                                 'metric_type': self.metadata['metric_type'],
+                                 'token': self.metadata['token'],
+                                 'socket': self})
+        self.metadata['interface'].metrics_collector.set_websocket_interval(self.metadata['client_id'],
+                                                                            self.metadata['metric_type'],
+                                                                            self.metadata['interval'])
+
+    def closed(self, *args, **kwargs):
+        _ = args, kwargs
+        client_id = self.metadata['client_id']
+        cherrypy.engine.publish('remove-metrics-receiver', client_id)
+        self.metadata['interface'].metrics_collector.set_websocket_interval(client_id,
+                                                                            self.metadata['metric_type'],
+                                                                            None)
 
 
 class DummyToken(object):
@@ -138,36 +199,70 @@ class WebInterface(object):
     """ This class defines the web interface served by cherrypy. """
 
     def __init__(self, user_controller, gateway_api, scheduling_filename, maintenance_service,
-                 authorized_check):
+                 authorized_check, config_controller):
         """ Constructor for the WebInterface.
 
         :param user_controller: used to create and authenticate users.
-        :type user_controller: instance of :class`UserController`.
+        :type user_controller: gateway.users.UserController
         :param gateway_api: used to communicate with the master.
-        :type gateway_api: instance of :class`GatewayApi`.
+        :type gateway_api: gateway.gateway_api.GatewayAPI
         :param scheduling_filename: the filename of the scheduling controller database.
-        :type scheduling_filename: string.
+        :type scheduling_filename: str
         :param maintenance_service: used when opening maintenance mode.
-        :type maintenance_service: instance of :class`MaintenanceService`.
+        :type maintenance_service: master.maintenance.MaintenanceService
         :param authorized_check: check if the gateway is in authorized mode.
-        :type authorized_check: function (called without arguments).
+        :type authorized_check: () -> bool
+        :param config_controller: Configuration controller
+        :type config_controller: gateway.config.ConfigController
         """
         self.__user_controller = user_controller
+        self.__config_controller = config_controller
         self.__gateway_api = GatewayApiWrapper(gateway_api)
 
-        self.__scheduling_controller = SchedulingController(scheduling_filename,
-                                                            self.__exec_scheduled_action)
+        self.__scheduling_controller = SchedulingController(scheduling_filename, self.__exec_scheduled_action)
         self.__scheduling_controller.start()
 
         self.__maintenance_service = maintenance_service
         self.__authorized_check = authorized_check
 
         self.__plugin_controller = None
+        self.metrics_collector = None
+        self.__metrics_controller = None
+        self.__ws_metrics_registered = False
+
         self.dummy_token = DummyToken()
+
+    def distribute_metric(self, metric):
+        _ = self
+        try:
+            answers = cherrypy.engine.publish('get-metrics-receivers')
+            if len(answers) == 0:
+                return
+            for client_id, receiver_info in answers.pop().iteritems():
+                try:
+                    self.check_token(receiver_info['token'])
+                    sources = self.__metrics_controller.get_filter('source', receiver_info['source'])
+                    metric_types = self.__metrics_controller.get_filter('metric_type', receiver_info['metric_type'])
+                    if metric['source'] in sources and metric['type'] in metric_types:
+                        receiver_info['socket'].send(msgpack.dumps(metric), binary=True)
+                except cherrypy.HTTPError as ex:  # As might be caught from the `check_token` function
+                    receiver_info['socket'].close(ex.code, ex.message)
+                except Exception as ex:
+                    LOGGER.error('Failed to distribute metrics to WebSocket for client {0}: {1}'.format(client_id, ex))
+        except Exception as ex:
+            LOGGER.error('Failed to distribute metrics to WebSockets: {0}'.format(ex))
 
     def set_plugin_controller(self, plugin_controller):
         """ Set the plugin controller. """
         self.__plugin_controller = plugin_controller
+
+    def set_metrics_collector(self, metrics_collector):
+        """ Set the metrics collector """
+        self.metrics_collector = metrics_collector
+
+    def set_metrics_controller(self, metrics_controller):
+        """ Sets the metrics controller """
+        self.__metrics_controller = metrics_controller
 
     def check_token(self, token):
         """ Check if the token is valid, raises HTTPError(401) if invalid. """
@@ -185,13 +280,14 @@ class WebInterface(object):
     def __success(self, **kwargs):
         """ Returns a dict with 'success' = True and the keys and values in **kwargs. """
         cherrypy.response.headers["Content-Type"] = "application/json"
-        return json.dumps(limit_floats(dict({"success" : True}.items() + kwargs.items())))
+        return json.dumps(limit_floats(dict({"success": True}.items() + kwargs.items())))
 
     @cherrypy.expose
     def index(self):
         """
         Index page of the web service (Gateway GUI)
-        :returns: msg (String)
+        :returns: Contents of index.html
+        :rtype: str
         """
         return serve_file('/opt/openmotics/static/index.html', content_type='text/html')
 
@@ -200,13 +296,14 @@ class WebInterface(object):
         """ Login to the web service, returns a token if successful, returns HTTP status code 401
         otherwise.
 
-        :type username: String
         :param username: Name of the user.
-        :type password: String
+        :type username: str
         :param password: Password of the user.
-        :type timeout: int
+        :type password: str
         :param timeout: Optional session timeout. 30d >= x >= 1h
-        :returns: 'token' : String
+        :type timeout: int
+        :returns: Authentication token
+        :rtype: str
         """
         token = self.__user_controller.login(username, password, timeout)
         if token is None:
@@ -219,6 +316,7 @@ class WebInterface(object):
         """ Logout from the web service.
 
         :returns: 'status': 'OK'
+        :rtype: str
         """
         self.__user_controller.logout(token)
         return self.__success(status='OK')
@@ -243,6 +341,7 @@ class WebInterface(object):
         """ Get the names of the users on the gateway. Only possible in authorized mode.
 
         :returns: 'usernames': list of usernames (String).
+        :rtype: dict
         """
         if self.__authorized_check():
             return self.__success(usernames=self.__user_controller.get_usernames())
@@ -267,7 +366,8 @@ class WebInterface(object):
         """ Open maintenance mode, return the port of the maintenance socket.
 
         :returns: 'port': Port on which the maintenance ssl socket is listening \
-        (Integer between 6000 and 7000).
+            (Integer between 6000 and 7000).
+        :rtype: dict
         """
         self.check_token(token)
 
@@ -280,6 +380,7 @@ class WebInterface(object):
         """ Perform a cold reset on the master.
 
         :returns: 'status': 'OK'.
+        :rtype: dict
         """
         self.check_token(token)
         return self.__wrap(self.__gateway_api.reset_master)
@@ -289,6 +390,7 @@ class WebInterface(object):
         """ Start the module discover mode on the master.
 
         :returns: 'status': 'OK'.
+        :rtype: dict
         """
         self.check_token(token)
         return self.__wrap(self.__gateway_api.module_discover_start)
@@ -298,6 +400,7 @@ class WebInterface(object):
         """ Stop the module discover mode on the master.
 
         :returns: 'status': 'OK'.
+        :rtype: dict
         """
         self.check_token(token)
         return self.__wrap(self.__gateway_api.module_discover_stop)
@@ -307,6 +410,7 @@ class WebInterface(object):
         """ Gets the status of the module discover mode on the master.
 
         :returns 'running': true|false
+        :rtype: dict
         """
         self.check_token(token)
         return self.__wrap(self.__gateway_api.module_discover_status)
@@ -317,6 +421,7 @@ class WebInterface(object):
         messages and clear the log messages.
 
         :returns: 'log': list of tuples (log_level, message).
+        :rtype: dict
         """
         self.check_token(token)
         return self.__wrap(self.__gateway_api.get_module_log)
@@ -326,7 +431,8 @@ class WebInterface(object):
         """ Get a list of all modules attached and registered with the master.
 
         :returns: 'outputs': list of output module types (O,R,D), 'inputs': list of input module \
-        types (I,T,L) and 'shutters': list of shutter module types (S).
+            types (I,T,L) and 'shutters': list of shutter module types (S).
+        :rtype: dict
         """
         self.check_token(token)
         return self.__wrap(self.__gateway_api.get_modules)
@@ -335,11 +441,14 @@ class WebInterface(object):
     def flash_leds(self, token, type, id):
         """ Flash the leds on the module for an output/input/sensor.
 
-        :type type: Integer
+        :param token: Authentication token
+        :type token: str
         :param type: The module type: output/dimmer (0), input (1), sensor/temperatur (2).
-        :type id: Integer
+        :type type: int
         :param id: The id of the output/input/sensor.
+        :type id: int
         :returns: 'status': 'OK'.
+        :rtype: dict
         """
         self.check_token(token)
         return self.__wrap(lambda: self.__gateway_api.flash_leds(int(type), int(id)))
@@ -348,8 +457,11 @@ class WebInterface(object):
     def get_status(self, token):
         """ Get the status of the master.
 
+        :type token: str
+        :param token: Authentication token
         :returns: 'time': hour and minutes (HH:MM), 'date': day, month, year (DD:MM:YYYY), \
-        'mode': Integer, 'version': a.b.c and 'hw_version': hardware version (Integer).
+            'mode': Integer, 'version': a.b.c and 'hw_version': hardware version (Integer).
+        :rtype: dict
         """
         self.check_token(token)
         return self.__success(**self.__gateway_api.get_status())
@@ -358,6 +470,8 @@ class WebInterface(object):
     def get_output_status(self, token):
         """ Get the status of the outputs.
 
+        :type token: str
+        :param token: Authentication token
         :returns: 'status': list of dictionaries with the following keys: id,\
         status, dimmer and ctimer.
         """
@@ -368,6 +482,8 @@ class WebInterface(object):
     def set_output(self, token, id, is_on, dimmer=None, timer=None):
         """ Set the status, dimmer and timer of an output.
 
+        :type token: str
+        :param token: Authentication token
         :param id: The id of the output to set
         :type id: Integer [0, 240]
         :param is_on: Whether the output should be on
@@ -386,6 +502,9 @@ class WebInterface(object):
     @cherrypy.expose
     def set_all_lights_off(self, token):
         """ Turn all lights off.
+
+        :type token: str
+        :param token: Authentication token
         """
         self.check_token(token)
         return self.__wrap(self.__gateway_api.set_all_lights_off)
@@ -394,6 +513,8 @@ class WebInterface(object):
     def set_all_lights_floor_off(self, token, floor):
         """ Turn all lights on a given floor off.
 
+        :type token: str
+        :param token: Authentication token
         :param floor: The id of the floor
         :type floor: Byte
         """
@@ -404,6 +525,8 @@ class WebInterface(object):
     def set_all_lights_floor_on(self, token, floor):
         """ Turn all lights on a given floor on.
 
+        :type token: str
+        :param token: Authentication token
         :param floor: The id of the floor
         :type floor: Byte
         """
@@ -414,7 +537,10 @@ class WebInterface(object):
     def get_last_inputs(self, token):
         """ Get the 5 last pressed inputs during the last 5 minutes.
 
+        :type token: str
+        :param token: Authentication token
         :returns: 'inputs': list of tuples (input, output).
+        :rtype: dict
         """
         self.check_token(token)
         return self.__success(inputs=self.__gateway_api.get_last_inputs())
@@ -423,7 +549,10 @@ class WebInterface(object):
     def get_shutter_status(self, token):
         """ Get the status of the shutters.
 
+        :type token: str
+        :param token: Authentication token
         :returns: 'status': list of dictionaries with the following keys: id, position.
+        :rtype: dict
         """
         self.check_token(token)
         return self.__success(status=self.__gateway_api.get_shutter_status())
@@ -433,9 +562,12 @@ class WebInterface(object):
         """ Make a shutter go down. The shutter stops automatically when the down position is
         reached (after the predefined number of seconds).
 
+        :param token: Authentication token
+        :type token: str
         :param id: The id of the shutter.
-        :type id: Byte
+        :type id: int
         :returns:'status': 'OK'.
+        :rtype: dict
         """
         self.check_token(token)
         return self.__wrap(lambda: self.__gateway_api.do_shutter_down(int(id)))
@@ -445,9 +577,12 @@ class WebInterface(object):
         """ Make a shutter go up. The shutter stops automatically when the up position is
         reached (after the predefined number of seconds).
 
+        :param token: Authentication token
+        :type token: str
         :param id: The id of the shutter.
-        :type id: Byte
+        :type id: int
         :returns:'status': 'OK'.
+        :rtype: dict
         """
         self.check_token(token)
         return self.__wrap(lambda: self.__gateway_api.do_shutter_up(int(id)))
@@ -456,9 +591,12 @@ class WebInterface(object):
     def do_shutter_stop(self, token, id):
         """ Make a shutter stop.
 
+        :param token: Authentication token
+        :type token: str
         :param id: The id of the shutter.
-        :type id: Byte
+        :type id: int
         :returns:'status': 'OK'.
+        :rtype: dict
         """
         self.check_token(token)
         return self.__wrap(lambda: self.__gateway_api.do_shutter_stop(int(id)))
@@ -468,9 +606,12 @@ class WebInterface(object):
         """ Make a shutter group go down. The shutters stop automatically when the down position is
         reached (after the predefined number of seconds).
 
+        :param token: Authentication token
+        :type token: str
         :param id: The id of the shutter group.
-        :type id: Byte
+        :type id: int
         :returns:'status': 'OK'.
+        :rtype: dict
         """
         self.check_token(token)
         return self.__wrap(lambda: self.__gateway_api.do_shutter_group_down(int(id)))
@@ -480,9 +621,12 @@ class WebInterface(object):
         """ Make a shutter group go up. The shutters stop automatically when the up position is
         reached (after the predefined number of seconds).
 
+        :param token: Authentication token
+        :type token: str
         :param id: The id of the shutter group.
-        :type id: Byte
+        :type id: int
         :returns:'status': 'OK'.
+        :rtype: dict
         """
         self.check_token(token)
         return self.__wrap(lambda: self.__gateway_api.do_shutter_group_up(int(id)))
@@ -491,9 +635,12 @@ class WebInterface(object):
     def do_shutter_group_stop(self, token, id):
         """ Make a shutter group stop.
 
+        :param token: Authentication token
+        :type token: str
         :param id: The id of the shutter group.
-        :type id: Byte
+        :type id: int
         :returns:'status': 'OK'.
+        :rtype: dict
         """
         self.check_token(token)
         return self.__wrap(lambda: self.__gateway_api.do_shutter_group_stop(int(id)))
@@ -502,10 +649,13 @@ class WebInterface(object):
     def get_thermostat_status(self, token):
         """ Get the status of the thermostats.
 
+        :param token: Authentication token
+        :type token: str
         :returns: global status information about the thermostats: 'thermostats_on', \
-        'automatic' and 'setpoint' and 'status': a list with status information for all \
-        thermostats, each element in the list is a dict with the following keys: \
-        'id', 'act', 'csetp', 'output0', 'output1', 'outside', 'mode'.
+            'automatic' and 'setpoint' and 'status': a list with status information for all \
+            thermostats, each element in the list is a dict with the following keys: \
+            'id', 'act', 'csetp', 'output0', 'output1', 'outside', 'mode'.
+        :rtype: dict
         """
         self.check_token(token)
         return self.__wrap(self.__gateway_api.get_thermostat_status)
@@ -514,11 +664,14 @@ class WebInterface(object):
     def set_current_setpoint(self, token, thermostat, temperature):
         """ Set the current setpoint of a thermostat.
 
+        :param token: Authentication token
+        :type token: str
         :param thermostat: The id of the thermostat to set
-        :type thermostat: Integer [0, 32]
+        :type thermostat: int
         :param temperature: The temperature to set in degrees Celcius
         :type temperature: float
         :return: 'status': 'OK'.
+        :rtype: dict
         """
         self.check_token(token)
         return self.__wrap(lambda: self.__gateway_api.set_current_setpoint(
@@ -533,20 +686,22 @@ class WebInterface(object):
         applied to all thermostats. To control the automatic and setpoint parameters per thermostat
         use the set_per_thermostat_mode call instead.
 
+        :param token: Authentication token
+        :type token: str
         :param thermostat_on: Whether the thermostats are on
-        :type thermostat_on: Boolean
+        :type thermostat_on: bool
         :param automatic: Automatic mode (True) or Manual mode (False).  This parameter is here for
-        backwards compatibility, use set_per_thermostat_mode instead.
-        :type automatic: Boolean (optional)
+            backwards compatibility, use set_per_thermostat_mode instead.
+        :type automatic: bool | None
         :param setpoint: The current setpoint.  This parameter is here for backwards compatibility,
-        use set_per_thermostat_mode instead.
-        :type setpoint: Integer [0, 5] (optional)
+            use set_per_thermostat_mode instead.
+        :type setpoint: int | None
         :param cooling_mode: Cooling mode (True) of Heating mode (False)
-        :type cooling_mode: boolean (optional)
+        :type cooling_mode: bool | None
         :param cooling_on: Turns cooling ON when set to true.
-        :param cooling_on: boolean (optional)
-
+        :param cooling_on: bool | None
         :return: 'status': 'OK'.
+        :rtype: dict
         """
         self.check_token(token)
 
@@ -567,12 +722,14 @@ class WebInterface(object):
         """ Set the thermostat mode of a given thermostat. Thermostats can be set to automatic or
         manual, in case of manual a setpoint (0 to 5) can be provided.
 
+        :param token: Authentication token
+        :type token: str
         :param thermostat_id: The thermostat id
-        :type thermostat_id: Integer [0, 31]
+        :type thermostat_id: int
         :param automatic: Automatic mode (True) or Manual mode (False).
-        :type automatic: Boolean
+        :type automatic: bool
         :param setpoint: The current setpoint.
-        :type setpoint: Integer [0, 5]
+        :type setpoint: int
         """
         self.check_token(token)
         return self.__wrap(lambda: self.__gateway_api.set_per_thermostat_mode(int(thermostat_id),
@@ -583,7 +740,10 @@ class WebInterface(object):
     def get_airco_status(self, token):
         """ Get the mode of the airco attached to a all thermostats.
 
+        :param token: Authentication token
+        :type token: str
         :returns: dict with ASB0-ASB31.
+        :rtype: dict
         """
         self.check_token(token)
         return self.__wrap(lambda: self.__gateway_api.get_airco_status())
@@ -592,12 +752,14 @@ class WebInterface(object):
     def set_airco_status(self, token, thermostat_id, airco_on):
         """ Set the mode of the airco attached to a given thermostat.
 
+        :param token: Authentication token
+        :type token: str
         :param thermostat_id: The thermostat id.
-        :type thermostat_id: Integer [0, 31]
+        :type thermostat_id: int
         :param airco_on: Turns the airco on if True.
-        :type airco_on: boolean.
-
-        :returns: dict with 'status'.
+        :type airco_on: bool
+        :returns: dict with 'status'
+        :rtype: dict
         """
         self.check_token(token)
         return self.__wrap(lambda: self.__gateway_api.set_airco_status(
@@ -607,7 +769,10 @@ class WebInterface(object):
     def get_sensor_temperature_status(self, token):
         """ Get the current temperature of all sensors.
 
+        :param token: Authentication token
+        :type token: str
         :returns: 'status': list of 32 temperatures, 1 for each sensor.
+        :rtype: dict
         """
         self.check_token(token)
         return self.__success(status=self.__gateway_api.get_sensor_temperature_status())
@@ -616,7 +781,10 @@ class WebInterface(object):
     def get_sensor_humidity_status(self, token):
         """ Get the current humidity of all sensors.
 
+        :param token: Authentication token
+        :type token: str
         :returns: 'status': List of 32 bytes, 1 for each sensor.
+        :rtype: dict
         """
         self.check_token(token)
         return self.__success(status=self.__gateway_api.get_sensor_humidity_status())
@@ -625,7 +793,10 @@ class WebInterface(object):
     def get_sensor_brightness_status(self, token):
         """ Get the current brightness of all sensors.
 
+        :param token: Authentication token
+        :type token: str
         :returns: 'status': List of 32 bytes, 1 for each sensor.
+        :rtype: dict
         """
         self.check_token(token)
         return self.__success(status=self.__gateway_api.get_sensor_brightness_status())
@@ -634,8 +805,10 @@ class WebInterface(object):
     def set_virtual_sensor(self, token, sensor_id, temperature, humidity, brightness):
         """ Set the temperature, humidity and brightness value of a virtual sensor.
 
+        :param token: Authentication token
+        :type token: str
         :param sensor_id: The id of the sensor.
-        :type sensor_id: Integer [0, 31]
+        :type sensor_id: int
         :param temperature: The temperature to set in degrees Celcius
         :type temperature: float
         :param humidity: The humidity to set in percentage
@@ -643,6 +816,7 @@ class WebInterface(object):
         :param brightness: The brightness to set in percentage
         :type brightness: int
         :returns: dict with 'status'.
+        :rtype: dict
         """
         self.check_token(token)
         return self.__wrap(lambda: self.__gateway_api.set_virtual_sensor(
@@ -656,11 +830,13 @@ class WebInterface(object):
     def do_basic_action(self, token, action_type, action_number):
         """ Execute a basic action.
 
+        :param token: Authentication token
+        :type token: str
         :param action_type: The type of the action as defined by the master api.
-        :type action_type: Integer [0, 254]
+        :type action_type: int
         :param action_number: The number provided to the basic action, its meaning depends on the \
-        action_type.
-        :type action_number: Integer [0, 254]
+            action_type.
+        :type action_number: int
         """
         self.check_token(token)
         return self.__wrap(lambda: self.__gateway_api.do_basic_action(int(action_type),
@@ -670,8 +846,10 @@ class WebInterface(object):
     def do_group_action(self, token, group_action_id):
         """ Execute a group action.
 
+        :param token: Authentication token
+        :type token: str
         :param group_action_id: The id of the group action
-        :type group_action_id: Integer [0, 159]
+        :type group_action_id: int
         """
         self.check_token(token)
         return self.__wrap(lambda: self.__gateway_api.do_group_action(int(group_action_id)))
@@ -680,8 +858,10 @@ class WebInterface(object):
     def set_master_status_leds(self, token, status):
         """ Set the status of the leds on the master.
 
+        :param token: Authentication token
+        :type token: str
         :param status: whether the leds should be on (true) or off (false).
-        :type status: Boolean
+        :type status: str
         """
         self.check_token(token)
         return self.__wrap(
@@ -691,8 +871,11 @@ class WebInterface(object):
     def get_full_backup(self, token):
         """ Get a backup (tar) of the master eeprom and the sqlite databases.
 
+        :param token: Authentication token
+        :type token: str
         :returns: Tar containing 4 files: master.eep, config.db, scheduled.db, power.db and
-        eeprom_extensions.db as a string of bytes.
+            eeprom_extensions.db as a string of bytes.
+        :rtype: dict
         """
         self.check_token(token)
         cherrypy.response.headers['Content-Type'] = 'application/octet-stream'
@@ -702,10 +885,13 @@ class WebInterface(object):
     def restore_full_backup(self, token, backup_data):
         """ Restore a full backup containing the master eeprom and the sqlite databases.
 
-        :param data: The full backup to restore: tar containing 4 files: master.eep, config.db, \
-        scheduled.db, power.db and eeprom_extensions.db as a string of bytes.
-        :type data: multipart/form-data encoded bytes.
+        :param token: Authentication token
+        :type token: str
+        :param backup_data: The full backup to restore: tar containing 4 files: master.eep, config.db, \
+            scheduled.db, power.db and eeprom_extensions.db as a string of bytes.
+        :type backup_data: multipart/form-data encoded bytes.
         :returns: dict with 'output' key.
+        :rtype: dict
         """
         self.check_token(token)
         data = backup_data.file.read()
@@ -718,8 +904,11 @@ class WebInterface(object):
     def get_master_backup(self, token):
         """ Get a backup of the eeprom of the master.
 
+        :param token: Authentication token
+        :type token: str
         :returns: This function does not return a dict, unlike all other API functions: it \
-        returns a string of bytes (size = 64kb).
+            returns a string of bytes (size = 64kb).
+        :rtype: bytearray
         """
         self.check_token(token)
         cherrypy.response.headers['Content-Type'] = 'application/octet-stream'
@@ -729,9 +918,12 @@ class WebInterface(object):
     def master_restore(self, token, data):
         """ Restore a backup of the eeprom of the master.
 
+        :param token: Authentication token
+        :type token: str
         :param data: The eeprom backup to restore.
         :type data: multipart/form-data encoded bytes (size = 64 kb).
         :returns: 'output': array with the addresses that were written.
+        :rtype: dict
         """
         self.check_token(token)
         data = data.file.read()
@@ -743,9 +935,12 @@ class WebInterface(object):
         power modules (master_last_success, power_last_success) and the error list per module
         (input and output modules). The modules are identified by O1, O2, I1, I2, ...
 
+        :param token: Authentication token
+        :type token: str
         :returns: 'errors': list of tuples (module, nr_errors), 'master_last_success': UNIX \
-        timestamp of the last succesful master communication and 'power_last_success': UNIX \
-        timestamp of the last successful power communication.
+            timestamp of the last succesful master communication and 'power_last_success': UNIX \
+            timestamp of the last successful power communication.
+        :rtype: dict
         """
         self.check_token(token)
         try:
@@ -767,18 +962,21 @@ class WebInterface(object):
         self.check_token(token)
         return self.__wrap(self.__gateway_api.master_clear_error_list)
 
-    ###### Below are the auto generated master configuration api functions
+    # Below are the auto generated master configuration api functions
 
     @cherrypy.expose
     def get_output_configuration(self, token, id, fields=None):
         """
         Get a specific output_configuration defined by its id.
 
+        :param token: Authentication token
+        :type token: str
         :param id: The id of the output_configuration
-        :type id: Id
+        :type id: int
         :param fields: The field of the output_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
+        :type fields: str
         :returns: 'config': output_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'floor' (Byte), 'module_type' (String[1]), 'name' (String[16]), 'room' (Byte), 'timer' (Word), 'type' (Byte)
+        :rtype: dict
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -789,9 +987,12 @@ class WebInterface(object):
         """
         Get all output_configurations.
 
+        :param token: Authentication token
+        :type token: str
         :param fields: The field of the output_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
+        :type fields: str
         :returns: 'config': list of output_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'floor' (Byte), 'module_type' (String[1]), 'name' (String[16]), 'room' (Byte), 'timer' (Word), 'type' (Byte)
+        :rtype: dict
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -802,8 +1003,10 @@ class WebInterface(object):
         """
         Set one output_configuration.
 
-        :param config: The output_configuration to set
-        :type config: output_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'floor' (Byte), 'name' (String[16]), 'room' (Byte), 'timer' (Word), 'type' (Byte)
+        :param token: Authentication token
+        :type token: str
+        :param config: The output_configuration to set: dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'floor' (Byte), 'name' (String[16]), 'room' (Byte), 'timer' (Word), 'type' (Byte)
+        :type config: str
         """
         self.check_token(token)
         self.__gateway_api.set_output_configuration(json.loads(config))
@@ -814,8 +1017,10 @@ class WebInterface(object):
         """
         Set multiple output_configurations.
 
-        :param config: The list of output_configurations to set
-        :type config: list of output_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'floor' (Byte), 'name' (String[16]), 'room' (Byte), 'timer' (Word), 'type' (Byte)
+        :param token: Authentication token
+        :type token: str
+        :param config: The list of output_configurations to set: list of output_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'floor' (Byte), 'name' (String[16]), 'room' (Byte), 'timer' (Word), 'type' (Byte)
+        :type config: str
         """
         self.check_token(token)
         self.__gateway_api.set_output_configurations(json.loads(config))
@@ -826,11 +1031,14 @@ class WebInterface(object):
         """
         Get a specific shutter_configuration defined by its id.
 
+        :param token: Authentication token
+        :type token: str
         :param id: The id of the shutter_configuration
         :type id: Id
         :param fields: The field of the shutter_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
+        :type fields: str
         :returns: 'config': shutter_configuration dict: contains 'id' (Id), 'group_1' (Byte), 'group_2' (Byte), 'name' (String[16]), 'room' (Byte), 'timer_down' (Byte), 'timer_up' (Byte), 'up_down_config' (Byte)
+        :rtype: dict
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -841,9 +1049,12 @@ class WebInterface(object):
         """
         Get all shutter_configurations.
 
+        :param token: Authentication token
+        :type token: str
         :param fields: The field of the shutter_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
+        :type fields: str
         :returns: 'config': list of shutter_configuration dict: contains 'id' (Id), 'group_1' (Byte), 'group_2' (Byte), 'name' (String[16]), 'room' (Byte), 'timer_down' (Byte), 'timer_up' (Byte), 'up_down_config' (Byte)
+        :rtype: dict
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -854,8 +1065,10 @@ class WebInterface(object):
         """
         Set one shutter_configuration.
 
-        :param config: The shutter_configuration to set
-        :type config: shutter_configuration dict: contains 'id' (Id), 'group_1' (Byte), 'group_2' (Byte), 'name' (String[16]), 'room' (Byte), 'timer_down' (Byte), 'timer_up' (Byte), 'up_down_config' (Byte)
+        :param token: Authentication token
+        :type token: str
+        :param config: The shutter_configuration to set: shutter_configuration dict: contains 'id' (Id), 'group_1' (Byte), 'group_2' (Byte), 'name' (String[16]), 'room' (Byte), 'timer_down' (Byte), 'timer_up' (Byte), 'up_down_config' (Byte)
+        :type config: str
         """
         self.check_token(token)
         self.__gateway_api.set_shutter_configuration(json.loads(config))
@@ -866,8 +1079,10 @@ class WebInterface(object):
         """
         Set multiple shutter_configurations.
 
-        :param config: The list of shutter_configurations to set
-        :type config: list of shutter_configuration dict: contains 'id' (Id), 'group_1' (Byte), 'group_2' (Byte), 'name' (String[16]), 'room' (Byte), 'timer_down' (Byte), 'timer_up' (Byte), 'up_down_config' (Byte)
+        :param token: Authentication token
+        :type token: str
+        :param config: The list of shutter_configurations to set: list of shutter_configuration dict: contains 'id' (Id), 'group_1' (Byte), 'group_2' (Byte), 'name' (String[16]), 'room' (Byte), 'timer_down' (Byte), 'timer_up' (Byte), 'up_down_config' (Byte)
+        :type config: str
         """
         self.check_token(token)
         self.__gateway_api.set_shutter_configurations(json.loads(config))
@@ -878,11 +1093,14 @@ class WebInterface(object):
         """
         Get a specific shutter_group_configuration defined by its id.
 
+        :param token: Authentication token
+        :type token: str
         :param id: The id of the shutter_group_configuration
-        :type id: Id
+        :type id: int
         :param fields: The field of the shutter_group_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
+        :type fields: str
         :returns: 'config': shutter_group_configuration dict: contains 'id' (Id), 'room' (Byte), 'timer_down' (Byte), 'timer_up' (Byte)
+        :rtype: dict
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -893,9 +1111,12 @@ class WebInterface(object):
         """
         Get all shutter_group_configurations.
 
+        :param token: Authentication token
+        :type token: str
         :param fields: The field of the shutter_group_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
+        :type fields: str
         :returns: 'config': list of shutter_group_configuration dict: contains 'id' (Id), 'room' (Byte), 'timer_down' (Byte), 'timer_up' (Byte)
+        :rtype: dict
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -906,8 +1127,10 @@ class WebInterface(object):
         """
         Set one shutter_group_configuration.
 
-        :param config: The shutter_group_configuration to set
-        :type config: shutter_group_configuration dict: contains 'id' (Id), 'room' (Byte), 'timer_down' (Byte), 'timer_up' (Byte)
+        :param token: Authentication token
+        :type token: str
+        :param config: The shutter_group_configuration to set: shutter_group_configuration dict: contains 'id' (Id), 'room' (Byte), 'timer_down' (Byte), 'timer_up' (Byte)
+        :type config: str
         """
         self.check_token(token)
         self.__gateway_api.set_shutter_group_configuration(json.loads(config))
@@ -918,8 +1141,10 @@ class WebInterface(object):
         """
         Set multiple shutter_group_configurations.
 
-        :param config: The list of shutter_group_configurations to set
-        :type config: list of shutter_group_configuration dict: contains 'id' (Id), 'room' (Byte), 'timer_down' (Byte), 'timer_up' (Byte)
+        :param token: Authentication token
+        :type token: str
+        :param config: The list of shutter_group_configurations to set: list of shutter_group_configuration dict: contains 'id' (Id), 'room' (Byte), 'timer_down' (Byte), 'timer_up' (Byte)
+        :type config: str
         """
         self.check_token(token)
         self.__gateway_api.set_shutter_group_configurations(json.loads(config))
@@ -930,11 +1155,14 @@ class WebInterface(object):
         """
         Get a specific input_configuration defined by its id.
 
+        :param token: Authentication token
+        :type token: str
         :param id: The id of the input_configuration
-        :type id: Id
+        :type id: int
         :param fields: The field of the input_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
+        :type fields: str
         :returns: 'config': input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'module_type' (String[1]), 'name' (String[8]), 'room' (Byte)
+        :rtype: dict
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -945,9 +1173,12 @@ class WebInterface(object):
         """
         Get all input_configurations.
 
+        :param token: Authentication token
+        :type token: str
         :param fields: The field of the input_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
+        :type fields: str | None
         :returns: 'config': list of input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'module_type' (String[1]), 'name' (String[8]), 'room' (Byte)
+        :rtype: dict
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -958,8 +1189,10 @@ class WebInterface(object):
         """
         Set one input_configuration.
 
-        :param config: The input_configuration to set
-        :type config: input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'name' (String[8]), 'room' (Byte)
+        :param token: Authentication token
+        :type token: str
+        :param config: The input_configuration to set: input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'name' (String[8]), 'room' (Byte)
+        :type config: str
         """
         self.check_token(token)
         self.__gateway_api.set_input_configuration(json.loads(config))
@@ -970,8 +1203,10 @@ class WebInterface(object):
         """
         Set multiple input_configurations.
 
-        :param config: The list of input_configurations to set
-        :type config: list of input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'name' (String[8]), 'room' (Byte)
+        :param token: Authentication token
+        :type token: str
+        :param config: The list of input_configurations to set: list of input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'name' (String[8]), 'room' (Byte)
+        :type config: str
         """
         self.check_token(token)
         self.__gateway_api.set_input_configurations(json.loads(config))
@@ -982,11 +1217,14 @@ class WebInterface(object):
         """
         Get a specific thermostat_configuration defined by its id.
 
+        :param token: Authentication token
+        :type token: str
         :param id: The id of the thermostat_configuration
-        :type id: Id
+        :type id: int
         :param fields: The field of the thermostat_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
+        :type fields: str
         :returns: 'config': thermostat_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'room' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
+        :rtype: dict
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -997,9 +1235,12 @@ class WebInterface(object):
         """
         Get all thermostat_configurations.
 
+        :param token: Authentication token
+        :type token: str
         :param fields: The field of the thermostat_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
+        :type fields: str | None
         :returns: 'config': list of thermostat_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'room' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
+        :rtype: dict
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -1010,8 +1251,10 @@ class WebInterface(object):
         """
         Set one thermostat_configuration.
 
-        :param config: The thermostat_configuration to set
-        :type config: thermostat_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'room' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
+        :param token: Authentication token
+        :type token: str
+        :param config: The thermostat_configuration to set: thermostat_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'room' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
+        :type config: str
         """
         self.check_token(token)
         self.__gateway_api.set_thermostat_configuration(json.loads(config))
@@ -1022,8 +1265,10 @@ class WebInterface(object):
         """
         Set multiple thermostat_configurations.
 
-        :param config: The list of thermostat_configurations to set
-        :type config: list of thermostat_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'room' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
+        :param token: Authentication token
+        :type token: str
+        :param config: The list of thermostat_configurations to set: list of thermostat_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'room' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
+        :type config: str
         """
         self.check_token(token)
         self.__gateway_api.set_thermostat_configurations(json.loads(config))
@@ -1034,11 +1279,14 @@ class WebInterface(object):
         """
         Get a specific sensor_configuration defined by its id.
 
+        :param token: Authentication token
+        :type token: str
         :param id: The id of the sensor_configuration
-        :type id: Id
+        :type id: int
         :param fields: The field of the sensor_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
+        :type fields: str | None
         :returns: 'config': sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees)), 'room' (Byte), 'virtual' (Boolean)
+        :rtype: dict
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -1049,9 +1297,12 @@ class WebInterface(object):
         """
         Get all sensor_configurations.
 
+        :param token: Authentication token
+        :type token: str
         :param fields: The field of the sensor_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
+        :type fields: str | None
         :returns: 'config': list of sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees)), 'room' (Byte), 'virtual' (Boolean)
+        :rtype: dict
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -1062,8 +1313,10 @@ class WebInterface(object):
         """
         Set one sensor_configuration.
 
-        :param config: The sensor_configuration to set
-        :type config: sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees)), 'room' (Byte), 'virtual' (Boolean)
+        :param token: Authentication token
+        :type token: str
+        :param config: The sensor_configuration to set: sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees)), 'room' (Byte), 'virtual' (Boolean)
+        :type config: str
         """
         self.check_token(token)
         self.__gateway_api.set_sensor_configuration(json.loads(config))
@@ -1074,8 +1327,10 @@ class WebInterface(object):
         """
         Set multiple sensor_configurations.
 
-        :param config: The list of sensor_configurations to set
-        :type config: list of sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees)), 'room' (Byte), 'virtual' (Boolean)
+        :param token: Authentication token
+        :type token: str
+        :param config: The list of sensor_configurations to set: list of sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees)), 'room' (Byte), 'virtual' (Boolean)
+        :type config: str
         """
         self.check_token(token)
         self.__gateway_api.set_sensor_configurations(json.loads(config))
@@ -1086,11 +1341,14 @@ class WebInterface(object):
         """
         Get a specific pump_group_configuration defined by its id.
 
+        :param token: Authentication token
+        :type token: str
         :param id: The id of the pump_group_configuration
-        :type id: Id
+        :type id: int
         :param fields: The field of the pump_group_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
+        :type fields: str | None
         :returns: 'config': pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32]), 'room' (Byte)
+        :rtype: dict
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -1101,9 +1359,12 @@ class WebInterface(object):
         """
         Get all pump_group_configurations.
 
+        :param token: Authentication token
+        :type token: str
         :param fields: The field of the pump_group_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
+        :type fields: str
         :returns: 'config': list of pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32]), 'room' (Byte)
+        :rtype: dict
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -1114,8 +1375,10 @@ class WebInterface(object):
         """
         Set one pump_group_configuration.
 
-        :param config: The pump_group_configuration to set
-        :type config: pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32]), 'room' (Byte)
+        :param token: Authentication token
+        :type token: str
+        :param config: The pump_group_configuration to set: pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32]), 'room' (Byte)
+        :type config: str
         """
         self.check_token(token)
         self.__gateway_api.set_pump_group_configuration(json.loads(config))
@@ -1126,8 +1389,10 @@ class WebInterface(object):
         """
         Set multiple pump_group_configurations.
 
-        :param config: The list of pump_group_configurations to set
-        :type config: list of pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32]), 'room' (Byte)
+        :param token: Authentication token
+        :type token: str
+        :param config: The list of pump_group_configurations to set: list of pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32]), 'room' (Byte)
+        :type config: str
         """
         self.check_token(token)
         self.__gateway_api.set_pump_group_configurations(json.loads(config))
@@ -1138,11 +1403,14 @@ class WebInterface(object):
         """
         Get a specific cooling_configuration defined by its id.
 
+        :param token: Authentication token
+        :type token: str
         :param id: The id of the cooling_configuration
-        :type id: Id
+        :type id: int
         :param fields: The field of the cooling_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
+        :type fields: str | None
         :returns: 'config': cooling_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'room' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
+        :rtype: dict
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -1153,9 +1421,12 @@ class WebInterface(object):
         """
         Get all cooling_configurations.
 
+        :param token: Authentication token
+        :type token: str
         :param fields: The field of the cooling_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
+        :type fields: str | None
         :returns: 'config': list of cooling_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'room' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
+        :rtype: dict
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -1166,8 +1437,10 @@ class WebInterface(object):
         """
         Set one cooling_configuration.
 
-        :param config: The cooling_configuration to set
-        :type config: cooling_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'room' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
+        :param token: Authentication token
+        :type token: str
+        :param config: The cooling_configuration to set: cooling_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'room' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
+        :type config: str
         """
         self.check_token(token)
         self.__gateway_api.set_cooling_configuration(json.loads(config))
@@ -1178,8 +1451,10 @@ class WebInterface(object):
         """
         Set multiple cooling_configurations.
 
-        :param config: The list of cooling_configurations to set
-        :type config: list of cooling_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'room' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
+        :param token: Authentication token
+        :type token: str
+        :param config: The list of cooling_configurations to set: list of cooling_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'room' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
+        :type config: str
         """
         self.check_token(token)
         self.__gateway_api.set_cooling_configurations(json.loads(config))
@@ -1190,11 +1465,14 @@ class WebInterface(object):
         """
         Get a specific cooling_pump_group_configuration defined by its id.
 
+        :param token: Authentication token
+        :type token: str
         :param id: The id of the cooling_pump_group_configuration
-        :type id: Id
+        :type id: int
         :param fields: The field of the cooling_pump_group_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
+        :type fields: str | None
         :returns: 'config': cooling_pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32]), 'room' (Byte)
+        :rtype: dict
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -1205,9 +1483,12 @@ class WebInterface(object):
         """
         Get all cooling_pump_group_configurations.
 
+        :param token: Authentication token
+        :type token: str
         :param fields: The field of the cooling_pump_group_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
+        :type fields: str | None
         :returns: 'config': list of cooling_pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32]), 'room' (Byte)
+        :rtype: dict
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -1218,8 +1499,10 @@ class WebInterface(object):
         """
         Set one cooling_pump_group_configuration.
 
-        :param config: The cooling_pump_group_configuration to set
-        :type config: cooling_pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32]), 'room' (Byte)
+        :param token: Authentication token
+        :type token: str
+        :param config: The cooling_pump_group_configuration to set: cooling_pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32]), 'room' (Byte)
+        :type config: str
         """
         self.check_token(token)
         self.__gateway_api.set_cooling_pump_group_configuration(json.loads(config))
@@ -1230,8 +1513,10 @@ class WebInterface(object):
         """
         Set multiple cooling_pump_group_configurations.
 
-        :param config: The list of cooling_pump_group_configurations to set
-        :type config: list of cooling_pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32]), 'room' (Byte)
+        :param token: Authentication token
+        :type token: str
+        :param config: The list of cooling_pump_group_configurations to set: list of cooling_pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32]), 'room' (Byte)
+        :type config: str
         """
         self.check_token(token)
         self.__gateway_api.set_cooling_pump_group_configurations(json.loads(config))
@@ -1242,9 +1527,12 @@ class WebInterface(object):
         """
         Get the global_rtd10_configuration.
 
+        :param token: Authentication token
+        :type token: str
         :param fields: The field of the global_rtd10_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
+        :type fields: str | None
         :returns: 'config': global_rtd10_configuration dict: contains 'output_value_cooling_16' (Byte), 'output_value_cooling_16_5' (Byte), 'output_value_cooling_17' (Byte), 'output_value_cooling_17_5' (Byte), 'output_value_cooling_18' (Byte), 'output_value_cooling_18_5' (Byte), 'output_value_cooling_19' (Byte), 'output_value_cooling_19_5' (Byte), 'output_value_cooling_20' (Byte), 'output_value_cooling_20_5' (Byte), 'output_value_cooling_21' (Byte), 'output_value_cooling_21_5' (Byte), 'output_value_cooling_22' (Byte), 'output_value_cooling_22_5' (Byte), 'output_value_cooling_23' (Byte), 'output_value_cooling_23_5' (Byte), 'output_value_cooling_24' (Byte), 'output_value_heating_16' (Byte), 'output_value_heating_16_5' (Byte), 'output_value_heating_17' (Byte), 'output_value_heating_17_5' (Byte), 'output_value_heating_18' (Byte), 'output_value_heating_18_5' (Byte), 'output_value_heating_19' (Byte), 'output_value_heating_19_5' (Byte), 'output_value_heating_20' (Byte), 'output_value_heating_20_5' (Byte), 'output_value_heating_21' (Byte), 'output_value_heating_21_5' (Byte), 'output_value_heating_22' (Byte), 'output_value_heating_22_5' (Byte), 'output_value_heating_23' (Byte), 'output_value_heating_23_5' (Byte), 'output_value_heating_24' (Byte)
+        :rtype: dict
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -1255,8 +1543,10 @@ class WebInterface(object):
         """
         Set the global_rtd10_configuration.
 
-        :param config: The global_rtd10_configuration to set
-        :type config: global_rtd10_configuration dict: contains 'output_value_cooling_16' (Byte), 'output_value_cooling_16_5' (Byte), 'output_value_cooling_17' (Byte), 'output_value_cooling_17_5' (Byte), 'output_value_cooling_18' (Byte), 'output_value_cooling_18_5' (Byte), 'output_value_cooling_19' (Byte), 'output_value_cooling_19_5' (Byte), 'output_value_cooling_20' (Byte), 'output_value_cooling_20_5' (Byte), 'output_value_cooling_21' (Byte), 'output_value_cooling_21_5' (Byte), 'output_value_cooling_22' (Byte), 'output_value_cooling_22_5' (Byte), 'output_value_cooling_23' (Byte), 'output_value_cooling_23_5' (Byte), 'output_value_cooling_24' (Byte), 'output_value_heating_16' (Byte), 'output_value_heating_16_5' (Byte), 'output_value_heating_17' (Byte), 'output_value_heating_17_5' (Byte), 'output_value_heating_18' (Byte), 'output_value_heating_18_5' (Byte), 'output_value_heating_19' (Byte), 'output_value_heating_19_5' (Byte), 'output_value_heating_20' (Byte), 'output_value_heating_20_5' (Byte), 'output_value_heating_21' (Byte), 'output_value_heating_21_5' (Byte), 'output_value_heating_22' (Byte), 'output_value_heating_22_5' (Byte), 'output_value_heating_23' (Byte), 'output_value_heating_23_5' (Byte), 'output_value_heating_24' (Byte)
+        :param token: Authentication token
+        :type token: str
+        :param config: The global_rtd10_configuration to set: global_rtd10_configuration dict: contains 'output_value_cooling_16' (Byte), 'output_value_cooling_16_5' (Byte), 'output_value_cooling_17' (Byte), 'output_value_cooling_17_5' (Byte), 'output_value_cooling_18' (Byte), 'output_value_cooling_18_5' (Byte), 'output_value_cooling_19' (Byte), 'output_value_cooling_19_5' (Byte), 'output_value_cooling_20' (Byte), 'output_value_cooling_20_5' (Byte), 'output_value_cooling_21' (Byte), 'output_value_cooling_21_5' (Byte), 'output_value_cooling_22' (Byte), 'output_value_cooling_22_5' (Byte), 'output_value_cooling_23' (Byte), 'output_value_cooling_23_5' (Byte), 'output_value_cooling_24' (Byte), 'output_value_heating_16' (Byte), 'output_value_heating_16_5' (Byte), 'output_value_heating_17' (Byte), 'output_value_heating_17_5' (Byte), 'output_value_heating_18' (Byte), 'output_value_heating_18_5' (Byte), 'output_value_heating_19' (Byte), 'output_value_heating_19_5' (Byte), 'output_value_heating_20' (Byte), 'output_value_heating_20_5' (Byte), 'output_value_heating_21' (Byte), 'output_value_heating_21_5' (Byte), 'output_value_heating_22' (Byte), 'output_value_heating_22_5' (Byte), 'output_value_heating_23' (Byte), 'output_value_heating_23_5' (Byte), 'output_value_heating_24' (Byte)
+        :type config: str
         """
         self.check_token(token)
         self.__gateway_api.set_global_rtd10_configuration(json.loads(config))
@@ -1267,11 +1557,14 @@ class WebInterface(object):
         """
         Get a specific rtd10_heating_configuration defined by its id.
 
+        :param token: Authentication token
+        :type token: str
         :param id: The id of the rtd10_heating_configuration
-        :type id: Id
+        :type id: int
         :param fields: The field of the rtd10_heating_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
+        :type fields: str | None
         :returns: 'config': rtd10_heating_configuration dict: contains 'id' (Id), 'mode_output' (Byte), 'mode_value' (Byte), 'on_off_output' (Byte), 'poke_angle_output' (Byte), 'poke_angle_value' (Byte), 'room' (Byte), 'temp_setpoint_output' (Byte), 'ventilation_speed_output' (Byte), 'ventilation_speed_value' (Byte)
+        :rtype: dict
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -1282,9 +1575,12 @@ class WebInterface(object):
         """
         Get all rtd10_heating_configurations.
 
+        :param token: Authentication token
+        :type token: str
         :param fields: The field of the rtd10_heating_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
+        :type fields: str
         :returns: 'config': list of rtd10_heating_configuration dict: contains 'id' (Id), 'mode_output' (Byte), 'mode_value' (Byte), 'on_off_output' (Byte), 'poke_angle_output' (Byte), 'poke_angle_value' (Byte), 'room' (Byte), 'temp_setpoint_output' (Byte), 'ventilation_speed_output' (Byte), 'ventilation_speed_value' (Byte)
+        :rtype: dict
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -1295,8 +1591,10 @@ class WebInterface(object):
         """
         Set one rtd10_heating_configuration.
 
-        :param config: The rtd10_heating_configuration to set
-        :type config: rtd10_heating_configuration dict: contains 'id' (Id), 'mode_output' (Byte), 'mode_value' (Byte), 'on_off_output' (Byte), 'poke_angle_output' (Byte), 'poke_angle_value' (Byte), 'room' (Byte), 'temp_setpoint_output' (Byte), 'ventilation_speed_output' (Byte), 'ventilation_speed_value' (Byte)
+        :param token: Authentication token
+        :type token: str
+        :param config: The rtd10_heating_configuration to set: rtd10_heating_configuration dict: contains 'id' (Id), 'mode_output' (Byte), 'mode_value' (Byte), 'on_off_output' (Byte), 'poke_angle_output' (Byte), 'poke_angle_value' (Byte), 'room' (Byte), 'temp_setpoint_output' (Byte), 'ventilation_speed_output' (Byte), 'ventilation_speed_value' (Byte)
+        :type config: str
         """
         self.check_token(token)
         self.__gateway_api.set_rtd10_heating_configuration(json.loads(config))
@@ -1307,8 +1605,10 @@ class WebInterface(object):
         """
         Set multiple rtd10_heating_configurations.
 
-        :param config: The list of rtd10_heating_configurations to set
-        :type config: list of rtd10_heating_configuration dict: contains 'id' (Id), 'mode_output' (Byte), 'mode_value' (Byte), 'on_off_output' (Byte), 'poke_angle_output' (Byte), 'poke_angle_value' (Byte), 'room' (Byte), 'temp_setpoint_output' (Byte), 'ventilation_speed_output' (Byte), 'ventilation_speed_value' (Byte)
+        :param token: Authentication token
+        :type token: str
+        :param config: The list of rtd10_heating_configurations to set: list of rtd10_heating_configuration dict: contains 'id' (Id), 'mode_output' (Byte), 'mode_value' (Byte), 'on_off_output' (Byte), 'poke_angle_output' (Byte), 'poke_angle_value' (Byte), 'room' (Byte), 'temp_setpoint_output' (Byte), 'ventilation_speed_output' (Byte), 'ventilation_speed_value' (Byte)
+        :type config: str
         """
         self.check_token(token)
         self.__gateway_api.set_rtd10_heating_configurations(json.loads(config))
@@ -1319,11 +1619,14 @@ class WebInterface(object):
         """
         Get a specific rtd10_cooling_configuration defined by its id.
 
+        :param token: Authentication token
+        :type token: str
         :param id: The id of the rtd10_cooling_configuration
-        :type id: Id
+        :type id: int
         :param fields: The field of the rtd10_cooling_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
+        :type fields: str
         :returns: 'config': rtd10_cooling_configuration dict: contains 'id' (Id), 'mode_output' (Byte), 'mode_value' (Byte), 'on_off_output' (Byte), 'poke_angle_output' (Byte), 'poke_angle_value' (Byte), 'room' (Byte), 'temp_setpoint_output' (Byte), 'ventilation_speed_output' (Byte), 'ventilation_speed_value' (Byte)
+        :rtype: dict
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -1334,9 +1637,12 @@ class WebInterface(object):
         """
         Get all rtd10_cooling_configurations.
 
+        :param token: Authentication token
+        :type token: str
         :param fields: The field of the rtd10_cooling_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
+        :type fields: str
         :returns: 'config': list of rtd10_cooling_configuration dict: contains 'id' (Id), 'mode_output' (Byte), 'mode_value' (Byte), 'on_off_output' (Byte), 'poke_angle_output' (Byte), 'poke_angle_value' (Byte), 'room' (Byte), 'temp_setpoint_output' (Byte), 'ventilation_speed_output' (Byte), 'ventilation_speed_value' (Byte)
+        :rtype: dict
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -1347,8 +1653,10 @@ class WebInterface(object):
         """
         Set one rtd10_cooling_configuration.
 
-        :param config: The rtd10_cooling_configuration to set
-        :type config: rtd10_cooling_configuration dict: contains 'id' (Id), 'mode_output' (Byte), 'mode_value' (Byte), 'on_off_output' (Byte), 'poke_angle_output' (Byte), 'poke_angle_value' (Byte), 'room' (Byte), 'temp_setpoint_output' (Byte), 'ventilation_speed_output' (Byte), 'ventilation_speed_value' (Byte)
+        :param token: Authentication token
+        :type token: str
+        :param config: The rtd10_cooling_configuration to set: rtd10_cooling_configuration dict: contains 'id' (Id), 'mode_output' (Byte), 'mode_value' (Byte), 'on_off_output' (Byte), 'poke_angle_output' (Byte), 'poke_angle_value' (Byte), 'room' (Byte), 'temp_setpoint_output' (Byte), 'ventilation_speed_output' (Byte), 'ventilation_speed_value' (Byte)
+        :type config: str
         """
         self.check_token(token)
         self.__gateway_api.set_rtd10_cooling_configuration(json.loads(config))
@@ -1359,8 +1667,10 @@ class WebInterface(object):
         """
         Set multiple rtd10_cooling_configurations.
 
-        :param config: The list of rtd10_cooling_configurations to set
-        :type config: list of rtd10_cooling_configuration dict: contains 'id' (Id), 'mode_output' (Byte), 'mode_value' (Byte), 'on_off_output' (Byte), 'poke_angle_output' (Byte), 'poke_angle_value' (Byte), 'room' (Byte), 'temp_setpoint_output' (Byte), 'ventilation_speed_output' (Byte), 'ventilation_speed_value' (Byte)
+        :param token: Authentication token
+        :type token: str
+        :param config: The list of rtd10_cooling_configurations to set: list of rtd10_cooling_configuration dict: contains 'id' (Id), 'mode_output' (Byte), 'mode_value' (Byte), 'on_off_output' (Byte), 'poke_angle_output' (Byte), 'poke_angle_value' (Byte), 'room' (Byte), 'temp_setpoint_output' (Byte), 'ventilation_speed_output' (Byte), 'ventilation_speed_value' (Byte)
+        :type config: str
         """
         self.check_token(token)
         self.__gateway_api.set_rtd10_cooling_configurations(json.loads(config))
@@ -1371,11 +1681,14 @@ class WebInterface(object):
         """
         Get a specific group_action_configuration defined by its id.
 
+        :param token: Authentication token
+        :type token: str
         :param id: The id of the group_action_configuration
-        :type id: Id
+        :type id: int
         :param fields: The field of the group_action_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
+        :type fields: str
         :returns: 'config': group_action_configuration dict: contains 'id' (Id), 'actions' (Actions[16]), 'name' (String[16])
+        :rtype: dict
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -1386,9 +1699,12 @@ class WebInterface(object):
         """
         Get all group_action_configurations.
 
+        :param token: Authentication token
+        :type token: str
         :param fields: The field of the group_action_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
+        :type fields: str
         :returns: 'config': list of group_action_configuration dict: contains 'id' (Id), 'actions' (Actions[16]), 'name' (String[16])
+        :rtype: dict
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -1399,8 +1715,10 @@ class WebInterface(object):
         """
         Set one group_action_configuration.
 
-        :param config: The group_action_configuration to set
-        :type config: group_action_configuration dict: contains 'id' (Id), 'actions' (Actions[16]), 'name' (String[16])
+        :param token: Authentication token
+        :type token: str
+        :param config: The group_action_configuration to set: group_action_configuration dict: contains 'id' (Id), 'actions' (Actions[16]), 'name' (String[16])
+        :type config: str
         """
         self.check_token(token)
         self.__gateway_api.set_group_action_configuration(json.loads(config))
@@ -1411,8 +1729,10 @@ class WebInterface(object):
         """
         Set multiple group_action_configurations.
 
-        :param config: The list of group_action_configurations to set
-        :type config: list of group_action_configuration dict: contains 'id' (Id), 'actions' (Actions[16]), 'name' (String[16])
+        :param token: Authentication token
+        :type token: str
+        :param config: The list of group_action_configurations to set: list of group_action_configuration dict: contains 'id' (Id), 'actions' (Actions[16]), 'name' (String[16])
+        :type config: str
         """
         self.check_token(token)
         self.__gateway_api.set_group_action_configurations(json.loads(config))
@@ -1423,11 +1743,14 @@ class WebInterface(object):
         """
         Get a specific scheduled_action_configuration defined by its id.
 
+        :param token: Authentication token
+        :type token: str
         :param id: The id of the scheduled_action_configuration
-        :type id: Id
+        :type id: int
         :param fields: The field of the scheduled_action_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
+        :type fields: str
         :returns: 'config': scheduled_action_configuration dict: contains 'id' (Id), 'action' (Actions[1]), 'day' (Byte), 'hour' (Byte), 'minute' (Byte)
+        :rtype: dict
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -1438,9 +1761,12 @@ class WebInterface(object):
         """
         Get all scheduled_action_configurations.
 
+        :param token: Authentication token
+        :type token: str
         :param fields: The field of the scheduled_action_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
+        :type fields: str
         :returns: 'config': list of scheduled_action_configuration dict: contains 'id' (Id), 'action' (Actions[1]), 'day' (Byte), 'hour' (Byte), 'minute' (Byte)
+        :rtype: dict
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -1451,8 +1777,10 @@ class WebInterface(object):
         """
         Set one scheduled_action_configuration.
 
-        :param config: The scheduled_action_configuration to set
-        :type config: scheduled_action_configuration dict: contains 'id' (Id), 'action' (Actions[1]), 'day' (Byte), 'hour' (Byte), 'minute' (Byte)
+        :param token: Authentication token
+        :type token: str
+        :param config: The scheduled_action_configuration to set: scheduled_action_configuration dict: contains 'id' (Id), 'action' (Actions[1]), 'day' (Byte), 'hour' (Byte), 'minute' (Byte)
+        :type config: str
         """
         self.check_token(token)
         self.__gateway_api.set_scheduled_action_configuration(json.loads(config))
@@ -1463,8 +1791,10 @@ class WebInterface(object):
         """
         Set multiple scheduled_action_configurations.
 
-        :param config: The list of scheduled_action_configurations to set
-        :type config: list of scheduled_action_configuration dict: contains 'id' (Id), 'action' (Actions[1]), 'day' (Byte), 'hour' (Byte), 'minute' (Byte)
+        :param token: Authentication token
+        :type token: str
+        :param config: The list of scheduled_action_configurations to set: list of scheduled_action_configuration dict: contains 'id' (Id), 'action' (Actions[1]), 'day' (Byte), 'hour' (Byte), 'minute' (Byte)
+        :type config: str
         """
         self.check_token(token)
         self.__gateway_api.set_scheduled_action_configurations(json.loads(config))
@@ -1475,11 +1805,14 @@ class WebInterface(object):
         """
         Get a specific pulse_counter_configuration defined by its id.
 
+        :param token: Authentication token
+        :type token: str
         :param id: The id of the pulse_counter_configuration
-        :type id: Id
+        :type id: int
         :param fields: The field of the pulse_counter_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
+        :type fields: str
         :returns: 'config': pulse_counter_configuration dict: contains 'id' (Id), 'input' (Byte), 'name' (String[16]), 'room' (Byte)
+        :rtype: dict
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -1490,9 +1823,12 @@ class WebInterface(object):
         """
         Get all pulse_counter_configurations.
 
+        :param token: Authentication token
+        :type token: str
         :param fields: The field of the pulse_counter_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
+        :type fields: str
         :returns: 'config': list of pulse_counter_configuration dict: contains 'id' (Id), 'input' (Byte), 'name' (String[16]), 'room' (Byte)
+        :rtype: dict
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -1503,8 +1839,10 @@ class WebInterface(object):
         """
         Set one pulse_counter_configuration.
 
-        :param config: The pulse_counter_configuration to set
-        :type config: pulse_counter_configuration dict: contains 'id' (Id), 'input' (Byte), 'name' (String[16]), 'room' (Byte)
+        :param token: Authentication token
+        :type token: str
+        :param config: The pulse_counter_configuration to set: pulse_counter_configuration dict: contains 'id' (Id), 'input' (Byte), 'name' (String[16]), 'room' (Byte)
+        :type config: str
         """
         self.check_token(token)
         self.__gateway_api.set_pulse_counter_configuration(json.loads(config))
@@ -1515,8 +1853,10 @@ class WebInterface(object):
         """
         Set multiple pulse_counter_configurations.
 
-        :param config: The list of pulse_counter_configurations to set
-        :type config: list of pulse_counter_configuration dict: contains 'id' (Id), 'input' (Byte), 'name' (String[16]), 'room' (Byte)
+        :param token: Authentication token
+        :type token: str
+        :param config: The list of pulse_counter_configurations to set: list of pulse_counter_configuration dict: contains 'id' (Id), 'input' (Byte), 'name' (String[16]), 'room' (Byte)
+        :type config: str
         """
         self.check_token(token)
         self.__gateway_api.set_pulse_counter_configurations(json.loads(config))
@@ -1527,9 +1867,12 @@ class WebInterface(object):
         """
         Get the startup_action_configuration.
 
+        :param token: Authentication token
+        :type token: str
         :param fields: The field of the startup_action_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
+        :type fields: str
         :returns: 'config': startup_action_configuration dict: contains 'actions' (Actions[100])
+        :rtype: dict
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -1540,8 +1883,10 @@ class WebInterface(object):
         """
         Set the startup_action_configuration.
 
-        :param config: The startup_action_configuration to set
-        :type config: startup_action_configuration dict: contains 'actions' (Actions[100])
+        :param token: Authentication token
+        :type token: str
+        :param config: The startup_action_configuration to set: startup_action_configuration dict: contains 'actions' (Actions[100])
+        :type config: str
         """
         self.check_token(token)
         self.__gateway_api.set_startup_action_configuration(json.loads(config))
@@ -1552,9 +1897,12 @@ class WebInterface(object):
         """
         Get the dimmer_configuration.
 
+        :param token: Authentication token
+        :type token: str
         :param fields: The field of the dimmer_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
+        :type fields: str
         :returns: 'config': dimmer_configuration dict: contains 'dim_memory' (Byte), 'dim_step' (Byte), 'dim_wait_cycle' (Byte), 'min_dim_level' (Byte)
+        :rtype: dict
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -1565,8 +1913,10 @@ class WebInterface(object):
         """
         Set the dimmer_configuration.
 
-        :param config: The dimmer_configuration to set
-        :type config: dimmer_configuration dict: contains 'dim_memory' (Byte), 'dim_step' (Byte), 'dim_wait_cycle' (Byte), 'min_dim_level' (Byte)
+        :param token: Authentication token
+        :type token: str
+        :param config: The dimmer_configuration to set: dimmer_configuration dict: contains 'dim_memory' (Byte), 'dim_step' (Byte), 'dim_wait_cycle' (Byte), 'min_dim_level' (Byte)
+        :type config: str
         """
         self.check_token(token)
         self.__gateway_api.set_dimmer_configuration(json.loads(config))
@@ -1577,9 +1927,12 @@ class WebInterface(object):
         """
         Get the global_thermostat_configuration.
 
+        :param token: Authentication token
+        :type token: str
         :param fields: The field of the global_thermostat_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
+        :type fields: str
         :returns: 'config': global_thermostat_configuration dict: contains 'outside_sensor' (Byte), 'pump_delay' (Byte), 'switch_to_cooling_output_0' (Byte), 'switch_to_cooling_output_1' (Byte), 'switch_to_cooling_output_2' (Byte), 'switch_to_cooling_output_3' (Byte), 'switch_to_cooling_value_0' (Byte), 'switch_to_cooling_value_1' (Byte), 'switch_to_cooling_value_2' (Byte), 'switch_to_cooling_value_3' (Byte), 'switch_to_heating_output_0' (Byte), 'switch_to_heating_output_1' (Byte), 'switch_to_heating_output_2' (Byte), 'switch_to_heating_output_3' (Byte), 'switch_to_heating_value_0' (Byte), 'switch_to_heating_value_1' (Byte), 'switch_to_heating_value_2' (Byte), 'switch_to_heating_value_3' (Byte), 'threshold_temp' (Temp)
+        :rtype: str
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -1590,8 +1943,10 @@ class WebInterface(object):
         """
         Set the global_thermostat_configuration.
 
-        :param config: The global_thermostat_configuration to set
-        :type config: global_thermostat_configuration dict: contains 'outside_sensor' (Byte), 'pump_delay' (Byte), 'switch_to_cooling_output_0' (Byte), 'switch_to_cooling_output_1' (Byte), 'switch_to_cooling_output_2' (Byte), 'switch_to_cooling_output_3' (Byte), 'switch_to_cooling_value_0' (Byte), 'switch_to_cooling_value_1' (Byte), 'switch_to_cooling_value_2' (Byte), 'switch_to_cooling_value_3' (Byte), 'switch_to_heating_output_0' (Byte), 'switch_to_heating_output_1' (Byte), 'switch_to_heating_output_2' (Byte), 'switch_to_heating_output_3' (Byte), 'switch_to_heating_value_0' (Byte), 'switch_to_heating_value_1' (Byte), 'switch_to_heating_value_2' (Byte), 'switch_to_heating_value_3' (Byte), 'threshold_temp' (Temp)
+        :param token: Authentication token
+        :type token: str
+        :param config: The global_thermostat_configuration to set: global_thermostat_configuration dict: contains 'outside_sensor' (Byte), 'pump_delay' (Byte), 'switch_to_cooling_output_0' (Byte), 'switch_to_cooling_output_1' (Byte), 'switch_to_cooling_output_2' (Byte), 'switch_to_cooling_output_3' (Byte), 'switch_to_cooling_value_0' (Byte), 'switch_to_cooling_value_1' (Byte), 'switch_to_cooling_value_2' (Byte), 'switch_to_cooling_value_3' (Byte), 'switch_to_heating_output_0' (Byte), 'switch_to_heating_output_1' (Byte), 'switch_to_heating_output_2' (Byte), 'switch_to_heating_output_3' (Byte), 'switch_to_heating_value_0' (Byte), 'switch_to_heating_value_1' (Byte), 'switch_to_heating_value_2' (Byte), 'switch_to_heating_value_3' (Byte), 'threshold_temp' (Temp)
+        :type config: str
         """
         self.check_token(token)
         self.__gateway_api.set_global_thermostat_configuration(json.loads(config))
@@ -1602,11 +1957,14 @@ class WebInterface(object):
         """
         Get a specific can_led_configuration defined by its id.
 
+        :param token: Authentication token
+        :type token: str
         :param id: The id of the can_led_configuration
-        :type id: Id
+        :type id: int
         :param fields: The field of the can_led_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
+        :type fields: str
         :returns: 'config': can_led_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'room' (Byte)
+        :rtype: dict
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -1617,9 +1975,12 @@ class WebInterface(object):
         """
         Get all can_led_configurations.
 
+        :param token: Authentication token
+        :type token: str
         :param fields: The field of the can_led_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
+        :type fields: str
         :returns: 'config': list of can_led_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'room' (Byte)
+        :rtype: dict
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -1630,8 +1991,10 @@ class WebInterface(object):
         """
         Set one can_led_configuration.
 
-        :param config: The can_led_configuration to set
-        :type config: can_led_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'room' (Byte)
+        :param token: Authentication token
+        :type token: str
+        :param config: The can_led_configuration to set: can_led_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'room' (Byte)
+        :type config: str
         """
         self.check_token(token)
         self.__gateway_api.set_can_led_configuration(json.loads(config))
@@ -1642,8 +2005,10 @@ class WebInterface(object):
         """
         Set multiple can_led_configurations.
 
-        :param config: The list of can_led_configurations to set
-        :type config: list of can_led_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'room' (Byte)
+        :param token: Authentication token
+        :type token: str
+        :param config: The list of can_led_configurations to set: list of can_led_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'room' (Byte)
+        :type config: str
         """
         self.check_token(token)
         self.__gateway_api.set_can_led_configurations(json.loads(config))
@@ -1654,11 +2019,14 @@ class WebInterface(object):
         """
         Get a specific room_configuration defined by its id.
 
+        :param token: Authentication token
+        :type token: str
         :param id: The id of the room_configuration
-        :type id: Id
+        :type id: int
         :param fields: The field of the room_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
+        :type fields: str
         :returns: 'config': room_configuration dict: contains 'id' (Id), 'floor' (Byte), 'name' (String)
+        :rtype: dict
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -1669,9 +2037,12 @@ class WebInterface(object):
         """
         Get all room_configurations.
 
+        :param token: Authentication token
+        :type token: str
         :param fields: The field of the room_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
+        :type fields: str
         :returns: 'config': list of room_configuration dict: contains 'id' (Id), 'floor' (Byte), 'name' (String)
+        :rtype: dict
         """
         self.check_token(token)
         fields = None if fields is None else json.loads(fields)
@@ -1682,8 +2053,10 @@ class WebInterface(object):
         """
         Set one room_configuration.
 
-        :param config: The room_configuration to set
-        :type config: room_configuration dict: contains 'id' (Id), 'floor' (Byte), 'name' (String)
+        :param token: Authentication token
+        :type token: str
+        :param config: The room_configuration to set: room_configuration dict: contains 'id' (Id), 'floor' (Byte), 'name' (String)
+        :type config: str
         """
         self.check_token(token)
         self.__gateway_api.set_room_configuration(json.loads(config))
@@ -1694,14 +2067,16 @@ class WebInterface(object):
         """
         Set multiple room_configurations.
 
-        :param config: The list of room_configurations to set
-        :type config: list of room_configuration dict: contains 'id' (Id), 'floor' (Byte), 'name' (String)
+        :param token: Authentication token
+        :type token: str
+        :param config: The list of room_configurations to set: list of room_configuration dict: contains 'id' (Id), 'floor' (Byte), 'name' (String)
+        :type config: str
         """
         self.check_token(token)
         self.__gateway_api.set_room_configurations(json.loads(config))
         return self.__success()
 
-    ###### End of the the autogenerated configuration api
+    # End of the the autogenerated configuration api
 
     @cherrypy.expose
     def get_power_modules(self, token):
@@ -1709,10 +2084,13 @@ class WebInterface(object):
         HH:MM formatted times times (index 0 = start Monday, index 1 = stop Monday,
         index 2 = start Tuesday, ...).
 
+        :param token: Authentication token
+        :type token: str
         :returns: 'modules': list of dictionaries with the following keys: 'id', 'name', \
-        'address', 'input0', 'input1', 'input2', 'input3', 'input4', 'input5', 'input6', \
-        'input7', 'sensor0', 'sensor1', 'sensor2', 'sensor3', 'sensor4', 'sensor5', 'sensor6', \
-        'sensor7', 'times0', 'times1', 'times2', 'times3', 'times4', 'times5', 'times6', 'times7'.
+            'address', 'input0', 'input1', 'input2', 'input3', 'input4', 'input5', 'input6', \
+            'input7', 'sensor0', 'sensor1', 'sensor2', 'sensor3', 'sensor4', 'sensor5', 'sensor6', \
+            'sensor7', 'times0', 'times1', 'times2', 'times3', 'times4', 'times5', 'times6', 'times7'.
+        :rtype: dict
         """
         self.check_token(token)
         return self.__success(modules=self.__gateway_api.get_power_modules())
@@ -1721,10 +2099,13 @@ class WebInterface(object):
     def set_power_modules(self, token, modules):
         """ Set information for the power modules.
 
+        :param token: Authentication token
+        :type token: str
         :param modules: json encoded list of dicts with keys: 'id', 'name', 'input0', 'input1', \
-        'input2', 'input3', 'input4', 'input5', 'input6', 'input7', 'sensor0', 'sensor1', \
-        'sensor2', 'sensor3', 'sensor4', 'sensor5', 'sensor6', 'sensor7', 'times0', 'times1', \
-        'times2', 'times3', 'times4', 'times5', 'times6', 'times7'.
+            'input2', 'input3', 'input4', 'input5', 'input6', 'input7', 'sensor0', 'sensor1', \
+            'sensor2', 'sensor3', 'sensor4', 'sensor5', 'sensor6', 'sensor7', 'times0', 'times1', \
+            'times2', 'times3', 'times4', 'times5', 'times6', 'times7'.
+        :type modules: str
         """
         self.check_token(token)
         return self.__wrap(lambda: self.__gateway_api.set_power_modules(json.loads(modules)))
@@ -1733,7 +2114,10 @@ class WebInterface(object):
     def get_realtime_power(self, token):
         """ Get the realtime power measurements.
 
+        :param token: Authentication token
+        :type token: str
         :returns: module id as the keys: [voltage, frequency, current, power].
+        :rtype: dict
         """
         self.check_token(token)
         return self.__wrap(self.__gateway_api.get_realtime_power)
@@ -1742,20 +2126,31 @@ class WebInterface(object):
     def get_total_energy(self, token):
         """ Get the total energy (Wh) consumed by the power modules.
 
+        :param token: Authentication token
+        :type token: str
         :returns: modules id as key: [day, night].
+        :rtype: dict
         """
         self.check_token(token)
         return self.__wrap(self.__gateway_api.get_total_energy)
 
     @cherrypy.expose
     def start_power_address_mode(self, token):
-        """ Start the address mode on the power modules. """
+        """ Start the address mode on the power modules.
+
+        :param token: Authentication token
+        :type token: str
+        """
         self.check_token(token)
         return self.__wrap(self.__gateway_api.start_power_address_mode)
 
     @cherrypy.expose
     def stop_power_address_mode(self, token):
-        """ Stop the address mode on the power modules. """
+        """ Stop the address mode on the power modules.
+
+        :param token: Authentication token
+        :type token: str
+        """
         self.check_token(token)
         return self.__wrap(self.__gateway_api.stop_power_address_mode)
 
@@ -1763,7 +2158,10 @@ class WebInterface(object):
     def in_power_address_mode(self, token):
         """ Check if the power modules are in address mode.
 
+        :param token: Authentication token
+        :type token: str
         :returns: 'address_mode': Boolean
+        :rtype: dict
         """
         self.check_token(token)
         return self.__wrap(self.__gateway_api.in_power_address_mode)
@@ -1772,10 +2170,12 @@ class WebInterface(object):
     def set_power_voltage(self, token, module_id, voltage):
         """ Set the voltage for a given module.
 
+        :param token: Authentication token
+        :type token: str
         :param module_id: The id of the power module.
-        :type module_id: Byte
+        :type module_id: int
         :param voltage: The voltage to set for the power module.
-        :type voltage: Float
+        :type voltage: float
         """
         self.check_token(token)
         return self.__wrap(
@@ -1785,7 +2185,10 @@ class WebInterface(object):
     def get_pulse_counter_status(self, token):
         """ Get the pulse counter values.
 
+        :param token: Authentication token
+        :type token: str
         :returns: 'counters': array with the 8 pulse counter values.
+        :rtype: dict
         """
         self.check_token(token)
         return self.__success(counters=self.__gateway_api.get_pulse_counter_status())
@@ -1794,14 +2197,15 @@ class WebInterface(object):
     def get_energy_time(self, token, module_id, input_id=None):
         """ Gets 1 period of given module and optional input (no input means all).
 
-        :param token: The authentication token
+        :param token: Authentication token
         :type token: str
         :param module_id: The id of the power module.
-        :type module_id: Byte
+        :type module_id: int
         :param input_id: The id of the input on the given power module
-        :type input_id: Byte or None
+        :type input_id: int | None
         :returns: A dict with the input_id(s) as key, and as value another dict with
                   (up to 80) voltage and current samples.
+        :rtype: dict
         """
         self.check_token(token)
         module_id = int(module_id)
@@ -1812,14 +2216,15 @@ class WebInterface(object):
     def get_energy_frequency(self, token, module_id, input_id=None):
         """ Gets the frequency components for a given module and optional input (no input means all)
 
-        :param token: The authentication token
+        :param token: Authentication token
         :type token: str
         :param module_id: The id of the power module
-        :type module_id: Byte
+        :type module_id: int
         :param input_id: The id of the input on the given power module
-        :type input_id: Byte or None
+        :type input_id: int | None
         :returns: A dict with the input_id(s) as key, and as value another dict with for
                   voltage and current the 20 frequency components
+        :rtype: dict
         """
         self.check_token(token)
         module_id = int(module_id)
@@ -1830,10 +2235,10 @@ class WebInterface(object):
     def do_raw_energy_command(self, token, address, mode, command, data):
         """ Perform a raw energy module command, for debugging purposes.
 
-        :param token: The authentication token
+        :param token: Authentication token
         :type token: str
         :param address: The address of the energy module
-        :type address: Byte
+        :type address: int
         :param mode: 1 char: S or G
         :type mode: str
         :param command: 3 char power command
@@ -1841,31 +2246,35 @@ class WebInterface(object):
         :param data: comma seperated list of Bytes
         :type data: str
         :returns: dict with 'data': comma separated list of Bytes
+        :rtype: dict
         """
         self.check_token(token)
 
         address = int(address)
 
-        if mode not in [ 'S', 'G' ]:
+        if mode not in ['S', 'G']:
             raise ValueError("mode not in [S, G]: %s" % mode)
 
         if len(command) != 3:
             raise ValueError('Command should be 3 chars, got "%s"' % command)
 
         if data is not None and len(data) > 0:
-            bdata = [ int(c) for c in data.split(",") ]
+            bdata = [int(c) for c in data.split(",")]
         else:
             bdata = []
 
         ret = self.__gateway_api.do_raw_energy_command(address, mode, command, bdata)
 
-        return self.__success(data=",".join([ str(d) for d in ret ]))
+        return self.__success(data=",".join([str(d) for d in ret]))
 
     @cherrypy.expose
     def get_version(self, token):
         """ Get the version of the openmotics software.
 
+        :param token: Authentication token
+        :type token: str
         :returns: 'version': String (a.b.c).
+        :rtype: dict
         """
         self.check_token(token)
         config = ConfigParser.ConfigParser()
@@ -1876,10 +2285,12 @@ class WebInterface(object):
     def update(self, token, version, md5, update_data):
         """ Perform an update.
 
+        :param token: Authentication token
+        :type token: str
         :param version: the new version number.
-        :type version: String
+        :type version: str
         :param md5: the md5 sum of update_data.
-        :type md5: String
+        :type md5: str
         :param update_data: a tgz file containing the update script (update.sh) and data.
         :type update_data: multipart/form-data encoded byte string.
         """
@@ -1905,7 +2316,10 @@ class WebInterface(object):
     def get_update_output(self, token):
         """ Get the output of the last update.
 
+        :param token: Authentication token
+        :type token: str
         :returns: 'output': String with the output from the update script.
+        :rtype: dict
         """
         self.check_token(token)
 
@@ -1919,8 +2333,10 @@ class WebInterface(object):
     def set_timezone(self, token, timezone):
         """ Set the timezone for the gateway.
 
+        :param token: Authentication token
+        :type token: str
         :param timezone: in format 'Continent/City'.
-        :type timezone: String
+        :type timezone: str
         """
         self.check_token(token)
 
@@ -1940,7 +2356,10 @@ class WebInterface(object):
     def get_timezone(self, token):
         """ Get the timezone for the gateway.
 
+        :param token: Authentication token
+        :type token: str
         :returns: 'timezone': the timezone in 'Continent/City' format (String).
+        :rtype: dict
         """
         self.check_token(token)
 
@@ -1955,28 +2374,31 @@ class WebInterface(object):
                       timeout=10):
         """ Execute an url action.
 
+        :param token: Authentication token
+        :type token: str
         :param url: The url to fetch.
-        :type url: String
+        :type url: str
         :param method: (optional) The http method (defaults to GET).
-        :type method: String
+        :type method: str | None
         :param headers: (optional) The http headers to send (format: json encoded dict)
-        :type headers: String
+        :type headers: str | None
         :param data: (optional) Bytes to send in the body of the request.
-        :type data: String
+        :type data: str | None
         :param auth: (optional) Json encoded tuple (username, password).
-        :type auth: String
+        :type auth: str | None
         :param timeout: (optional) Timeout in seconds for the http request (default = 10 sec).
-        :type timeout: Integer
+        :type timeout: int | None
         :returns: 'headers': response headers, 'data': response body.
+        :rtype: dict
         """
         self.check_token(token)
 
         try:
-            headers = json.loads(headers) if headers != None else None
-            auth = json.loads(auth) if auth != None else None
+            headers = json.loads(headers) if headers is not None else None
+            auth = json.loads(auth) if auth is not None else None
 
-            request = requests.request(method, url, headers=headers, data=data, auth=auth,
-                                 timeout=timeout)
+            request = requests.request(method, url,
+                                       headers=headers, data=data, auth=auth, timeout=timeout)
 
             if request.status_code == requests.codes.ok:
                 return self.__success(headers=request.headers._store, data=request.text)
@@ -1994,10 +2416,12 @@ class WebInterface(object):
         parameters given to the function to their desired values. 'description' can be used to
         identify the scheduled action.
 
+        :param token: Authentication token
+        :type token: str
         :param timestamp: UNIX timestamp.
-        :type timestamp: Integer.
+        :type timestamp: int
         :param action: JSON encoded dict (see above).
-        :type action: String.
+        :type action: str
         """
         self.check_token(token)
         timestamp = int(timestamp)
@@ -2009,7 +2433,7 @@ class WebInterface(object):
             func_name = action['action']
             if func_name in WebInterface.__dict__:
                 func = WebInterface.__dict__[func_name]
-                if 'exposed' in func.__dict__ and func.exposed == True:
+                if 'exposed' in func.__dict__ and func.exposed is True:
                     params = action.get('params', {})
 
                     args = inspect.getargspec(func).args
@@ -2026,7 +2450,8 @@ class WebInterface(object):
                                             (func_name, str(bad_args)))
                     else:
                         description = action.get('description', '')
-                        action = json.dumps({'type' : 'basic', 'action': func_name,
+                        action = json.dumps({'type': 'basic',
+                                             'action': func_name,
                                              'params': params})
 
                         self.__scheduling_controller.schedule_action(timestamp, description,
@@ -2040,12 +2465,15 @@ class WebInterface(object):
     def list_scheduled_actions(self, token):
         """ Get a list of all scheduled actions.
 
+        :param token: Authentication token
+        :type token: str
         :returns: 'actions': a list of dicts with keys: 'timestamp', 'from_now', 'id', \
-        'description' and 'action'. 'timestamp' is the UNIX timestamp when the action will be \
-        executed. 'from_now' is the number of seconds until the action will be scheduled. 'id' \
-        is a unique integer for the scheduled action. 'description' contains a user set \
-        description for the action. 'action' contains the function and params that will be \
-        used to execute the scheduled action.
+            'description' and 'action'. 'timestamp' is the UNIX timestamp when the action will be \
+            executed. 'from_now' is the number of seconds until the action will be scheduled. 'id' \
+            is a unique integer for the scheduled action. 'description' contains a user set \
+            description for the action. 'action' contains the function and params that will be \
+            used to execute the scheduled action.
+        :rtype: dict
         """
         self.check_token(token)
         now = time.time()
@@ -2059,8 +2487,10 @@ class WebInterface(object):
     def remove_scheduled_action(self, token, id):
         """ Remove a scheduled action when the id of the action is given.
 
+        :param token: Authentication token
+        :type token: str
         :param id: the id of the scheduled action to remove.
-        :type id: Integer
+        :type id: int
         """
         self.check_token(token)
         self.__scheduling_controller.remove_scheduled_action(id)
@@ -2070,6 +2500,7 @@ class WebInterface(object):
         """ Callback for the SchedulingController executing a scheduled actions.
 
         :param action: JSON encoded action.
+        :type action: str
         """
         action = json.loads(action)
         func_name = action['action']
@@ -2080,7 +2511,7 @@ class WebInterface(object):
         if func_name in WebInterface.__dict__:
             try:
                 WebInterface.__dict__[func_name](**kwargs)
-            except:
+            except Exception:
                 LOGGER.exception("Exception while executing scheduled action")
         else:
             LOGGER.error("Could not find function WebInterface.%s", func_name)
@@ -2088,6 +2519,8 @@ class WebInterface(object):
     def __wrap(self, func):
         """ Wrap a gateway_api function and catches a possible Exception.
 
+        :param func: Wrapped function
+        :type func: () -> dict
         :returns: {'success': False, 'msg': ...} on Exception, otherwise {'success': True, ...}
         """
         try:
@@ -2102,12 +2535,15 @@ class WebInterface(object):
     def get_plugins(self, token):
         """ Get the installed plugins.
 
+        :param token: Authentication token
+        :type token: str
         :returns: 'plugins': dict with name, version and interfaces where name and version \
-        are strings and interfaces is a list of tuples (interface, version) which are both strings.
+            are strings and interfaces is a list of tuples (interface, version) which are both strings.
+        :rtype: dict
         """
         self.check_token(token)
         plugins = self.__plugin_controller.get_plugins()
-        ret = [{'name' : p.name, 'version' : p.version, 'interfaces' : p.interfaces}
+        ret = [{'name': p.name, 'version': p.version, 'interfaces': p.interfaces}
                for p in plugins]
         return self.__success(plugins=ret)
 
@@ -2115,8 +2551,11 @@ class WebInterface(object):
     def get_plugin_logs(self, token):
         """ Get the logs for all plugins.
 
+        :param token: Authentication token
+        :type token: str
         :returns: 'logs': dict with the names of the plugins as keys and the logs (String) as \
-        value.
+            value.
+        :rtype: dict
         """
         self.check_token(token)
         return self.__success(logs=self.__plugin_controller.get_logs())
@@ -2126,28 +2565,52 @@ class WebInterface(object):
         """ Install a new plugin. The package_data should include a __init__.py file and
         will be installed in /opt/openmotics/python/plugins/<name>.
 
-        :param name: Name of the plugin to install.
-        :type name: String
-        :param version: Version of the plugin to install.
-        :type version: String
+        :param token: Authentication token
+        :type token: str
         :param md5: md5 sum of the package_data.
         :type md5: String
-        :param update_data: a tgz file containing the content of the plugin package.
-        :type update_data: multipart/form-data encoded byte string.
+        :param package_data: a tgz file containing the content of the plugin package.
+        :type package_data: multipart/form-data encoded byte string.
         """
         self.check_token(token)
-        return self.__wrap(lambda: self.__plugin_controller.install_plugin(
-                                                                md5, package_data.file.read()))
+        return self.__wrap(lambda: self.__plugin_controller.install_plugin(md5, package_data.file.read()))
 
     @cherrypy.expose
     def remove_plugin(self, token, name):
         """ Remove a plugin. This removes the package data and configuration data of the plugin.
 
+        :param token: Authentication token
+        :type token: str
         :param name: Name of the plugin to remove.
-        :param type: String
+        :type name: str
         """
         self.check_token(token)
         return self.__wrap(lambda: self.__plugin_controller.remove_plugin(name))
+
+    @cherrypy.expose
+    def get_settings(self, token, settings):
+        """
+        Gets a given setting
+        """
+        self.check_token(token)
+        values = {}
+        for setting in json.loads(settings):
+            value = self.__config_controller.get_setting(setting)
+            if value is not None:
+                values[setting] = value
+        return self.__success(values=values)
+
+    @cherrypy.expose
+    def set_setting(self, token, setting, value):
+        """
+        Configures a setting
+        """
+        self.check_token(token)
+        if setting not in ['cloud_enabled', 'cloud_metrics_energy', 'cloud_metrics_pulse_counters']:
+            return self.__error('Setting {0} cannot be set'.format(setting))
+        value = json.loads(value)
+        self.__config_controller.set_setting(setting, value)
+        return self.__success()
 
     @cherrypy.expose
     def self_test(self, token):
@@ -2158,6 +2621,30 @@ class WebInterface(object):
             return self.__success()
         else:
             raise cherrypy.HTTPError(401, "unauthorized")
+
+    @cherrypy.expose
+    def get_metric_definitions(self, token, source=None, metric_type=None):
+        self.check_token(token)
+        sources = self.__metrics_controller.get_filter('source', source)
+        metric_types = self.__metrics_controller.get_filter('metric_type', metric_type)
+        definitions = {}
+        for _source, _metric_types in self.__metrics_controller.definitions.iteritems():
+            if _source in sources:
+                definitions[_source] = {}
+                for _metric_type, definition in _metric_types.iteritems():
+                    if _metric_type in metric_types:
+                        definitions[_source][_metric_type] = definition
+        return self.__success(definitions=definitions)
+
+    @cherrypy.expose
+    def ws_metrics(self, token, client_id, source=None, metric_type=None, interval=None):
+        self.check_token(token)
+        cherrypy.request.ws_handler.metadata = {'token': token,
+                                                'client_id': client_id,
+                                                'source': source,
+                                                'metric_type': metric_type,
+                                                'interval': None if interval is None else int(interval),
+                                                'interface': self}
 
 
 class WebService(object):
@@ -2172,11 +2659,20 @@ class WebService(object):
 
     def run(self):
         """ Run the web service: start cherrypy. """
+        OMPlugin(cherrypy.engine).subscribe()
+        cherrypy.tools.websocket = WebSocketTool()
+
+        config = {'/static': {'tools.staticdir.on': True,
+                              'tools.staticdir.dir': '/opt/openmotics/static'},
+                  '/ws_metrics': {'tools.websocket.on': True,
+                                  'tools.websocket.handler_cls': MetricsSocket},
+                  '/': {'tools.timestampFilter.on': True,
+                        'tools.sessions.on': False}}
+        if cherrypy_cors is not None:
+            config['/']['cors.expose.on'] = True
+
         cherrypy.tree.mount(self.__webinterface,
-                            config={'/static': {'tools.staticdir.on' : True,
-                                                'tools.staticdir.dir' : '/opt/openmotics/static'},
-                                    '/' : {'tools.timestampFilter.on' : True,
-                                           'tools.sessions.on' : False}})
+                            config=config)
 
         cherrypy.config.update({'engine.autoreload.on': False})
         cherrypy.server.unsubscribe()

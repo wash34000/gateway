@@ -15,21 +15,18 @@
 """
 The scheduling module contains the SchedulingController, this controller is used for scheduled
 actions.
-
-@author: fryckbos
 """
-
-import logging
-LOGGER = logging.getLogger("openmotics")
 
 import sqlite3
 import os
-
+import logging
 from time import time
 from threading import Thread
 from Queue import PriorityQueue, Queue, Empty
 
+LOGGER = logging.getLogger("openmotics")
 REFRESH = "Please SchedulingController, would you refresh the action queue ?"
+
 
 class SchedulingController(object):
     """ The SchedulingController keeps track of the actions that are scheduled and calls a callback
@@ -75,7 +72,7 @@ class SchedulingController(object):
         """
         self.__cursor.execute("INSERT INTO actions (timestamp, description, action) VALUES (?,?,?)",
                               (timestamp, description, action))
-        return (timestamp, self.__cursor.lastrowid, description, action)
+        return timestamp, self.__cursor.lastrowid, description, action
 
     def __remove_action_from_db(self, id):
         """ Remove an action from the database. """
@@ -131,7 +128,7 @@ class SchedulingController(object):
 
             try:
                 value = self.__input_queue.get(True, timeout)
-                if value == None:       # Stop signal !
+                if value is None:       # Stop signal !
                     continue
                 elif value == REFRESH:  # Refresh the action queue
                     self.__action_queue = PriorityQueue()
@@ -154,8 +151,8 @@ class SchedulingController(object):
         actions = self.__read_actions()
         ret = []
         for action in actions:
-            ret.append({'timestamp' : action[0], 'id' : action[1],
-                        'description' : action[2], 'action' : action[3]})
+            ret.append({'timestamp': action[0], 'id': action[1],
+                        'description': action[2], 'action': action[3]})
         return ret
 
     def remove_scheduled_action(self, id):

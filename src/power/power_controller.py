@@ -65,14 +65,12 @@ class PowerController(object):
         with self.__lock:
             self.__cursor.execute("CREATE TABLE power_modules (id INTEGER PRIMARY KEY, %s);"
                                   % ", ".join(['%s %s' % (key, value) for key, value in self._schema.iteritems()]))
-            self.__connection.commit()
 
     def __update_schema_if_needed(self):
         """ Upadtes the power_modules table schema from the 8-port power module version to the
         12-port power module version. The __create_tables above generates the 12-port version, so
         the update is only performed for legacy users that still have the old schema. """
         with self.__lock:
-            changed = False
             fields = []
             for row in self.__cursor.execute("PRAGMA table_info('power_modules');"):
                 fields.append(row[1])
@@ -80,9 +78,6 @@ class PowerController(object):
                 if field not in fields:
                     self.__cursor.execute("ALTER TABLE power_modules ADD COLUMN %s %s;"
                                           % (field, default))
-                    changed = True
-            if changed is True:
-                self.__connection.commit()
 
     def get_power_modules(self):
         """ Get a dict containing all power modules. The key of the dict is the id of the module,
@@ -147,21 +142,18 @@ class PowerController(object):
             self.__cursor.execute("UPDATE power_modules SET %s WHERE id=?" %
                                   ", ".join(["%s=?" % field for field in fields]),
                                   tuple([module[field] for field in fields] + [module['id']]))
-            self.__connection.commit()
 
     def register_power_module(self, address, version):
         """ Register a new power module using an address. """
         with self.__lock:
             self.__cursor.execute("INSERT INTO power_modules(address, version) VALUES (?, ?);",
                                   (address, version))
-            self.__connection.commit()
 
     def readdress_power_module(self, old_address, new_address):
         """ Change the address of a power module. """
         with self.__lock:
             self.__cursor.execute("UPDATE power_modules SET address=? WHERE address=?;",
                                   (new_address, old_address))
-            self.__connection.commit()
 
     def get_free_address(self):
         """ Get a free address for a power module. """
@@ -172,6 +164,5 @@ class PowerController(object):
             return max_address + 1 if max_address < 255 else 1
 
     def close(self):
-        """ Commit the changes and close the database connection. """
-        self.__connection.commit()
+        """ Close the database connection. """
         self.__connection.close()
