@@ -2099,6 +2099,8 @@ class GatewayApi(object):
                         return 2
                     if mod[key] == 5:  # 100A
                         return 4
+                    if mod[key] == 6:  # 200A
+                        return 8
                     return 0.5  # 12.5A is default
                 self.__power_communicator.do_command(
                     addr, power_api.set_current_clamp_factor(version),

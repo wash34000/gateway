@@ -46,7 +46,7 @@ class ConfigurationController(object):
     def __execute(self, *args, **kwargs):
         try:
             return self.__cursor.execute(*args, **kwargs)
-        except sqlite3.OperationalError:
+        except (sqlite3.OperationalError, sqlite3.ProgrammingError):
             time.sleep(randint(1, 20) / 10.0)
             return self.__cursor.execute(*args, **kwargs)
 

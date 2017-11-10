@@ -20,6 +20,7 @@ import random
 import ConfigParser
 import subprocess
 import os
+import sys
 import inspect
 import time
 import requests
@@ -2281,42 +2282,46 @@ class WebService(object):
 
     def run(self):
         """ Run the web service: start cherrypy. """
-        OMPlugin(cherrypy.engine).subscribe()
-        cherrypy.tools.websocket = WebSocketTool()
+        try:
+            OMPlugin(cherrypy.engine).subscribe()
+            cherrypy.tools.websocket = WebSocketTool()
 
-        config = {'/static': {'tools.staticdir.on': True,
-                              'tools.staticdir.dir': '/opt/openmotics/static'},
-                  '/ws_metrics': {'tools.websocket.on': True,
-                                  'tools.websocket.handler_cls': MetricsSocket},
-                  '/': {'tools.timestamp_filter.on': True,
-                        'tools.cors.on': self._config_controller.get_setting('cors_enabled', False),
-                        'tools.sessions.on': False}}
+            config = {'/static': {'tools.staticdir.on': True,
+                                  'tools.staticdir.dir': '/opt/openmotics/static'},
+                      '/ws_metrics': {'tools.websocket.on': True,
+                                      'tools.websocket.handler_cls': MetricsSocket},
+                      '/': {'tools.timestamp_filter.on': True,
+                            'tools.cors.on': self._config_controller.get_setting('cors_enabled', False),
+                            'tools.sessions.on': False}}
 
-        cherrypy.tree.mount(self._webinterface,
-                            config=config)
+            cherrypy.tree.mount(self._webinterface,
+                                config=config)
 
-        cherrypy.config.update({'engine.autoreload.on': False})
-        cherrypy.server.unsubscribe()
+            cherrypy.config.update({'engine.autoreload.on': False})
+            cherrypy.server.unsubscribe()
 
-        self._https_server = cherrypy._cpserver.Server()
-        self._https_server.socket_port = 443
-        self._https_server._socket_host = '0.0.0.0'
-        self._https_server.socket_timeout = 60
-        self._https_server.ssl_module = 'pyopenssl'
-        self._https_server.ssl_certificate = constants.get_ssl_certificate_file()
-        self._https_server.ssl_private_key = constants.get_ssl_private_key_file()
-        self._https_server.subscribe()
+            self._https_server = cherrypy._cpserver.Server()
+            self._https_server.socket_port = 443
+            self._https_server._socket_host = '0.0.0.0'
+            self._https_server.socket_timeout = 60
+            self._https_server.ssl_module = 'pyopenssl'
+            self._https_server.ssl_certificate = constants.get_ssl_certificate_file()
+            self._https_server.ssl_private_key = constants.get_ssl_private_key_file()
+            self._https_server.subscribe()
 
-        self._http_server = cherrypy._cpserver.Server()
-        self._http_server.socket_port = 80
-        self._http_server._socket_host = '127.0.0.1'
-        self._http_server.socket_timeout = 60
-        self._http_server.subscribe()
+            self._http_server = cherrypy._cpserver.Server()
+            self._http_server.socket_port = 80
+            self._http_server._socket_host = '127.0.0.1'
+            self._http_server.socket_timeout = 60
+            self._http_server.subscribe()
 
-        cherrypy.engine.autoreload_on = False
+            cherrypy.engine.autoreload_on = False
 
-        cherrypy.engine.start()
-        cherrypy.engine.block()
+            cherrypy.engine.start()
+            cherrypy.engine.block()
+        except Exception:
+            LOGGER.exception("Could not start webservice. Dying...")
+            sys.exit(1)
 
     def start(self):
         """ Start the web service in a new thread. """
