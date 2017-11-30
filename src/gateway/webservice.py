@@ -27,7 +27,6 @@ import requests
 import logging
 import cherrypy
 import constants
-import msgpack
 from decorator import decorator
 from cherrypy.lib.static import serve_file
 from ws4py.websocket import WebSocket
@@ -293,6 +292,8 @@ class WebInterface(object):
         self._power_dirty = False
 
     def distribute_metric(self, metric):
+        import msgpack
+
         try:
             answers = cherrypy.engine.publish('get-metrics-receivers')
             if len(answers) == 0:
