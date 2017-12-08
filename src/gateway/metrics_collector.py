@@ -370,6 +370,8 @@ class MetricsCollector(object):
                         values['hum'] = humidities[sensor_id]
                     if brightnesses[sensor_id] is not None:
                         values['bright'] = brightnesses[sensor_id]
+                    if len(values) == 0:
+                        continue
                     self._enqueue_metrics(metric_type=metric_type,
                                           values=values,
                                           tags=tags,

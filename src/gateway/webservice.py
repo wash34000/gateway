@@ -2606,7 +2606,7 @@ class WebInterface(object):
         Configures a setting
         """
         self.check_token(token)
-        if setting not in ['cloud_enabled', 'cloud_metrics_energy', 'cloud_metrics_pulse_counters']:
+        if setting not in ['cloud_enabled', 'cloud_metrics_enabled|energy', 'cloud_metrics_enabled|counter']:
             return self.__error('Setting {0} cannot be set'.format(setting))
         value = json.loads(value)
         self.__config_controller.set_setting(setting, value)
