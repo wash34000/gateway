@@ -101,9 +101,9 @@ class EepromController(object):
         for eeprom_model in eeprom_models:
             eeprom_data += eeprom_model.get_eeprom_data()
         if len(eeprom_data) > 0:
-            self._eeprom_file.write(eeprom_data)
-            self._eeprom_file.activate()
-            self.dirty = True
+            if self._eeprom_file.write(eeprom_data):
+                self._eeprom_file.activate()
+                self.dirty = True
         # Write the extensions
         eext_data = []
         for eeprom_model in eeprom_models:
@@ -137,6 +137,7 @@ class EepromFile(object):
         Activate a change in the Eeprom. The master will read the eeprom
         and adjust the current settings.
         """
+        LOGGER.info("EEPROM - Activate")
         self._master_communicator.do_command(activate_eeprom(), {'eep': 0})
 
     def read(self, addresses):
@@ -180,6 +181,8 @@ class EepromFile(object):
         :param data: the data to write.
         :type data: list of master.eeprom_controller.EepromData
         """
+        wrote_data = False
+
         # Read the data in the banks that we are trying to write
         bank_data = self._read_banks({d.address.bank for d in data})
         new_bank_data = bank_data.copy()
@@ -206,11 +209,13 @@ class EepromFile(object):
                             j += 1
 
                         self._write(bank, i, new[i:i + length])
+                        wrote_data = True
                         i += EepromFile.BATCH_SIZE
                     else:
                         i += 1
 
                 self._bank_cache[bank] = new
+            return wrote_data
         except Exception:
             # Failure reading, cache might be invalid
             self.invalidate_cache()
@@ -218,6 +223,7 @@ class EepromFile(object):
 
     def _write(self, bank, offset, to_write):
         """ Write a byte array to a specific location defined by the bank and the offset. """
+        LOGGER.info("EEPROM - Write: B{0} A{1} D[{2}]".format(bank, offset, ' '.join(['%3d' % ord(c) for c in to_write])))
         self._master_communicator.do_command(
             write_eeprom(), {'bank': bank, 'address': offset, 'data': to_write}
         )

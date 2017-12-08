@@ -30,12 +30,14 @@ LOGGER = logging.getLogger("openmotics")
 
 class ConfigurationController(object):
 
-    def __init__(self, db_filename):
+    def __init__(self, db_filename, lock):
         """
         Constructs a new ConfigController.
 
         :param db_filename: filename of the sqlite database used to store the configuration
+        :param lock: DB lock
         """
+        self.__lock = lock
         self.__connection = sqlite3.connect(db_filename,
                                             detect_types=sqlite3.PARSE_DECLTYPES,
                                             check_same_thread=False,
@@ -44,11 +46,12 @@ class ConfigurationController(object):
         self.__check_tables()
 
     def __execute(self, *args, **kwargs):
-        try:
-            return self.__cursor.execute(*args, **kwargs)
-        except (sqlite3.OperationalError, sqlite3.ProgrammingError):
-            time.sleep(randint(1, 20) / 10.0)
-            return self.__cursor.execute(*args, **kwargs)
+        with self.__lock:
+            try:
+                return self.__cursor.execute(*args, **kwargs)
+            except sqlite3.OperationalError:
+                time.sleep(randint(1, 20) / 10.0)
+                return self.__cursor.execute(*args, **kwargs)
 
     def __check_tables(self):
         """

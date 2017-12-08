@@ -99,8 +99,9 @@ def main():
     power_serial_port = config.get('OpenMotics', 'power_serial')
     gateway_uuid = config.get('OpenMotics', 'uuid')
 
-    user_controller = UserController(constants.get_config_database_file(), defaults, 3600)
-    config_controller = ConfigurationController(constants.get_config_database_file())
+    config_lock = threading.Lock()
+    user_controller = UserController(constants.get_config_database_file(), config_lock, defaults, 3600)
+    config_controller = ConfigurationController(constants.get_config_database_file(), config_lock)
 
     led_service = LedService()
 
