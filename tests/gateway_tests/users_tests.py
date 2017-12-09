@@ -21,8 +21,10 @@ Tests for the users module.
 import unittest
 import time
 import os
+from threading import Lock
 
 from gateway.users import UserController
+
 
 class UserControllerTest(unittest.TestCase):
     """ Tests for UserController. """
@@ -41,8 +43,7 @@ class UserControllerTest(unittest.TestCase):
 
     def __get_controller(self):
         """ Get a UserController using FILE. """
-        return UserController(UserControllerTest.FILE,
-                              {'username' : 'om', 'password' : 'pass'}, 10)
+        return UserController(UserControllerTest.FILE, Lock(), {'username' : 'om', 'password' : 'pass'}, 10)
 
     def test_empty(self):
         """ Test an empty database. """
@@ -74,8 +75,7 @@ class UserControllerTest(unittest.TestCase):
 
     def test_token_timeout(self):
         """ Test the timeout on the tokens. """
-        user_controller = UserController(UserControllerTest.FILE,
-                              {'username' : 'om', 'password' : 'pass'}, 3)
+        user_controller = UserController(UserControllerTest.FILE, Lock(), {'username' : 'om', 'password' : 'pass'}, 3)
 
         token = user_controller.login("om", "pass")
         self.assertNotEquals(None, token)
@@ -91,8 +91,7 @@ class UserControllerTest(unittest.TestCase):
 
     def test_timeout(self):
         """ Test logout. """
-        user_controller = UserController(UserControllerTest.FILE,
-                              {'username' : 'om', 'password' : 'pass'}, 3)
+        user_controller = UserController(UserControllerTest.FILE, Lock(), {'username' : 'om', 'password' : 'pass'}, 3)
 
         token = user_controller.login("om", "pass")
         self.assertNotEquals(None, token)
