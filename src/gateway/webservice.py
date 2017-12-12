@@ -471,8 +471,10 @@ class WebInterface(object):
         """
         Get a list of all modules attached and registered with the master.
 
-        :returns: 'outputs': list of output module types (O,R,D), 'inputs': list of input module \
-            types (I,T,L) and 'shutters': list of shutter module types (S).
+        :returns: Dict with:
+        * 'outputs' (list of module types: O,R,D),
+        * 'inputs' (list of input module types: I,T,L,C)
+        * 'shutters' (List of modules types: S).
         :rtype: dict
         """
         return self._gateway_api.get_modules()

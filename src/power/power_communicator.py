@@ -281,7 +281,7 @@ class PowerCommunicator(object):
 
         try:
             while phase < 8:
-                byte = self.__serial.read_queue.get(True, 0.25)
+                byte = self.__serial.read_queue.get(True, 0.1)
                 command += byte
                 self.__serial_bytes_read += 1
                 if phase == 0:  # Skip non 'R' bytes

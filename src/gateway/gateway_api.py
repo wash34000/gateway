@@ -50,6 +50,8 @@ LOGGER = logging.getLogger("openmotics")
 
 def convert_nan(number):
     """ Convert nan to 0. """
+    if math.isnan(number):
+        LOGGER.warning("Got an unexpected NaN")
     return 0.0 if math.isnan(number) else number
 
 
@@ -428,33 +430,47 @@ class GatewayApi(object):
     def get_modules(self):
         """ Get a list of all modules attached and registered with the master.
 
-        :returns: dict with 'outputs' (list of module types: O,R,D), 'inputs' \
-        (list of input module types: I,T,L) and 'shutters' (List of modules types: S).
+        :returns: Dict with:
+        * 'outputs' (list of module types: O,R,D),
+        * 'inputs' (list of input module types: I,T,L,C)
+        * 'shutters' (List of modules types: S).
         """
         mods = self.__master_communicator.do_command(master_api.number_of_io_modules())
 
         inputs = []
         outputs = []
         shutters = []
+        can_inputs = []
 
         for i in range(mods['in']):
             ret = self.__master_communicator.do_command(
-                            master_api.read_eeprom(),
-                            {'bank': 2 + i, 'addr': 0, 'num': 1})
-
-            inputs.append(ret['data'][0])
+                master_api.read_eeprom(),
+                {'bank': 2 + i, 'addr': 252, 'num': 1}
+            )
+            is_can = ret['data'][0] == 'C'
+            ret = self.__master_communicator.do_command(
+                master_api.read_eeprom(),
+                {'bank': 2 + i, 'addr': 0, 'num': 1}
+            )
+            if is_can:
+                can_inputs.append(ret['data'][0])
+            else:
+                inputs.append(ret['data'][0])
 
         for i in range(mods['out']):
             ret = self.__master_communicator.do_command(
-                            master_api.read_eeprom(),
-                            {'bank': 33 + i, 'addr': 0, 'num': 1})
-
+                master_api.read_eeprom(),
+                {'bank': 33 + i, 'addr': 0, 'num': 1}
+            )
             outputs.append(ret['data'][0])
 
         for shutter in range(mods['shutter']):
             shutters.append('S')
 
-        return {'outputs': outputs, 'inputs': inputs, 'shutters': shutters}
+        if len(can_inputs) > 0 and 'C' not in inputs:
+            inputs.append('C')  # First CAN enabled installations didn't had this in the eeprom yet
+
+        return {'outputs': outputs, 'inputs': inputs, 'shutters': shutters, 'can_inputs': can_inputs}
 
     def flash_leds(self, led_type, led_id):
         """ Flash the leds on the module for an output/input/sensor.
