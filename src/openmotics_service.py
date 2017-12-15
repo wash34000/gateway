@@ -99,8 +99,9 @@ def main():
     power_serial_port = config.get('OpenMotics', 'power_serial')
     gateway_uuid = config.get('OpenMotics', 'uuid')
 
-    user_controller = UserController(constants.get_config_database_file(), defaults, 3600)
-    config_controller = ConfigurationController(constants.get_config_database_file())
+    config_lock = threading.Lock()
+    user_controller = UserController(constants.get_config_database_file(), config_lock, defaults, 3600)
+    config_controller = ConfigurationController(constants.get_config_database_file(), config_lock)
 
     led_service = LedService()
 
@@ -128,7 +129,7 @@ def main():
                                  constants.get_scheduling_database_file(), maintenance_service,
                                  led_service.in_authorized_mode, config_controller)
 
-    plugin_controller = PluginController(web_interface)
+    plugin_controller = PluginController(web_interface, config_controller)
 
     web_interface.set_plugin_controller(plugin_controller)
     gateway_api.set_plugin_controller(plugin_controller)
@@ -146,7 +147,7 @@ def main():
     web_interface.set_metrics_collector(metrics_collector)
     web_interface.set_metrics_controller(metrics_controller)
 
-    web_service = WebService(web_interface)
+    web_service = WebService(web_interface, config_controller)
 
     def _on_output(*args, **kwargs):
         metrics_collector.on_output(*args, **kwargs)

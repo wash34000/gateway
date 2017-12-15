@@ -12,3 +12,12 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+import os
+import sys
+
+os.environ['PYTHON_EGG_CACHE'] = '/tmp/.eggs-cache/'
+path = '{0}/../../src/eggs'.format(os.path.dirname(__file__))
+for egg in os.listdir(path):
+    if egg.endswith('.egg'):
+        sys.path.insert(0, '{0}/{1}'.format(path, egg))
