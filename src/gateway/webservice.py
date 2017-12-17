@@ -21,7 +21,6 @@ import ConfigParser
 import subprocess
 import os
 import sys
-import inspect
 import time
 import requests
 import logging
@@ -33,7 +32,6 @@ from cherrypy.lib.static import serve_file
 from ws4py.websocket import WebSocket
 from ws4py.server.cherrypyserver import WebSocketPlugin, WebSocketTool
 from master.master_communicator import InMaintenanceModeException
-from gateway.scheduling import SchedulingController
 try:
     import json
 except ImportError:
@@ -258,8 +256,8 @@ class MetricsSocket(WebSocket):
 class WebInterface(object):
     """ This class defines the web interface served by cherrypy. """
 
-    def __init__(self, user_controller, gateway_api, scheduling_filename, maintenance_service,
-                 authorized_check, config_controller):
+    def __init__(self, user_controller, gateway_api, maintenance_service,
+                 authorized_check, config_controller, scheduling_controller):
         """
         Constructor for the WebInterface.
 
@@ -267,28 +265,26 @@ class WebInterface(object):
         :type user_controller: gateway.users.UserController
         :param gateway_api: used to communicate with the master.
         :type gateway_api: gateway.gateway_api.GatewayApi
-        :param scheduling_filename: the filename of the scheduling controller database.
-        :type scheduling_filename: str
         :param maintenance_service: used when opening maintenance mode.
         :type maintenance_service: master.maintenance.MaintenanceService
         :param authorized_check: check if the gateway is in authorized mode.
-        :type authorized_check: () -> bool
+        :type authorized_check: () -> boolean
         :param config_controller: Configuration controller
         :type config_controller: gateway.config.ConfigController
+        :param scheduling_controller: Scheduling Controller
+        :type scheduling_controller: gateway.scheduling.SchedulingController
         """
         self._user_controller = user_controller
         self._config_controller = config_controller
+        self._scheduling_controller = scheduling_controller
+        self._plugin_controller = None
+        self._metrics_controller = None
+
         self._gateway_api = gateway_api
-
-        self._scheduling_controller = SchedulingController(scheduling_filename, self._exec_scheduled_action)
-        self._scheduling_controller.start()
-
         self._maintenance_service = maintenance_service
         self._authorized_check = authorized_check
 
-        self._plugin_controller = None
         self.metrics_collector = None
-        self._metrics_controller = None
         self._ws_metrics_registered = False
         self._power_dirty = False
 
@@ -2034,10 +2030,7 @@ class WebInterface(object):
         :returns: 'timezone': the timezone in 'Continent/City' format (String).
         :rtype: dict
         """
-        path = os.path.realpath(constants.get_timezone_file())
-        if not path.startswith("/usr/share/zoneinfo/"):
-            raise RuntimeError("Could not determine timezone.")
-        return {'timezone': path[20:]}
+        return {'timezone': self._gateway_api.get_timezone()}
 
     @openmotics_api(auth=True, check=types(headers='json', auth='json', timeout=int), plugin_exposed=False)
     def do_url_action(self, url, method='GET', headers=None, data=None, auth=None, timeout=10):
@@ -2070,103 +2063,19 @@ class WebInterface(object):
         return {'headers': response.headers._store,
                 'data': response.text}
 
-    @openmotics_api(auth=True, check=types(timestamp=int, action='json'))
-    def schedule_action(self, timestamp, action):
-        """
-        Schedule an action at a given point in the future. An action can be any function of the
-        OpenMotics webservice. The action is JSON encoded dict with keys: 'type', 'action',
-        'params' and 'description'. At the moment 'type' can only be 'basic'. 'action' contains
-        the name of the function on the webservice. 'params' is a dict maps the names of the
-        parameters given to the function to their desired values. 'description' can be used to
-        identify the scheduled action.
-
-        :param timestamp: UNIX timestamp.
-        :type timestamp: int
-        :param action: action
-        :type action: dict
-        """
-        if not ('type' in action and action['type'] == 'basic' and 'action' in action):
-            raise RuntimeError("action does not contain the required keys 'type' and 'action'")
-        func_name = action['action']
-        if func_name not in WebInterface.__dict__:
-            raise RuntimeError("Could not find function WebInterface.%s" % func_name)
-        func = WebInterface.__dict__[func_name]
-        if 'exposed' not in func.__dict__ or func.exposed is False:
-            raise RuntimeError("Could not find function WebInterface.%s" % func_name)
-
-        params = action.get('params', {})
-
-        args = inspect.getargspec(func).args
-        args = [arg for arg in args if arg != "token" and arg != "self"]
-
-        if len(args) != len(params):
-            raise RuntimeError("The number of params (%d) does not match the number "
-                               "of arguments (%d) for function %s" %
-                               (len(params), len(args), func_name))
-
-        bad_args = [arg for arg in args if arg not in params]
-        if len(bad_args) > 0:
-            raise RuntimeError("The following param are missing for function %s: %s" %
-                               (func_name, str(bad_args)))
-
-        description = action.get('description', '')
-        action = json.dumps({'type': 'basic',
-                             'action': func_name,
-                             'params': params})
-
-        self._scheduling_controller.schedule_action(timestamp, description, action)
+    @openmotics_api(auth=True, check=types(start=int, schedule_type=str, arguments='json', repeat='json', duration=int, end=int))
+    def add_schedule(self, start, schedule_type, arguments=None, repeat=None, duration=None, end=None):
+        self._scheduling_controller.add_schedule(start, schedule_type, arguments, repeat, duration, end)
         return {}
 
     @openmotics_api(auth=True)
-    def list_scheduled_actions(self):
-        """
-        Get a list of all scheduled actions.
+    def list_schedules(self):
+        return {'schedules': [schedule.serialize() for schedule in self._scheduling_controller.schedules]}
 
-        :returns: 'actions': a list of dicts with keys: 'timestamp', 'from_now', 'id', \
-            'description' and 'action'. 'timestamp' is the UNIX timestamp when the action will be \
-            executed. 'from_now' is the number of seconds until the action will be scheduled. 'id' \
-            is a unique integer for the scheduled action. 'description' contains a user set \
-            description for the action. 'action' contains the function and params that will be \
-            used to execute the scheduled action.
-        :rtype: dict
-        """
-        now = time.time()
-        actions = self._scheduling_controller.list_scheduled_actions()
-        for action in actions:
-            action['from_now'] = action['timestamp'] - now
-
-        return {'actions': actions}
-
-    @openmotics_api(auth=True, check=types(id=int))
-    def remove_scheduled_action(self, id):
-        """
-        Remove a scheduled action when the id of the action is given.
-
-        :param id: the id of the scheduled action to remove.
-        :type id: int
-        """
-        self._scheduling_controller.remove_scheduled_action(id)
+    @openmotics_api(auth=True, check=types(schedule_id=int))
+    def remove_schedule(self, schedule_id):
+        self._scheduling_controller.remove_schedule(schedule_id)
         return {}
-
-    def _exec_scheduled_action(self, action):
-        """ Callback for the SchedulingController executing a scheduled actions.
-
-        :param action: JSON encoded action.
-        :type action: str
-        """
-        action = json.loads(action)
-        func_name = action['action']
-        kwargs = action['params']
-        kwargs['self'] = self
-        kwargs['token'] = None
-
-        if func_name in WebInterface.__dict__:
-            try:
-                WebInterface.__dict__[func_name](**kwargs)
-            except Exception:
-                LOGGER.exception("Exception while executing scheduled action")
-        else:
-            LOGGER.error("Could not find function WebInterface.%s", func_name)
 
     @openmotics_api(auth=True)
     def get_plugins(self):
