@@ -482,7 +482,8 @@ class WebInterface(object):
         """
         return {'features': [
             'metrics',     # Advanced metrics (including metrics over websockets)
-            'dirty_flag'   # A dirty flag that can be used to trigger syncs on power & master
+            'dirty_flag',  # A dirty flag that can be used to trigger syncs on power & master
+            'scheduling'   # Gateway backed scheduling
         ]}
 
     @openmotics_api(auth=True, check=types(type=int, id=int))
