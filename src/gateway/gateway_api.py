@@ -944,6 +944,8 @@ class GatewayApi(object):
         mode |= (1 if (thermostat_on is True and cooling_mode is False) or (cooling_on is True and cooling_mode is True) else 0) << 7
         mode |= 1 << 6  # multi-tenant mode
         mode |= (1 if cooling_mode else 0) << 4
+        if automatic is not None:
+            mode |= (1 if automatic else 0) << 3
 
         check_basic_action(self.__master_communicator.do_command(
             master_api.basic_action(),
@@ -964,7 +966,8 @@ class GatewayApi(object):
         if automatic is False and setpoint is not None and 3 <= setpoint <= 5:
             check_basic_action(self.__master_communicator.do_command(
                 master_api.basic_action(),
-                {'action_type': getattr(master_api, 'BA_ALL_SETPOINT_{0}'.format(setpoint))}
+                {'action_type': getattr(master_api, 'BA_ALL_SETPOINT_{0}'.format(setpoint)),
+                 'action_number': 0}
             ))
 
         return {'status': 'OK'}
