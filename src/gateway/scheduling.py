@@ -24,6 +24,7 @@ from datetime import datetime
 from croniter import croniter
 from random import randint
 from threading import Thread
+from gateway.webservice import params_parser
 try:
     import json
 except ImportError:
@@ -36,13 +37,14 @@ class Schedule(object):
 
     timezone = None
 
-    def __init__(self, id, start, repeat, duration, end, schedule_type, arguments, status):
+    def __init__(self, id, name, start, repeat, duration, end, schedule_type, arguments, status):
         self.id = id
+        self.name = name
         self.start = start
         self.repeat = repeat
         self.duration = duration
         self.end = end
-        self.type = schedule_type
+        self.schedule_type = schedule_type
         self.arguments = arguments
         self.status = status
         self.last_executed = None
@@ -80,11 +82,12 @@ class Schedule(object):
 
     def serialize(self):
         return {'id': self.id,
+                'name': self.name,
                 'start': self.start,
                 'repeat': self.repeat,
                 'duration': self.duration,
                 'end': self.end,
-                'type': self.type,
+                'schedule_type': self.schedule_type,
                 'arguments': self.arguments,
                 'status': self.status,
                 'last_executed': self.last_executed,
@@ -103,6 +106,9 @@ class SchedulingController(object):
     * BASIC_ACTION: Executes a Basic Action
       * Required arguments: {'action_type': <action type>,
                              'action_number': <action number>}
+    * LOCAL_API: Executes a local API call
+      * Required arguments: {'name': '<name of the call>',
+                             'parameters': {<kwargs for the call>}}
 
     Supported repeats:
     * None: Single execution at start time
@@ -119,6 +125,8 @@ class SchedulingController(object):
         :type gateway_api: gateway.gateway_api.GatewayApi
         """
         self._gateway_api = gateway_api
+        self._web_interface = None
+
         self._lock = lock
         self._connection = sqlite3.connect(db_filename,
                                            detect_types=sqlite3.PARSE_DECLTYPES,
@@ -133,6 +141,9 @@ class SchedulingController(object):
         Schedule.timezone = gateway_api.get_timezone()
 
         self._load_schedule()
+
+    def set_webinterface(self, web_interface):
+        self._web_interface = web_interface
 
     @property
     def schedules(self):
@@ -152,22 +163,21 @@ class SchedulingController(object):
         """
         tables = [table[0] for table in self._execute('SELECT name FROM sqlite_master WHERE type=\'table\';')]
         if 'schedules' not in tables:
-            self._execute('CREATE TABLE schedules (id INTEGER PRIMARY KEY, start INTEGER, '
+            self._execute('CREATE TABLE schedules (id INTEGER PRIMARY KEY, name TEXT, start INTEGER, '
                           'repeat TEXT, duration INTEGER, end INTEGER, type TEXT, arguments TEXT, status TEXT);')
-            self._execute('INSERT INTO schedules (start, repeat, duration, end, type, arguments, status) VALUES (?, ?, ?, ?, ?, ?, ?);',
-                          (int(time.time()), None, None, None, 'MIGRATION', json.dumps('SCHEDULES'), 'ACTIVE'))
 
     def _load_schedule(self):
-        for row in self._execute('SELECT id, start, repeat, duration, end, type, arguments, status FROM schedules;'):
+        for row in self._execute('SELECT id, name, start, repeat, duration, end, type, arguments, status FROM schedules;'):
             schedule_id = row[0]
             self._schedules[schedule_id] = Schedule(id=schedule_id,
-                                                    start=row[1],
-                                                    repeat=json.loads(row[2]) if row[2] is not None else None,
-                                                    duration=row[3],
-                                                    end=row[4],
-                                                    schedule_type=row[5],
-                                                    arguments=json.loads(row[6]) if row[6] is not None else None,
-                                                    status=row[7])
+                                                    name=row[1],
+                                                    start=row[2],
+                                                    repeat=json.loads(row[3]) if row[3] is not None else None,
+                                                    duration=row[4],
+                                                    end=row[5],
+                                                    schedule_type=row[6],
+                                                    arguments=json.loads(row[7]) if row[7] is not None else None,
+                                                    status=row[8])
 
     def _update_schedule_status(self, schedule_id, status):
         self._execute('UPDATE schedules SET status = ? WHERE id = ?;', (status, schedule_id))
@@ -177,10 +187,11 @@ class SchedulingController(object):
         self._execute('DELETE FROM schedules WHERE id = ?;', (schedule_id,))
         self._schedules.pop(schedule_id, None)
 
-    def add_schedule(self, start, schedule_type, arguments, repeat, duration, end):
-        SchedulingController._validate(start, schedule_type, arguments, repeat, duration, end)
-        self._execute('INSERT INTO schedules (start, repeat, duration, end, type, arguments, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                      (start,
+    def add_schedule(self, name, start, schedule_type, arguments, repeat, duration, end):
+        self._validate(name, start, schedule_type, arguments, repeat, duration, end)
+        self._execute('INSERT INTO schedules (name, start, repeat, duration, end, type, arguments, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                      (name,
+                       start,
                        json.dumps(repeat) if repeat is not None else None,
                        duration,
                        end,
@@ -213,15 +224,18 @@ class SchedulingController(object):
         :type schedule: gateway.scheduling.Schedule
         """
         try:
-            LOGGER.info("Executing schedule {0} with arguments {1}".format(schedule.type, schedule.arguments))
+            LOGGER.info("Executing schedule '{0}' ({1}) with arguments {2}".format(schedule.name, schedule.schedule_type, schedule.arguments))
 
             # Execute
-            if schedule.type == 'GROUP_ACTION':
+            if schedule.schedule_type == 'GROUP_ACTION':
                 self._gateway_api.do_group_action(schedule.arguments)
-            elif schedule.type == 'BASIC_ACTION':
+            elif schedule.schedule_type == 'BASIC_ACTION':
                 self._gateway_api.do_basic_action(**schedule.arguments)
+            elif schedule.schedule_type == 'LOCAL_API':
+                func = getattr(self._web_interface, schedule.arguments['name'])
+                func(**schedule.arguments['parameters'])
             else:
-                LOGGER.warning('Did not process schedule {0}'.format(schedule.type))
+                LOGGER.warning('Did not process schedule {0}'.format(schedule.name))
 
             # Cleanup or prepare for next run
             schedule.last_executed = time.time()
@@ -231,10 +245,11 @@ class SchedulingController(object):
             LOGGER.error('Got error while executing schedule: {0}'.format(ex))
             schedule.last_executed = time.time()
 
-    @staticmethod
-    def _validate(start, schedule_type, arguments, repeat, duration, end):
+    def _validate(self, name, start, schedule_type, arguments, repeat, duration, end):
+        if name is None or not isinstance(name, basestring) or name.strip() == '':
+            raise RuntimeError('A schedule must have a name')
         # Check whether the requested type is valid
-        accepted_types = ['GROUP_ACTION', 'BASIC_ACTION']
+        accepted_types = ['GROUP_ACTION', 'BASIC_ACTION', 'LOCAL_API']
         if schedule_type not in accepted_types:
             raise RuntimeError('Unknown schedule type. Allowed: {0}'.format(', '.join(accepted_types)))
         # Check duration/repeat/end combinations
@@ -258,3 +273,14 @@ class SchedulingController(object):
                 raise RuntimeError('A schedule of type GROUP_ACTION does not has a duration. It is a one-time trigger')
             if not isinstance(arguments, int) or arguments < 1 or arguments > 254:
                 raise RuntimeError('The arguments of a GROUP_ACTION schedule must be an integer, representing the Group Action to be executed')
+        elif schedule_type == 'LOCAL_API':
+            if duration is not None:
+                raise RuntimeError('A schedule of type LOCAL_API does not has a duration. It is a one-time trigger')
+            if not isinstance(arguments, dict) or 'name' not in arguments or 'parameters' not in arguments or not isinstance(arguments['parameters'], dict):
+                raise RuntimeError('The arguments of a LOCAL_API schedule must be of type dict with arguments `name` and `parameters`')
+            func = getattr(self._web_interface, arguments['name']) if hasattr(self._web_interface, arguments['name']) else None
+            if func is None or not callable(func) or not hasattr(func, 'exposed') or getattr(func, 'exposed') is False:
+                raise RuntimeError('The arguments of a LOCAL_API schedule must specify a valid and exposed call')
+            check = getattr(func, 'check')
+            if check is not None:
+                params_parser(arguments['parameters'], check)

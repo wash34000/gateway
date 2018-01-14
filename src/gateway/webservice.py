@@ -180,12 +180,15 @@ def _openmotics_api(f, *args, **kwargs):
     cherrypy.response.headers["Content-Type"] = "application/json"
     cherrypy.response.headers["Server-Timing"] = ','.join(['{0}={1}; "{2}"'.format(key, value[1] * 1000, value[0])
                                                            for key, value in timings.iteritems()])
+    if hasattr(f, 'deprecated') and f.deprecated is not None:
+        cherrypy.response.headers['Warning'] = 'Warning: 299 - "Deprecated, replaced by: {0}"'.format(f.deprecated)
     cherrypy.response.status = status
     return contents
 
 
-def openmotics_api(auth=False, check=None, pass_token=False, plugin_exposed=True):
+def openmotics_api(auth=False, check=None, pass_token=False, plugin_exposed=True, deprecated=None):
     def wrapper(func):
+        func.deprecated = deprecated
         func = _openmotics_api(func)
         if auth is True:
             func = cherrypy.tools.authenticated(pass_token=pass_token)(func)
@@ -2064,14 +2067,39 @@ class WebInterface(object):
         return {'headers': response.headers._store,
                 'data': response.text}
 
-    @openmotics_api(auth=True, check=types(start=int, schedule_type=str, arguments='json', repeat='json', duration=int, end=int))
-    def add_schedule(self, start, schedule_type, arguments=None, repeat=None, duration=None, end=None):
-        self._scheduling_controller.add_schedule(start, schedule_type, arguments, repeat, duration, end)
+    @openmotics_api(auth=True, check=types(timestamp=int, action='json'), deprecated='add_schedule')
+    def schedule_action(self, timestamp, action):
+        self.add_schedule(name=action['description'],
+                          start=timestamp,
+                          schedule_type='LOCAL_API',
+                          arguments={'name': action['action'],
+                                     'parameters': action['params']})
         return {}
+
+    @openmotics_api(auth=True, check=types(name=str, start=int, schedule_type=str, arguments='json', repeat='json', duration=int, end=int))
+    def add_schedule(self, name, start, schedule_type, arguments=None, repeat=None, duration=None, end=None):
+        self._scheduling_controller.add_schedule(name, start, schedule_type, arguments, repeat, duration, end)
+        return {}
+
+    @openmotics_api(auth=True, deprecated='list_schedules')
+    def list_scheduled_actions(self):
+        return {'actions': [{'timestamp': schedule.start,
+                             'from_now': schedule.start - time.time(),
+                             'id': schedule.id,
+                             'description': schedule.name,
+                             'action': json.dumps({'action': schedule.arguments['name'],
+                                                   'params': schedule.arguments['parameters']})}
+                            for schedule in self._scheduling_controller.schedules
+                            if schedule.schedule_type == 'LOCAL_API']}
 
     @openmotics_api(auth=True)
     def list_schedules(self):
         return {'schedules': [schedule.serialize() for schedule in self._scheduling_controller.schedules]}
+
+    @openmotics_api(auth=True, check=types(id=int), deprecated='remove_schedule')
+    def remove_scheduled_action(self, id):
+        self._scheduling_controller.remove_schedule(id)
+        return {}
 
     @openmotics_api(auth=True, check=types(schedule_id=int))
     def remove_schedule(self, schedule_id):

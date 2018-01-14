@@ -131,6 +131,8 @@ def main():
     web_interface = WebInterface(user_controller, gateway_api, maintenance_service, led_service.in_authorized_mode,
                                  config_controller, scheduling_controller)
 
+    scheduling_controller.set_webinterface(web_interface)
+
     plugin_controller = PluginController(web_interface, config_controller)
 
     web_interface.set_plugin_controller(plugin_controller)
