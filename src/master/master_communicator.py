@@ -31,6 +31,7 @@ import master_api
 from master_command import Field, printable
 from serial_utils import CommunicationTimedOutException
 
+
 class MasterCommunicator(object):
     """ Uses a serial port to communicate with the master and updates the output state.
     Provides methods to send MasterCommands, Passthrough and Maintenance. A watchdog checks the
@@ -130,7 +131,7 @@ class MasterCommunicator(object):
     def get_seconds_since_last_success(self):
         """ Get the number of seconds since the last successful communication. """
         if self.__last_success == 0:
-            return 0 ## No communication - return 0 sec since last success
+            return 0  # No communication - return 0 sec since last success
         else:
             return time.time() - self.__last_success
 
@@ -147,7 +148,7 @@ class MasterCommunicator(object):
         """
         with self.__serial_write_lock:
             if self.__verbose:
-                print "%.3f writing to serial: %s" % (time.time(), printable(data))
+                LOGGER.info('Writing to Master serial: {0}'.format(printable(data)))
             self.__serial.write(data)
             self.__serial_bytes_written += len(data)
 
