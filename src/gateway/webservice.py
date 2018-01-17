@@ -713,11 +713,7 @@ class WebInterface(object):
         :return: 'status': 'OK'.
         :rtype: dict
         """
-        self._gateway_api.set_thermostat_mode(thermostat_on, cooling_mode, cooling_on)
-
-        if automatic is not None and setpoint is not None:
-            for thermostat_id in range(32):
-                self._gateway_api.set_per_thermostat_mode(thermostat_id, automatic, setpoint)
+        self._gateway_api.set_thermostat_mode(thermostat_on, cooling_mode, cooling_on, automatic, setpoint)
 
         return {'status': 'OK'}
 
