@@ -940,8 +940,17 @@ class GatewayApi(object):
         """
 
         # First, set basic configuration
+        set_on = False
+        if cooling_mode is True and cooling_on is True:
+            set_on = True
+        if cooling_mode is False:
+            # Heating means threshold based
+            global_config = self.get_global_thermostat_configuration()
+            current_temperature = self.get_sensor_temperature_status()[global_config['outside_sensor']]
+            set_on = global_config['threshold_temp'] > current_temperature
+
         mode = 0
-        mode |= (1 if (thermostat_on is True and cooling_mode is False) or (cooling_on is True and cooling_mode is True) else 0) << 7
+        mode |= (1 if set_on is True else 0) << 7
         mode |= 1 << 6  # multi-tenant mode
         mode |= (1 if cooling_mode else 0) << 4
         if automatic is not None:
