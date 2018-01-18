@@ -65,6 +65,14 @@ class GatewayApi(object):
     """ The GatewayApi combines master_api functions into high level functions. """
 
     def __init__(self, master_communicator, power_communicator, power_controller):
+        """
+        :param master_communicator: Master communicator
+        :type master_communicator: master.master_communicator.MasterCommunicator
+        :param power_communicator: Power communicator
+        :type power_communicator: power.power_communicator.PowerCommunicator
+        :param power_controller: Power controller
+        :type power_controller: power.power_controller.PowerController
+        """
         self.__master_communicator = master_communicator
         self.__eeprom_controller = EepromController(
             EepromFile(self.__master_communicator),
@@ -234,6 +242,12 @@ class GatewayApi(object):
              'weekday': now.isoweekday(), 'day': now.day, 'month': now.month,
              'year': now.year % 100}
         )
+
+    def get_timezone(self):
+        path = os.path.realpath(constants.get_timezone_file())
+        if not path.startswith("/usr/share/zoneinfo/"):
+            raise RuntimeError("Could not determine timezone.")
+        return path[20:]
 
     def __init_shutter_status(self):
         """ Initialize the shutter status. """

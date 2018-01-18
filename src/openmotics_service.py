@@ -43,6 +43,7 @@ from gateway.users import UserController
 from gateway.metrics import MetricsController
 from gateway.metrics_collector import MetricsCollector
 from gateway.config import ConfigurationController
+from gateway.scheduling import SchedulingController
 
 from bus.led_service import LedService
 
@@ -119,15 +120,18 @@ def main():
 
     gateway_api = GatewayApi(master_communicator, power_communicator, power_controller)
 
+    scheduling_controller = SchedulingController(constants.get_scheduling_database_file(), config_lock, gateway_api)
+
     maintenance_service = MaintenanceService(gateway_api, constants.get_ssl_private_key_file(),
                                              constants.get_ssl_certificate_file())
 
     passthrough_service = PassthroughService(master_communicator, passthrough_serial)
     passthrough_service.start()
 
-    web_interface = WebInterface(user_controller, gateway_api,
-                                 constants.get_scheduling_database_file(), maintenance_service,
-                                 led_service.in_authorized_mode, config_controller)
+    web_interface = WebInterface(user_controller, gateway_api, maintenance_service, led_service.in_authorized_mode,
+                                 config_controller, scheduling_controller)
+
+    scheduling_controller.set_webinterface(web_interface)
 
     plugin_controller = PluginController(web_interface, config_controller)
 
@@ -166,11 +170,11 @@ def main():
 
     plugin_controller.start_plugins()
     metrics_controller.start()
+    scheduling_controller.start()
     metrics_collector.start()
     web_service.start()
 
     led_service.set_led('stat2', True)
-
     led_thread = threading.Thread(target=led_driver, args=(led_service,
                                                            master_communicator, power_communicator))
     led_thread.setName("Serial led driver thread")
