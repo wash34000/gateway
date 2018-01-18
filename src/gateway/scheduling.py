@@ -137,6 +137,7 @@ class SchedulingController(object):
         self._schedules = {}
         self._stop = False
         self._processor = None
+        self._semaphore = None
 
         Schedule.timezone = gateway_api.get_timezone()
 
@@ -144,6 +145,9 @@ class SchedulingController(object):
 
     def set_webinterface(self, web_interface):
         self._web_interface = web_interface
+
+    def set_unittest_semaphore(self, semaphore):
+        self._semaphore = semaphore
 
     @property
     def schedules(self):
@@ -244,6 +248,9 @@ class SchedulingController(object):
         except Exception as ex:
             LOGGER.error('Got error while executing schedule: {0}'.format(ex))
             schedule.last_executed = time.time()
+        finally:
+            if self._semaphore is not None:
+                self._semaphore.release()
 
     def _validate(self, name, start, schedule_type, arguments, repeat, duration, end):
         if name is None or not isinstance(name, basestring) or name.strip() == '':
@@ -264,23 +271,23 @@ class SchedulingController(object):
         # Type specifc checks
         if schedule_type == 'BASIC_ACTION':
             if duration is not None:
-                raise RuntimeError('A schedule of type BASIC_ACTION does not has a duration. It is a one-time trigger')
+                raise RuntimeError('A schedule of type BASIC_ACTION does not have a duration. It is a one-time trigger')
             if not isinstance(arguments, dict) or 'action_type' not in arguments or not isinstance(arguments['action_type'], int) or \
                     'action_number' not in arguments or not isinstance(arguments['action_number'], int) or len(arguments) != 2:
                 raise RuntimeError('The arguments of a BASIC_ACTION schedule must be of type dict with arguments `action_type` and `action_number`')
         elif schedule_type == 'GROUP_ACTION':
             if duration is not None:
-                raise RuntimeError('A schedule of type GROUP_ACTION does not has a duration. It is a one-time trigger')
+                raise RuntimeError('A schedule of type GROUP_ACTION does not have a duration. It is a one-time trigger')
             if not isinstance(arguments, int) or arguments < 1 or arguments > 254:
                 raise RuntimeError('The arguments of a GROUP_ACTION schedule must be an integer, representing the Group Action to be executed')
         elif schedule_type == 'LOCAL_API':
             if duration is not None:
-                raise RuntimeError('A schedule of type LOCAL_API does not has a duration. It is a one-time trigger')
+                raise RuntimeError('A schedule of type LOCAL_API does not have a duration. It is a one-time trigger')
             if not isinstance(arguments, dict) or 'name' not in arguments or 'parameters' not in arguments or not isinstance(arguments['parameters'], dict):
                 raise RuntimeError('The arguments of a LOCAL_API schedule must be of type dict with arguments `name` and `parameters`')
             func = getattr(self._web_interface, arguments['name']) if hasattr(self._web_interface, arguments['name']) else None
-            if func is None or not callable(func) or not hasattr(func, 'exposed') or getattr(func, 'exposed') is False:
-                raise RuntimeError('The arguments of a LOCAL_API schedule must specify a valid and exposed call')
+            if func is None or not callable(func) or not hasattr(func, 'plugin_exposed') or getattr(func, 'plugin_exposed') is False:
+                raise RuntimeError('The arguments of a LOCAL_API schedule must specify a valid and (plugin_)exposed call')
             check = getattr(func, 'check')
             if check is not None:
                 params_parser(arguments['parameters'], check)
