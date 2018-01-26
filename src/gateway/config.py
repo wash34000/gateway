@@ -57,9 +57,7 @@ class ConfigurationController(object):
         """
         Creates tables and execute migrations
         """
-        tables = [table[0] for table in self.__execute("SELECT name FROM sqlite_master WHERE type='table';")]
-        if 'settings' not in tables:
-            self.__execute("CREATE TABLE settings (id INTEGER PRIMARY KEY, setting TEXT UNIQUE, data TEXT);")
+        self.__execute("CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY, setting TEXT UNIQUE, data TEXT);")
         for setting, default_setting in {'cloud_enabled': True,
                                          'cloud_endpoint': 'cloud.openmotics.com',
                                          'cloud_endpoint_metrics': 'portal/metrics/',

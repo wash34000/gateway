@@ -165,10 +165,8 @@ class SchedulingController(object):
         """
         Creates tables and execute migrations
         """
-        tables = [table[0] for table in self._execute('SELECT name FROM sqlite_master WHERE type=\'table\';')]
-        if 'schedules' not in tables:
-            self._execute('CREATE TABLE schedules (id INTEGER PRIMARY KEY, name TEXT, start INTEGER, '
-                          'repeat TEXT, duration INTEGER, end INTEGER, type TEXT, arguments TEXT, status TEXT);')
+        self._execute('CREATE TABLE IF NOT EXISTS schedules (id INTEGER PRIMARY KEY, name TEXT, start INTEGER, '
+                      'repeat TEXT, duration INTEGER, end INTEGER, type TEXT, arguments TEXT, status TEXT);')
 
     def _load_schedule(self):
         for row in self._execute('SELECT id, name, start, repeat, duration, end, type, arguments, status FROM schedules;'):
