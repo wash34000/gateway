@@ -24,6 +24,7 @@ import subprocess
 import os
 import traceback
 import constants
+import threading
 from ConfigParser import ConfigParser
 from datetime import datetime
 from bus.led_service import LedService
@@ -239,7 +240,7 @@ class Gateway(object):
         try:
             lines = subprocess.check_output("ifconfig eth0", shell=True)
             return lines.split("\n")[1].strip().split(" ")[1].split(":")[1]
-        except:
+        except Exception:
             return None
 
 
@@ -247,12 +248,12 @@ class DataCollector(object):
     """ Defines a function to retrieve data, the period between two collections
     """
 
-    def __init__(self, function, period=0):
+    def __init__(self, fct, period=0):
         """
         Create a collector with a function to call and a period.
         If the period is 0, the collector will be executed on each call.
         """
-        self.__function = function
+        self.__function = fct
         self.__period = period
         self.__last_collect = 0
 
@@ -283,7 +284,8 @@ def main():
     """
 
     led_service = LedService()
-    config_controller = ConfigurationController(constants.get_config_database_file())
+    config_lock = threading.Lock()
+    config_controller = ConfigurationController(constants.get_config_database_file(), config_lock)
 
     def set_vpn(_should_open):
         is_open = VpnController.check_vpn()
