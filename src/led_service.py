@@ -311,7 +311,8 @@ def main():
     dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
 
     system_bus = dbus.SystemBus()
-    dbus.service.BusName("com.openmotics.status", system_bus)  # Initializes the bus.
+    _ = dbus.service.BusName("com.openmotics.status", system_bus)  # Initializes the bus
+    # The above `_ = dbus...` need to be there, or the bus won't be initialized
 
     i2c_device = I2C_DEVICE_BBB if is_beagle_bone_black() else I2C_DEVICE_BB
     i2c_address = int(config.get('OpenMotics', 'leds_i2c_address'), 16)

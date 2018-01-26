@@ -131,10 +131,10 @@ def authentication_handler(pass_token=False):
         if 'token' in request.params:
             token = request.params.pop('token')
         else:
+            token = None
             header = request.headers.get('Authorization')
-            if header is None or 'Bearer ' not in header:
-                raise RuntimeError()
-            token = header.replace('Bearer ', '')
+            if header is not None and 'Bearer ' in header:
+                token = header.replace('Bearer ', '')
         _self = request.handler.callable.__self__
         if request.remote.ip != '127.0.0.1':
             check_token = _self._user_controller.check_token if hasattr(_self, '_user_controller') else _self.webinterface.check_token
@@ -2019,7 +2019,7 @@ class WebInterface(object):
         if os.path.exists(constants.get_timezone_file()):
             os.remove(constants.get_timezone_file())
         os.symlink(timezone_file_path, constants.get_timezone_file())
-        self._gateway_api.sync_master_time()
+        self._gateway_api.sync_master_time(True)
         return {}
 
     @openmotics_api(auth=True)

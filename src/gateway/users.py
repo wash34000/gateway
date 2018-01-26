@@ -62,9 +62,7 @@ class UserController(object):
         """
         Creates tables and execute migrations
         """
-        tables = [table[0] for table in self.__execute("SELECT name FROM sqlite_master WHERE type='table';")]
-        if 'users' not in tables:
-            self.__execute("CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT UNIQUE, password TEXT, role TEXT, enabled INTEGER);")
+        self.__execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT UNIQUE, password TEXT, role TEXT, enabled INTEGER);")
 
     @staticmethod
     def __hash(password):

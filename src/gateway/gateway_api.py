@@ -224,7 +224,10 @@ class GatewayApi(object):
                 LOGGER.info('Time - master: {0} ({1}) - gateway: {2} ({3})'.format(
                     master_time, status['weekday'], expected_time, expected_weekday)
                 )
-                self.sync_master_time()
+                if expected_time.hour == 0 and expected_time.minute < 15:
+                    LOGGER.info('Skip setting time between 00:00 and 00:15')
+                else:
+                    self.sync_master_time(abs(expected_time.hour - master_time.hour) > 2)
 
         except Exception:
             LOGGER.error("Got error while setting the time on the master.")
@@ -232,9 +235,9 @@ class GatewayApi(object):
         finally:
             Timer(120, self.__run_master_timer).start()
 
-    def sync_master_time(self):
+    def sync_master_time(self, reset_thermostats):
         """ Set the time on the master. """
-        LOGGER.info("Setting the time on the master.")
+        LOGGER.info('Setting the time on the master.')
         now = datetime.datetime.now()
         self.__master_communicator.do_command(
             master_api.set_time(),
@@ -242,6 +245,14 @@ class GatewayApi(object):
              'weekday': now.isoweekday(), 'day': now.day, 'month': now.month,
              'year': now.year % 100}
         )
+        if reset_thermostats is True:
+            LOGGER.info('Trigger thermostat (re)set to check changed time.')
+            thermostat_status = self.get_thermostat_status()
+            self.set_thermostat_mode(thermostat_status['thermostats_on'],
+                                     thermostat_status['cooling'],
+                                     thermostat_status['thermostats_on'],
+                                     thermostat_status['automatic'],
+                                     thermostat_status['setpoint'])
 
     def get_timezone(self):
         path = os.path.realpath(constants.get_timezone_file())
