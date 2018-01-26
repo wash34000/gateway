@@ -27,14 +27,16 @@ from random import randint
 class UserController(object):
     """ The UserController provides methods for the creation and authentication of users. """
 
-    def __init__(self, db_filename, config, token_timeout=3600):
+    def __init__(self, db_filename, lock, config, token_timeout=3600):
         """ Constructor a new UserController.
 
         :param db_filename: filename of the sqlite database used to store the users and tokens.
+        :param lock: shared lock for the given DB
         :param config: Contains the OpenMotics cloud username and password.
         :type config: A dict with keys 'username' and 'password'.
         :param token_timeout: the number of seconds a token is valid.
         """
+        self.__lock = lock
         self.__config = config
         self.__connection = sqlite3.connect(db_filename,
                                             detect_types=sqlite3.PARSE_DECLTYPES,
@@ -49,19 +51,18 @@ class UserController(object):
         self.create_user(self.__config['username'].lower(), self.__config['password'], "admin", True)
 
     def __execute(self, *args, **kwargs):
-        try:
-            return self.__cursor.execute(*args, **kwargs)
-        except sqlite3.OperationalError:
-            time.sleep(randint(1, 20) / 10.0)
-            return self.__cursor.execute(*args, **kwargs)
+        with self.__lock:
+            try:
+                return self.__cursor.execute(*args, **kwargs)
+            except sqlite3.OperationalError:
+                time.sleep(randint(1, 20) / 10.0)
+                return self.__cursor.execute(*args, **kwargs)
 
     def __check_tables(self):
         """
         Creates tables and execute migrations
         """
-        tables = [table[0] for table in self.__execute("SELECT name FROM sqlite_master WHERE type='table';")]
-        if 'users' not in tables:
-            self.__execute("CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT UNIQUE, password TEXT, role TEXT, enabled INTEGER);")
+        self.__execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT UNIQUE, password TEXT, role TEXT, enabled INTEGER);")
 
     @staticmethod
     def __hash(password):
@@ -162,13 +163,9 @@ class UserController(object):
         self.__tokens[ret] = (username, valid_until)
 
         # Delete the expired tokens
-        to_delete = []
-        for token in self.__tokens:
+        for token in self.__tokens.keys():
             if self.__tokens[token][1] < time.time():
-                to_delete.append(token)
-
-        for token in to_delete:
-            del self.__tokens[token]
+                self.__tokens.pop(token, None)
 
         return ret
 

@@ -30,12 +30,14 @@ LOGGER = logging.getLogger("openmotics")
 
 class ConfigurationController(object):
 
-    def __init__(self, db_filename):
+    def __init__(self, db_filename, lock):
         """
         Constructs a new ConfigController.
 
         :param db_filename: filename of the sqlite database used to store the configuration
+        :param lock: DB lock
         """
+        self.__lock = lock
         self.__connection = sqlite3.connect(db_filename,
                                             detect_types=sqlite3.PARSE_DECLTYPES,
                                             check_same_thread=False,
@@ -44,19 +46,18 @@ class ConfigurationController(object):
         self.__check_tables()
 
     def __execute(self, *args, **kwargs):
-        try:
-            return self.__cursor.execute(*args, **kwargs)
-        except sqlite3.OperationalError:
-            time.sleep(randint(1, 20) / 10.0)
-            return self.__cursor.execute(*args, **kwargs)
+        with self.__lock:
+            try:
+                return self.__cursor.execute(*args, **kwargs)
+            except sqlite3.OperationalError:
+                time.sleep(randint(1, 20) / 10.0)
+                return self.__cursor.execute(*args, **kwargs)
 
     def __check_tables(self):
         """
         Creates tables and execute migrations
         """
-        tables = [table[0] for table in self.__execute("SELECT name FROM sqlite_master WHERE type='table';")]
-        if 'settings' not in tables:
-            self.__execute("CREATE TABLE settings (id INTEGER PRIMARY KEY, setting TEXT UNIQUE, data TEXT);")
+        self.__execute("CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY, setting TEXT UNIQUE, data TEXT);")
         for setting, default_setting in {'cloud_enabled': True,
                                          'cloud_endpoint': 'cloud.openmotics.com',
                                          'cloud_endpoint_metrics': 'portal/metrics/',
@@ -64,7 +65,8 @@ class ConfigurationController(object):
                                          'cloud_metrics_enabled|energy': True,
                                          'cloud_metrics_enabled|counter': True,
                                          'cloud_metrics_batch_size': 50,
-                                         'cloud_metrics_min_interval': 300}.iteritems():
+                                         'cloud_metrics_min_interval': 300,
+                                         'cors_enabled': False}.iteritems():
             if self.get_setting(setting) is None:
                 self.set_setting(setting, default_setting)
 

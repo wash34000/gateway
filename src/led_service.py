@@ -33,13 +33,13 @@ from ConfigParser import ConfigParser
 import constants
 
 I2C_DEVICE_BB = '/dev/i2c-2'  # Beaglebone
-I2C_DEVICE_BBB = '/dev/i2c-1' #Beaglebone black
+I2C_DEVICE_BBB = '/dev/i2c-1'  # Beaglebone black
 
 GPIO_INPUT_BUTTON_GW = 38   # Pin for the input button on the separate gateway module (deprecated)
-GPIO_INPUT_BUTTON_GW_M = 26 # Pin for the input button on the gateway/master module (current) 
+GPIO_INPUT_BUTTON_GW_M = 26  # Pin for the input button on the gateway/master module (current)
 
 IOCTL_I2C_SLAVE = 0x0703
-CODES = {'uart4':64, 'uart5':128, 'vpn':16, 'stat1':0, 'stat2':0, 'alive':1, 'cloud':4}
+CODES = {'uart4': 64, 'uart5': 128, 'vpn': 16, 'stat1': 0, 'stat2': 0, 'alive': 1, 'cloud': 4}
 AUTH_CODE = 1 + 4 + 16 + 64 + 128
 
 HOME = 75
@@ -65,7 +65,7 @@ def is_button_pressed(gpio_pin):
     fh_inp = open('/sys/class/gpio/gpio%d/value' % gpio_pin, 'r')
     line = fh_inp.read()
     fh_inp.close()
-    return (int(line) == 0)
+    return int(line) == 0
 
 
 def detect_button(gpio_1, gpio_2):
@@ -154,10 +154,10 @@ class StatusObject(dbus.service.Object):
         """ Generates the i2c code for the LEDs. """
         code = 0
         for led in CODES:
-            if self.__enabled_leds[led] == True:
+            if self.__enabled_leds[led] is True:
                 code |= CODES[led]
 
-        if self.__authorized_mode: # Light all leds in authorized mode
+        if self.__authorized_mode:  # Light all leds in authorized mode
             code |= AUTH_CODE
 
         return (~ code) & 255
@@ -277,10 +277,10 @@ class StatusObject(dbus.service.Object):
         """ Turns the master LEDs on or off if required. """
         while True:
             if self.__master_leds_turn_on:
-                if self.__master_leds_on == False:
+                if self.__master_leds_on is False:
                     self.__master_set_leds(True)
             else:
-                if self.__master_leds_on == True and time.time() > self.__master_leds_timeout:
+                if self.__master_leds_on is True and time.time() > self.__master_leds_timeout:
                     self.__master_set_leds(False)
 
             time.sleep(0.2)
@@ -294,7 +294,7 @@ class StatusObject(dbus.service.Object):
             handler.close()
 
             self.__master_leds_on = status
-            if status == True:
+            if status is True:
                 self.__master_leds_turn_on = False
                 self.__master_leds_timeout = time.time() + 120
 
@@ -311,7 +311,8 @@ def main():
     dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
 
     system_bus = dbus.SystemBus()
-    _ = dbus.service.BusName("com.openmotics.status", system_bus) # Initializes the bus.
+    _ = dbus.service.BusName("com.openmotics.status", system_bus)  # Initializes the bus
+    # The above `_ = dbus...` need to be there, or the bus won't be initialized
 
     i2c_device = I2C_DEVICE_BBB if is_beagle_bone_black() else I2C_DEVICE_BB
     i2c_address = int(config.get('OpenMotics', 'leds_i2c_address'), 16)

@@ -1,6 +1,6 @@
 OpenMotics Gateway
 
-Copyright 2017 OpenMotics BVBA
+Copyright 2018 OpenMotics BVBA
 
 This product includes and/or uses software developed by third parties. This
 software is listed below in no particular order, together with their licenses. The
@@ -21,6 +21,25 @@ INCLUDED AND/OR USED SOFTWARE
 
     MessagePack                 Apache 2.0
         Copyright (C) 2009 Naoki INADA
+        
+    Croniter                    MIT
+        Matsumoto Taichi, kiorky
+    
+    Decorator                   BSD 2
+        Copyright (c) 2005-2017, Michele Simionato
+    
+    Python dateutil             Apache 2.0
+        Copyright 2017- Paul Ganssle <paul@ganssle.io>
+        Copyright 2017- dateutil contributors (see AUTHORS file)
+    
+    Pytz                        MIT
+        Stuart Bishop
+    
+    Six                         MIT
+        Copyright (c) 2010-2018 Benjamin Peterson
+    
+    WebSocket for Python        BSD 3           A.k.a ws4py
+        Copyright (c) 2011-2016, Sylvain Hellegouarch 
 
 LICENSES
 
@@ -53,6 +72,35 @@ LICENSES
         ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
         (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
         SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+    BSD 2
+    
+        Copyright (c) <year>, <copyright holder>
+        All rights reserved.
+    
+        Redistribution and use in source and binary forms, with or without
+        modification, are permitted provided that the following conditions are
+        met:
+    
+          Redistributions of source code must retain the above copyright
+          notice, this list of conditions and the following disclaimer.
+          Redistributions in bytecode form must reproduce the above copyright
+          notice, this list of conditions and the following disclaimer in
+          the documentation and/or other materials provided with the
+          distribution.
+    
+        THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+        "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+        LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+        A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+        HOLDERS OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+        INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+        BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
+        OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+        ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR
+        TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
+        USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
+        DAMAGE.
 
     Apache 2.0
 
@@ -232,3 +280,25 @@ LICENSES
           of your accepting any such warranty or additional liability.
 
        END OF TERMS AND CONDITIONS
+       
+    MIT
+    
+        Copyright (c) <year> <copyright holders>
+    
+        Permission is hereby granted, free of charge, to any person obtaining a copy
+        of this software and associated documentation files (the "Software"), to deal
+        in the Software without restriction, including without limitation the rights
+        to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+        copies of the Software, and to permit persons to whom the Software is
+        furnished to do so, subject to the following conditions:
+        
+        The above copyright notice and this permission notice shall be included in all
+        copies or substantial portions of the Software.
+        
+        THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+        IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+        FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+        AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+        LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+        OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+        SOFTWARE.
