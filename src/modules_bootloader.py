@@ -97,16 +97,19 @@ def get_module_addresses(master_communicator, type):
     :returns: A list containing the addresses of the modules (strings of length 4).
     """
     eeprom_file = EepromFile(master_communicator)
-    no_modules = eeprom_file.read([EepromAddress(0, 1, 2)])
+    base_address = EepromAddress(0, 1, 2)
+    no_modules = eeprom_file.read([base_address])
     modules = []
 
-    no_input_modules = ord(no_modules[0].bytes[0])
+    no_input_modules = ord(no_modules[base_address].bytes[0])
     for i in range(no_input_modules):
-        modules.append(eeprom_file.read([EepromAddress(2 + i, 0, 4)])[0].bytes)
+        address = EepromAddress(2 + i, 0, 4)
+        modules.append(eeprom_file.read([address])[address].bytes)
 
-    no_output_modules = ord(no_modules[0].bytes[1])
+    no_output_modules = ord(no_modules[base_address].bytes[1])
     for i in range(no_output_modules):
-        modules.append(eeprom_file.read([EepromAddress(33 + i, 0, 4)])[0].bytes)
+        address = EepromAddress(33 + i, 0, 4)
+        modules.append(eeprom_file.read([address])[address].bytes)
 
     return [module for module in modules if module[0].lower() == type]
 

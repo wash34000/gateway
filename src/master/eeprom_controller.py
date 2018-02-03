@@ -719,7 +719,8 @@ class EepromString(EepromDataType):
         return 'String[{0}]'.format(self._length)
 
     def decode(self, data):
-        return str(remove_tail(data))
+        dirty = str(remove_tail(data))
+        return ''.join([i if ord(i) < 128 else ' ' for i in dirty])
 
     def encode(self, field):
         return append_tail(field, self._length)
