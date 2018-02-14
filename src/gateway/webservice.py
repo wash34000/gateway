@@ -1959,7 +1959,7 @@ class WebInterface(object):
         config = ConfigParser.ConfigParser()
         config.read(constants.get_config_file())
         return {'version': str(config.get('OpenMotics', 'version')),
-                'gateway': '2.4.2'}
+                'gateway': '2.5.0'}
 
     @openmotics_api(auth=True, plugin_exposed=False)
     def update(self, version, md5, update_data):
@@ -2194,6 +2194,11 @@ class WebInterface(object):
                     if _metric_type in metric_types:
                         definitions[_source][_metric_type] = definition
         return {'definitions': definitions}
+
+    @openmotics_api(auth=True, plugin_exposed=False)
+    def cleanup_eeprom(self):
+        self._gateway_api.cleanup_eeprom()
+        return {}
 
     @cherrypy.expose
     @cherrypy.tools.authenticated(pass_token=True)
