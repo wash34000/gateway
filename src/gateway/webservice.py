@@ -1959,7 +1959,7 @@ class WebInterface(object):
         config = ConfigParser.ConfigParser()
         config.read(constants.get_config_file())
         return {'version': str(config.get('OpenMotics', 'version')),
-                'gateway': '2.4.2'}
+                'gateway': '2.4.3'}
 
     @openmotics_api(auth=True, plugin_exposed=False)
     def update(self, version, md5, update_data):
@@ -2012,13 +2012,7 @@ class WebInterface(object):
         :param timezone: in format 'Continent/City'.
         :type timezone: str
         """
-        timezone_file_path = "/usr/share/zoneinfo/" + timezone
-        if not os.path.isfile(timezone_file_path):
-            raise RuntimeError("Could not find timezone '" + timezone + "'")
-
-        if os.path.exists(constants.get_timezone_file()):
-            os.remove(constants.get_timezone_file())
-        os.symlink(timezone_file_path, constants.get_timezone_file())
+        self._gateway_api.set_timezone(timezone)
         self._gateway_api.sync_master_time(True)
         return {}
 
