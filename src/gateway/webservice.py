@@ -2013,6 +2013,7 @@ class WebInterface(object):
         :type timezone: str
         """
         self._gateway_api.set_timezone(timezone)
+        self._gateway_api.sync_master_time(True)
         return {}
 
     @openmotics_api(auth=True)
