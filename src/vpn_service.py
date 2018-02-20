@@ -18,7 +18,6 @@ if required. On each check the vpn_service sends some status information about t
 thermostats to the cloud, to keep the status information in the cloud in sync.
 """
 
-import re
 import requests
 import time
 import subprocess
@@ -524,6 +523,27 @@ class ActionExecutor(object):
             raise Exception("Could not find action '%s'" % name)
 
 
+def ping(target):
+    """ Check if the target can be pinged. Returns True if at least 1/4 pings was successful. """
+    print("Testing ping to %s" % target)
+    try:
+        # Ping returns status code 0 if at least 1 ping is successful
+        subprocess.check_output("ping -c 4 %s" % target, shell=True)
+        return True
+    except Exception as ex:
+        print("Error during ping: %s" % ex)
+        return False
+
+
+def get_gateway():
+    """ Get the default gateway. """
+    try:
+        return subprocess.check_output("ip r | grep '^default via' | awk '{ print $3; }'", shell=True)
+    except Exception as ex:
+        print("Error during get_gateway: %s" % ex)
+        return None
+
+
 def main():
     """ The main function contains the loop that check if the vpn should be opened every 2 seconds.
     Status data is sent when the vpn is checked. """
@@ -579,22 +599,8 @@ def main():
                 collector.data_sent_callback(success)
 
         if iterations > 20 and cloud.get_last_connect() < time.time() - REBOOT_TIMEOUT:
-            # The cloud is not responding for a while. Let's see if the default gateway can be reached.
-            success = False
-            try:
-                routes = subprocess.check_output('ip r', shell=True)
-                match_string = r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'
-                matches = re.search('default via ' + match_string, routes)
-                if matches is not None:
-                    gateway = matches.group(1)
-                    for target in [gateway, '8.8.8.8']:
-                        ping_output = subprocess.check_output('ping -c 4 {0} || true'.format(target), shell=True)
-                        if 'unreachable' not in ping_output and '100% packet loss' not in ping_output:
-                            success = True
-                            break
-            except Exception as ex:
-                print 'Error verifying connectivity: {0}'.format(ex)
-            if success is False:
+            # The cloud is not responding for a while.
+            if not ping('cloud.openmotics.com') and not ping('8.8.8.8') and not ping(get_gateway()):
                 # Perhaps the BeagleBone network stack is hanging, reboot the gateway
                 # to reset the BeagleBone.
                 reboot_gateway()
