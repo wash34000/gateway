@@ -279,6 +279,9 @@ class DataCollector(object):
 
 def ping(target):
     """ Check if the target can be pinged. Returns True if at least 1/4 pings was successful. """
+    if target is None:
+        return False
+
     print("Testing ping to %s" % target)
     try:
         # Ping returns status code 0 if at least 1 ping is successful
