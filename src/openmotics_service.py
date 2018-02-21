@@ -20,8 +20,14 @@ The main module for the OpenMotics
 
 import logging
 import sys
+import os
 import time
 import threading
+
+os.environ['PYTHON_EGG_CACHE'] = '/tmp/.eggs-cache/'
+for egg in os.listdir('/opt/openmotics/python/eggs'):
+    if egg.endswith('.egg'):
+        sys.path.insert(0, '/opt/openmotics/python/eggs/{0}'.format(egg))
 
 from serial import Serial
 from signal import signal, SIGTERM
@@ -34,17 +40,23 @@ from serial_utils import RS485
 from gateway.webservice import WebInterface, WebService
 from gateway.gateway_api import GatewayApi
 from gateway.users import UserController
+from gateway.metrics import MetricsController
+from gateway.metrics_collector import MetricsCollector
+from gateway.config import ConfigurationController
+from gateway.scheduling import SchedulingController
 
 from bus.led_service import LedService
 
 from master.maintenance import MaintenanceService
-from master.master_communicator import MasterCommunicator
+from master.master_communicator import MasterCommunicator, BackgroundConsumer
 from master.passthrough import PassthroughService
+from master import master_api
 
 from power.power_communicator import PowerCommunicator
 from power.power_controller import PowerController
 
 from plugins.base import PluginController
+
 
 def setup_logger():
     """ Setup the OpenMotics logger. """
@@ -55,6 +67,7 @@ def setup_logger():
     handler.setLevel(logging.INFO)
     handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
     logger.addHandler(handler)
+
 
 def led_driver(led_service, master_communicator, power_communicator):
     """ Blink the serial leds if necessary. """
@@ -74,21 +87,24 @@ def led_driver(led_service, master_communicator, power_communicator):
         power = (power_communicator.get_bytes_read(), power_communicator.get_bytes_written())
         time.sleep(0.100)
 
+
 def main():
     """ Main function. """
     config = ConfigParser()
     config.read(constants.get_config_file())
 
-    defaults = {'username' : config.get('OpenMotics', 'cloud_user'),
+    defaults = {'username': config.get('OpenMotics', 'cloud_user'),
                 'password': config.get('OpenMotics', 'cloud_pass')}
-
-    user_controller = UserController(constants.get_user_database_file(), defaults, 3600)
-
-    led_service = LedService()
-
     controller_serial_port = config.get('OpenMotics', 'controller_serial')
     passthrough_serial_port = config.get('OpenMotics', 'passthrough_serial')
     power_serial_port = config.get('OpenMotics', 'power_serial')
+    gateway_uuid = config.get('OpenMotics', 'uuid')
+
+    config_lock = threading.Lock()
+    user_controller = UserController(constants.get_config_database_file(), config_lock, defaults, 3600)
+    config_controller = ConfigurationController(constants.get_config_database_file(), config_lock)
+
+    led_service = LedService()
 
     controller_serial = Serial(controller_serial_port, 115200)
     passthrough_serial = Serial(passthrough_serial_port, 115200)
@@ -104,27 +120,61 @@ def main():
 
     gateway_api = GatewayApi(master_communicator, power_communicator, power_controller)
 
+    scheduling_controller = SchedulingController(constants.get_scheduling_database_file(), config_lock, gateway_api)
+
     maintenance_service = MaintenanceService(gateway_api, constants.get_ssl_private_key_file(),
                                              constants.get_ssl_certificate_file())
 
     passthrough_service = PassthroughService(master_communicator, passthrough_serial)
     passthrough_service.start()
 
-    web_interface = WebInterface(user_controller, gateway_api,
-                                constants.get_scheduling_database_file(), maintenance_service,
-                                led_service.in_authorized_mode)
+    web_interface = WebInterface(user_controller, gateway_api, maintenance_service, led_service.in_authorized_mode,
+                                 config_controller, scheduling_controller)
 
-    plugin_controller = PluginController(web_interface)
-    plugin_controller.start_plugins()
+    scheduling_controller.set_webinterface(web_interface)
+
+    plugin_controller = PluginController(web_interface, config_controller)
 
     web_interface.set_plugin_controller(plugin_controller)
     gateway_api.set_plugin_controller(plugin_controller)
 
-    web_service = WebService(web_interface)
+    metrics_collector = MetricsCollector(gateway_api)
+    metrics_controller = MetricsController(plugin_controller, metrics_collector, config_controller, gateway_uuid)
+
+    metrics_collector.set_controllers(metrics_controller, plugin_controller)
+    metrics_collector.set_plugin_intervals(plugin_controller.metric_intervals)
+
+    metrics_controller.add_receiver(metrics_controller.receiver)
+    metrics_controller.add_receiver(web_interface.distribute_metric)
+
+    plugin_controller.set_metrics_controller(metrics_controller)
+    web_interface.set_metrics_collector(metrics_collector)
+    web_interface.set_metrics_controller(metrics_controller)
+
+    web_service = WebService(web_interface, config_controller)
+
+    def _on_output(*args, **kwargs):
+        metrics_collector.on_output(*args, **kwargs)
+        gateway_api.on_outputs(*args, **kwargs)
+    
+    def _on_input(*args, **kwargs):
+        metrics_collector.on_input(*args, **kwargs)
+        gateway_api.on_inputs(*args, **kwargs)
+
+    master_communicator.register_consumer(
+        BackgroundConsumer(master_api.output_list(), 0, _on_output, True)
+    )
+    master_communicator.register_consumer(
+        BackgroundConsumer(master_api.input_list(), 0, _on_input)
+    )
+
+    plugin_controller.start_plugins()
+    metrics_controller.start()
+    scheduling_controller.start()
+    metrics_collector.start()
     web_service.start()
 
     led_service.set_led('stat2', True)
-
     led_thread = threading.Thread(target=led_driver, args=(led_service,
                                                            master_communicator, power_communicator))
     led_thread.setName("Serial led driver thread")
@@ -133,9 +183,13 @@ def main():
 
     def stop(signum, frame):
         """ This function is called on SIGTERM. """
+        _ = signum, frame
         sys.stderr.write("Shutting down")
         led_service.set_led('stat2', False)
         web_service.stop()
+        metrics_collector.stop()
+        metrics_controller.stop()
+        plugin_controller.stop()
 
     signal(SIGTERM, stop)
 

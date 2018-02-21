@@ -14,124 +14,75 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """ The OpenMotics plugin decorators, base class and controller. """
 
-import logging
-LOGGER = logging.getLogger("openmotics")
-
-import pkgutil
+import time
+import cherrypy
+import copy
 import inspect
-import threading
-import re
+import logging
 import os
+import re
+import pkgutil
+import threading
 import traceback
+from collections import deque
+from datetime import datetime
+from plugins.decorators import *  # Import for backwards compatibility
+from gateway.webservice import params_parser
 
 try:
     import json
 except ImportError:
     import simplejson as json
 
-from datetime import datetime
-
-import cherrypy
+LOGGER = logging.getLogger("openmotics")
 
 
-def om_expose(method=None, auth=True):
-    """ Decorator to expose a method of the plugin class through the
-    webinterface. The url will be /plugins/<plugin-name>/<method>.
+class WebInterfaceWrapper(object):
+    def __init__(self, webinterface, logger):
+        self.__webinterface = webinterface
+        self.__logger = logger
+        self.__warned = False
 
-    Normally an authentication token is required to access the method.
-    The token will be checked and removed automatically when using the
-    following construction:
+    def __getattr__(self, attribute):
+        if hasattr(self.__webinterface, attribute):
+            func = getattr(self.__webinterface, attribute)
+            if callable(func) and hasattr(func, 'plugin_exposed') and func.plugin_exposed is True:
+                new_func = self.parameter_wrapper(func)
+                setattr(self, attribute, new_func)
+                return new_func
+        raise AttributeError()
 
-    @om_expose
-    def method_to_expose(self, ...):
-        ...
+    def check_token(self, token):
+        return self.__webinterface._user_controller.check_token(token)
 
-    It is possible to expose a method without authentication: no token
-    will be required to access the method, this is done as follows:
+    def warn(self):
+        if self.__warned is False:
+            self.__logger('[W] Deprecation warning:')
+            self.__logger('[W] - Plugins should not pass \'token\' to API calls')
+            self.__logger('[W] - Plugins should use keyword arguments for API calls')
+            self.__warned = True
 
-    @om_expose(auth=False)
-    def method_to_expose(self, ...):
-        ...
+    def parameter_wrapper(self, func):
+        spec = inspect.getargspec(func)
+        args_length = len(spec.args) - 1  # Don't count `self`
 
-    """
-    def decorate(method):
-        """ The decorated method. """
-        if auth:
-            def _exposed(self, token, *args, **kwargs):
-                """ Exposed with token. """
-                self.webinterface.check_token(token)
-                cherrypy.response.headers["Content-Type"] = "application/json"
-                return method(self, *args, **kwargs)
-        else:
-            def _exposed(*args, **kwargs):
-                """ Exposed without token. """
-                cherrypy.response.headers["Content-Type"] = "application/json"
-                return method(*args, **kwargs)
-
-        _exposed.exposed = True
-        _exposed.auth = auth
-        _exposed.orig = method
-        return _exposed
-
-    if method:
-        # Actual decorator: @om_expose
-        return decorate(method)
-    else:
-        # Decorator factory: @om_expose(...)
-        return decorate
-
-
-def input_status(method):
-    """ Decorator to indicate that the method should receive input status messages.
-    The receiving method should accept one parameter, a tuple of (input, output).
-    Each time an input is pressed, the method will be called.
-
-    Important !This method should not block, as this will result in an unresponsive system.
-    Please use a separate thread to perform complex actions on input status messages.
-    """
-    method.input_status = True
-    return method
-
-
-def output_status(method):
-    """ Decorator to indicate that the method should receive output status messages.
-    The receiving method should accept one parameter, a list of tuples (output, dimmer value).
-    Each time an output status is changed, the method will be called.
-
-    Important !This method should not block, as this will result in an unresponsive system.
-    Please use a separate thread to perform complex actions on output status messages.
-    """
-    method.output_status = True
-    return method
-
-
-def receive_events(method):
-    """ Decorator to indicate that the method should receive event messages.
-    The receiving method should accept one parameter: the event code.
-    Each time an event is triggered, the method will be called.
-
-    Important !This method should not block, as this will result in an unresponsive system.
-    Please use a separate thread to perform complex actions on event messages.
-    """
-    method.receive_events = True
-    return method
-
-
-def background_task(method):
-    """ Decorator to indicate that the method is a background task. A thread running this
-    background task will be started on startup.
-    """
-    method.background_task = True
-    return method
-
-
-def on_remove(method):
-    """ Decorator to indicate that the method should be called just before removing the plugin.
-    This can be used to cleanup files written by the plugin. Note: the plugin package and plugin
-    configuration data will be removed automatically and should not be touched by this method.
-    """
-    method.on_remove = True
-    return method
+        def wrapper(*args, **kwargs):
+            # 1. Try to remove a possible "token" parameter, which is now deprecated
+            args = list(args)
+            if 'token' in kwargs:
+                del kwargs['token']
+                self.warn()
+            elif len(args) > 0:
+                self.warn()
+                if len(args) + len(kwargs) > args_length or len(kwargs) == 0:
+                    del args[0]
+            # 2. Convert to kwargs, so it's possible to do parameter parsing
+            for i in xrange(len(args)):
+                kwargs[spec.args[i + 1]] = args[i]
+            if func.check is not None:
+                params_parser(kwargs, func.check)
+            return func(**kwargs)
+        return wrapper
 
 
 class OMPluginBase(object):
@@ -193,37 +144,62 @@ class PluginException(Exception):
 class PluginController(object):
     """ The controller keeps track of all plugins in the system. """
 
-    def __init__(self, webinterface):
+    def __init__(self, webinterface, config_controller):
         self.__webinterface = webinterface
 
+        self.__stopped = False
         self.__logs = {}
         self.__plugins = self._gather_plugins()
 
         self.__input_status_receivers = []
         self.__output_status_receivers = []
         self.__event_receivers = []
+        self.__metric_collectors = []
+        self.__metric_receivers = []
+        self.__metric_receiver_threads = {}
+        self.__metrics_controller = None
+        self.__config_controller = config_controller
+        self.metric_receiver_queues = {}
+        self.metric_intervals = []
+
+        self.__receiver_mapping = {'input_status': self.__input_status_receivers,
+                                   'output_status': self.__output_status_receivers,
+                                   'receive_events': self.__event_receivers,
+                                   'metric_data': self.__metric_collectors,
+                                   'metric_receive': self.__metric_receivers}
 
         for plugin in self.__plugins:
             self.__add_receivers(plugin)
+        self.__collector_runs = {}
+        self.__metric_definitions = self.get_metric_definitions()
 
     def __add_receivers(self, plugin):
         """ Add the input and output receivers for a plugin. """
-        isrs = self._get_special_methods(plugin, 'input_status')
-        for isr in isrs:
-            self.__input_status_receivers.append((plugin.name, isr))
+        for method_attribute, target in self.__receiver_mapping.iteritems():
+            for method in PluginController._get_special_methods(plugin, method_attribute):
+                target.append((plugin.name, method))
+                if method_attribute == 'metric_receive':
+                    metric_receive = method.metric_receive
+                    self.metric_intervals.append(metric_receive)
+            if method_attribute == 'metric_receive':
+                self.metric_receiver_queues[plugin.name] = deque()
+                thread = threading.Thread(target=self.__deliver_metrics, args=(plugin.name,))
+                thread.setName('Metric delivery thread ({0})'.format(plugin.name))
+                thread.daemon = True
+                thread.start()
+                self.__metric_receiver_threads[plugin.name] = thread
 
-        osrs = self._get_special_methods(plugin, 'output_status')
-        for osr in osrs:
-            self.__output_status_receivers.append((plugin.name, osr))
-
-        ers = self._get_special_methods(plugin, 'receive_events')
-        for er in ers:
-            self.__event_receivers.append((plugin.name, er))
+    def stop(self):
+        self.__stopped = True
 
     def start_plugins(self):
         """ Start the background tasks for the plugins and expose them via the webinterface. """
         for plugin in self.__plugins:
             self.__start_plugin(plugin)
+
+    def set_metrics_controller(self, metrics_controller):
+        """ Sets the metrics controller """
+        self.__metrics_controller = metrics_controller
 
     def __start_plugin(self, plugin):
         """ Start one plugin. """
@@ -233,7 +209,7 @@ class PluginController(object):
     def _gather_plugins(self):
         """ Scan the plugins package for installed plugins in the form of subpackages. """
         import plugins
-        objects = pkgutil.iter_modules(plugins.__path__) # (module_loader, name, ispkg)
+        objects = pkgutil.iter_modules(plugins.__path__)  # (module_loader, name, ispkg)
 
         package_names = [o[1] for o in objects if o[2]]
 
@@ -263,7 +239,9 @@ class PluginController(object):
             else:
                 try:
                     plugin_class = per_name[name][0][2]
-                    plugins.append(plugin_class(self.__webinterface, self.get_logger(name)))
+                    logger = self.get_logger(name)
+                    plugins.append(plugin_class(WebInterfaceWrapper(self.__webinterface, logger),
+                                                logger))
                 except Exception as exception:
                     self.log(name, "Could not initialize plugin", exception,
                              traceback.format_exc())
@@ -281,13 +259,13 @@ class PluginController(object):
 
         for (_, obj) in inspect.getmembers(plugin.main):
             if inspect.isclass(obj) and issubclass(obj, OMPluginBase) and obj is not OMPluginBase:
-                if plugin_class == None:
+                if plugin_class is None:
                     plugin_class = obj
                 else:
                     raise PluginException('Found multiple OMPluginBase classes in %s.main' %
                                           package_name)
 
-        if plugin_class != None:
+        if plugin_class is not None:
             return plugin_class
         else:
             raise PluginException('OMPluginBase class not found in %s.main' % package_name)
@@ -300,7 +278,7 @@ class PluginController(object):
         if not hasattr(plugin_class, 'name'):
             raise PluginException("attribute 'name' is missing from the plugin class")
 
-        ## Check if valid plugin name
+        # Check if valid plugin name
         if not re.match(r"^[a-zA-Z0-9_]+$", plugin_class.name):
             raise PluginException("Plugin name '%s' is malformed: can only contain letters, "
                                   "numbers and underscores." % plugin_class.name)
@@ -308,7 +286,7 @@ class PluginController(object):
         if not hasattr(plugin_class, 'version'):
             raise PluginException("attribute 'version' is missing from the plugin class")
 
-        ## Check if valid version (a.b.c)
+        # Check if valid version (a.b.c)
         if not re.match(r"^[0-9]+\.[0-9]+\.[0-9]+$", plugin_class.version):
             raise PluginException("Plugin version '%s' is malformed: expected 'a.b.c' "
                                   "where a, b and c are numbers." % plugin_class.version)
@@ -319,7 +297,8 @@ class PluginController(object):
         from plugins.interfaces import check_interfaces
         check_interfaces(plugin_class)
 
-    def _get_special_methods(self, plugin_object, method_attribute):
+    @staticmethod
+    def _get_special_methods(plugin_object, method_attribute):
         """ Get all methods of a plugin object that have the given attribute. """
         def __check(member):
             """ Check if a member is a method and has the given attribute. """
@@ -346,7 +325,7 @@ class PluginController(object):
         from subprocess import call, check_output
         import hashlib
 
-        ## Check if the md5 sum matches the provided md5 sum
+        # Check if the md5 sum matches the provided md5 sum
         hasher = hashlib.md5()
         hasher.update(package_data)
         calculated_md5 = hasher.hexdigest()
@@ -357,7 +336,7 @@ class PluginController(object):
 
         tmp_dir = mkdtemp()
         try:
-            ## Extract the package_data
+            # Extract the package_data
             tgz = open("%s/package.tgz" % tmp_dir, "wb")
             tgz.write(package_data)
             tgz.close()
@@ -367,16 +346,23 @@ class PluginController(object):
             if retcode != 0:
                 raise Exception("The package data (tgz format) could not be extracted.")
 
-            ## Create an __init__.py file, if it does not exist
+            # Create an __init__.py file, if it does not exist
             init_path = "%s/new_package/__init__.py" % tmp_dir
             if not os.path.exists(init_path):
                 init_file = open(init_path, 'w')
                 init_file.close()
 
-            ## Check if the package contains a valid plugin
+            # Check if the package contains a valid plugin
             checker = open("%s/check.py" % tmp_dir, "w")
             checker.write("""import sys
+import os
+
+os.environ['PYTHON_EGG_CACHE'] = '/tmp/.eggs-cache/'
+for egg in os.listdir('/opt/openmotics/python/eggs'):
+    if egg.endswith('.egg'):
+        sys.path.insert(0, '/opt/openmotics/python/eggs/{0}'.format(egg))
 sys.path.append('/opt/openmotics/python')
+
 from plugins.base import PluginController, PluginException
 
 try:
@@ -394,7 +380,7 @@ else:
             if checker_output.startswith("!! "):
                 raise Exception(checker_output[3:-1])
 
-            ## Get the name and version of the package
+            # Get the name and version of the package
             checker_output = checker_output.split("\n")
             name = checker_output[0]
             version = checker_output[1]
@@ -403,7 +389,7 @@ else:
                 """ Parse the version from a string "x.y.z" to a tuple(x, y, z). """
                 return tuple([int(x) for x in version_string.split(".")])
 
-            ## Check if a newer version of the package is already installed
+            # Check if a newer version of the package is already installed
             installed_plugin = self.__get_plugin(name)
             if installed_plugin is not None:
                 if parse_version(version) <= parse_version(installed_plugin.version):
@@ -411,36 +397,35 @@ else:
                                     "(current version = %s, to installed = %s)." %
                                     (name, installed_plugin.version, version))
                 else:
-                    ## Remove the old version of the plugin
+                    # Remove the old version of the plugin
                     retcode = call("cd /opt/openmotics/python/plugins; rm -R %s" % name,
                                    shell=True)
                     if retcode != 0:
                         raise Exception("The old version of the plugin could not be removed.")
 
-            ## Check if the package directory exists, this can only be the case if a previous
-            ## install failed or if the plugin has gone corrupt: remove it !
+            # Check if the package directory exists, this can only be the case if a previous
+            # install failed or if the plugin has gone corrupt: remove it !
             plugin_path = '/opt/openmotics/python/plugins/%s' % name
             if os.path.exists(plugin_path):
                 rmtree(plugin_path)
 
-            ## Install the package
+            # Install the package
             retcode = call("cd %s; mv new_package %s" % (tmp_dir, plugin_path), shell=True)
             if retcode != 0:
                 raise Exception("The package could not be installed.")
 
-            ## Initiate a reload of the OpenMotics daemon
-            self.__exit()
+            # Initiate a reload of the OpenMotics daemon
+            PluginController.__exit()
 
-            return {'msg' : 'Plugin successfully installed'}
+            return {'msg': 'Plugin successfully installed'}
 
         finally:
             rmtree(tmp_dir)
 
-
-    def __exit(self):
+    @staticmethod
+    def __exit():
         """ Exit the cherrypy server after 1 second. Lets the current request terminate. """
         threading.Timer(1, lambda: os._exit(0)).start()
-
 
     def remove_plugin(self, name):
         """ Remove a plugin, this removes the plugin package and configuration.
@@ -450,39 +435,38 @@ else:
 
         plugin = self.__get_plugin(name)
 
-        ## Check if the plugin in installed
+        # Check if the plugin in installed
         if plugin is None:
             raise Exception("Plugin '%s' is not installed." % name)
 
-        ## Execute the on_remove callbacks
-        remove_callbacks = self._get_special_methods(plugin, 'on_remove')
+        # Execute the on_remove callbacks
+        remove_callbacks = PluginController._get_special_methods(plugin, 'on_remove')
         for remove_callback in remove_callbacks:
             try:
                 remove_callback()
             except Exception as exception:
                 LOGGER.error("Exception while removing plugin '%s': %s", name, exception)
 
-        ## Remove the plugin package
+        # Remove the plugin package
         plugin_path = '/opt/openmotics/python/plugins/%s' % name
         try:
             rmtree(plugin_path)
         except Exception as exception:
             raise Exception("Error while removing package for plugin '%s': %s" % name, exception)
 
-        ## Remove the plugin configuration
+        # Remove the plugin configuration
         conf_file = '/opt/openmotics/etc/pi_%s.conf' % name
         if os.path.exists(conf_file):
             os.remove(conf_file)
 
-        ## Initiate a reload of the OpenMotics daemon
-        self.__exit()
+        # Initiate a reload of the OpenMotics daemon
+        PluginController.__exit()
 
-        return {'msg' : 'Plugin successfully removed'}
-
+        return {'msg': 'Plugin successfully removed'}
 
     def __start_background_tasks(self, plugin):
         """ Start all background tasks. """
-        tasks = self._get_special_methods(plugin, 'background_task')
+        tasks = PluginController._get_special_methods(plugin, 'background_task')
         for task in tasks:
             thread = threading.Thread(target=self.__wrap_background_task, args=(plugin.name, task))
             thread.name = "Background thread for plugin '%s'" % plugin.name
@@ -501,9 +485,12 @@ else:
 
     def __expose_plugin(self, plugin):
         """ Expose the plugins using cherrypy. """
+        root_config = {'tools.sessions.on': False,
+                       'tools.cors.on': self.__config_controller.get_setting('cors_enabled', False)}
+
         cherrypy.tree.mount(plugin,
-                            "/plugins/%s" % plugin.name,
-                            {"/": {'tools.sessions.on' : False}})
+                            '/plugins/{0}'.format(plugin.name),
+                            {"/": root_config})
 
     def process_input_status(self, input_status_inst):
         """ Should be called when the input status changes, notifies all plugins. """
@@ -532,34 +519,105 @@ else:
                 self.log(er[0], "Exception while processing event", exception,
                          traceback.format_exc())
 
+    def collect_metrics(self):
+        """ Collects all metrics from all plugins """
+        for mc in self.__metric_collectors:
+            try:
+                now = time.time()
+                method = mc[1]
+                interval = method.metric_data['interval']
+                if self.__collector_runs.get(method, 0) < now - interval:
+                    self.__collector_runs[method] = now
+                    for metric in method():
+                        if metric is None:
+                            continue
+                        metric = copy.deepcopy(metric)
+                        metric['source'] = mc[0]
+                        yield metric
+            except Exception as exception:
+                self.log(mc[0], "Exception while collecting metrics", exception,
+                         traceback.format_exc())
+
+    def distribute_metric(self, metric):
+        """ Enqueues all metrics in a separate queue per plugin """
+        delivery_count = 0
+        for mr in self.__metric_receivers:
+            try:
+                method = mr[1]
+                metadata = method.metric_receive
+                sources = self.__metrics_controller.get_filter('source', metadata['source'])
+                metric_types = self.__metrics_controller.get_filter('metric_type', metadata['metric_type'])
+                if metric['source'] in sources and metric['type'] in metric_types:
+                    self.metric_receiver_queues[mr[0]].appendleft(metric)
+                    delivery_count += 1
+            except Exception as exception:
+                self.log(mr[0], "Exception while distributing metrics", exception, traceback.format_exc())
+        return delivery_count
+
+    def __deliver_metrics(self, plugin):
+        """ Delivers enqueued metrics to plugin listener(s) """
+        # Yield all metrics in the Queue
+        while self.__stopped is False:
+            try:
+                data = self.metric_receiver_queues[plugin].pop()
+                for mr in self.__metric_receivers:
+                    if mr[0] != plugin:
+                        continue
+                    try:
+                        mr[1](data)
+                    except Exception as exception:
+                        self.log(mr[0], "Exception while delivering metrics", exception, traceback.format_exc())
+            except IndexError:
+                time.sleep(0.1)
+
+    def get_metric_definitions(self):
+        """ Loads all metric definitions of all plugins """
+        from plugins.interfaces import has_interface
+        definitions = {}
+        for plugin in self.__plugins:
+            try:
+                if has_interface(plugin, "metrics", "1.0"):
+                    for definition in plugin.metric_definitions:
+                        definition = copy.deepcopy(definition)
+                        if plugin.name not in definitions:
+                            definitions[plugin.name] = []
+                        definitions[plugin.name].append(definition)
+            except Exception as exception:
+                self.log(plugin.name, "Exception while collecting metric definitions", exception,
+                         traceback.format_exc())
+        return definitions
+
     def log(self, plugin, msg, exception, stacktrace=None):
         """ Append an exception to the log for the plugins. This log can be retrieved
         using get_logs. """
         if plugin not in self.__logs:
-            self.__logs[plugin] = ""
+            self.__logs[plugin] = []
 
         LOGGER.error("Plugin %s: %s (%s)", plugin, msg, exception)
         if stacktrace is None:
-            self.__logs[plugin] += "%s - %s: %s\n\n" % (datetime.now(), msg, exception)
+            self.__logs[plugin].append("%s - %s: %s" % (datetime.now(), msg, exception))
         else:
-            self.__logs[plugin] += "%s - %s: %s\n%s\n\n" % \
-                                   (datetime.now(), msg, exception, stacktrace)
+            self.__logs[plugin].append("%s - %s: %s\n%s" % (datetime.now(), msg, exception, stacktrace))
+        if len(self.__logs[plugin]) > 100:
+            self.__logs[plugin].pop(0)
 
     def get_logger(self, plugin_name):
         """ Get a logger for a plugin. """
         if plugin_name not in self.__logs:
-            self.__logs[plugin_name] = ""
+            self.__logs[plugin_name] = []
 
         def log(msg):
             """ Log function for the given plugin."""
-            self.__logs[plugin_name] += "%s - %s\n\n" % (datetime.now(), msg)
+            self.__logs[plugin_name].append("%s - %s" % (datetime.now(), msg))
+            if len(self.__logs[plugin_name]) > 100:
+                self.__logs[plugin_name].pop(0)
 
         return log
 
     def get_logs(self):
         """ Get the logs for all plugins. Returns a dict where the keys are the plugin
         names and the value is a string. """
-        return self.__logs
+        return dict((plugin, '\n'.join(entries)) for plugin, entries in self.__logs.iteritems())
 
 
 class PluginConfigChecker(object):
@@ -567,7 +625,7 @@ class PluginConfigChecker(object):
     implement the 'config' plugin interface. By specifying a configuration description, the
     PluginConfigController is able to verify if a configuration dict matches this description.
     The description is a list of dicts, each dict contains the 'name', 'type' and optionally
-    'description' keys.
+    'description' and 'i18n' keys.
 
     These are the basic types: 'str', 'int', 'bool', 'password', these types don't have additional
     keys. For the 'enum' type the user specifies the possible values in a list of strings in the
@@ -587,10 +645,9 @@ class PluginConfigChecker(object):
 
     An example of a description:
     [
-      {'name' : 'hostname', 'type' : 'str',      'description': 'The hostname of the server.'},
-      {'name' : 'port',     'type' : 'int',      'description': 'Port on the server.'},
-      {'name' : 'use_auth', 'type' : 'bool',
-       'description': 'Use authentication while connecting.'},
+      {'name' : 'hostname', 'type' : 'str',      'description': 'The hostname of the server.', 'i18n': 'hostname'},
+      {'name' : 'port',     'type' : 'int',      'description': 'Port on the server.',         'i18n': 'port'},
+      {'name' : 'use_auth', 'type' : 'bool',     'description': 'Use authentication while connecting.'},
       {'name' : 'password', 'type' : 'password', 'description': 'Your secret password.' },
       {'name' : 'enumtest', 'type' : 'enum',     'description': 'Test for enum',
        'choices': [ 'First', 'Second' ] },
@@ -621,36 +678,32 @@ class PluginConfigChecker(object):
         else:
             for item in description:
                 if 'name' not in item:
-                    raise PluginException(
-                            "The configuration item '%s' does not contain a 'name' key." % item)
+                    raise PluginException("The configuration item '%s' does not contain a 'name' key." % item)
                 if not isinstance(item['name'], basestring):
-                    raise PluginException(
-                            "The key 'name' of configuration item '%s' is not a string." % item)
+                    raise PluginException("The key 'name' of configuration item '%s' is not a string." % item)
 
                 if 'type' not in item:
-                    raise PluginException(
-                            "The configuration item '%s' does not contain a 'type' key." % item)
+                    raise PluginException("The configuration item '%s' does not contain a 'type' key." % item)
                 if not isinstance(item['type'], basestring):
-                    raise PluginException(
-                            "The key 'type' of configuration item '%s' is not a string." % item)
+                    raise PluginException("The key 'type' of configuration item '%s' is not a string." % item)
 
-                if 'description' in item and not isinstance(item['description'], str):
-                    raise PluginException(
-                            "The key 'description' of configuration item '%s' is not a string." % \
-                            item)
+                if 'description' in item and not isinstance(item['description'], basestring):
+                    raise PluginException("The key 'description' of configuration item '%s' is not a string." % item)
+
+                if 'i18n' in item and not isinstance(item['i18n'], basestring):
+                    raise PluginException("The key 'i18n' of configuration item '%s' is not a string." % item)
 
                 if item['type'] == 'enum':
-                    self._check_enum(item)
+                    PluginConfigChecker._check_enum(item)
                 elif item['type'] == 'section':
                     self._check_section(item)
                 elif item['type'] == 'nested_enum':
                     self._check_nested_enum(item)
                 elif item['type'] not in ['str', 'int', 'bool', 'password']:
-                    raise PluginException(
-                            "Configuration item '%s' contains unknown type '%s'." % \
-                            (item, item['type']))
+                    raise PluginException("Configuration item '%s' contains unknown type '%s'." % (item, item['type']))
 
-    def _check_enum(self, item):
+    @staticmethod
+    def _check_enum(item):
         """ Check an enum configuration description. """
         if 'choices' not in item:
             raise PluginException(
@@ -671,7 +724,7 @@ class PluginConfigChecker(object):
             raise PluginException(
                     "The key 'repeat' of configuration item '%s' is not a bool." % item)
 
-        if ('repeat' not in item or item['repeat'] == False) and 'min' in item:
+        if ('repeat' not in item or item['repeat'] is False) and 'min' in item:
             raise PluginException("The configuration item '%s' does contains a 'min' key but "
                                   "is not repeatable." % item)
 

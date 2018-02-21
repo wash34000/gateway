@@ -121,7 +121,7 @@ class PowerCommunicator(object):
         if self.__address_mode:
             raise InAddressModeException()
 
-        def do_once(_address, _cmd, *_data):
+        def do_once(_address, _cmd, ignore_timeout, *_data):
             """ Send the command once. """
             cid = self.__get_cid()
             send_data = _cmd.create_input(_address, cid, *_data)
@@ -139,7 +139,7 @@ class PowerCommunicator(object):
                         # if we for some reason had a timeout on the previous call, and we now read the response
                         # to that call. In this case, we just re-try (up to 3 times), as the correct data might be
                         # next in line.
-                        header, response_data = self.__read_from_serial()
+                        header, response_data = self.__read_from_serial(ignore_timeout)
                         if not _cmd.check_header(header, _address, cid):
                             if _cmd.is_nack(header, _address, cid) and response_data == "\x02":
                                 raise UnkownCommandException()
@@ -154,7 +154,13 @@ class PowerCommunicator(object):
                                     self.__log('reading data from', response_data)
                         else:
                             break
-                except:
+                except CommunicationTimedOutException:
+                    if not self.__verbose and ignore_timeout is False:
+                        self.__log('writing to', send_data)
+                        self.__log('reading header from', header)
+                        self.__log('reading data from', response_data)
+                    raise
+                except Exception:
                     if not self.__verbose:
                         self.__log('writing to', send_data)
                         self.__log('reading header from', header)
@@ -166,21 +172,20 @@ class PowerCommunicator(object):
 
         with self.__serial_lock:
             try:
-                return do_once(address, cmd, *data)
+                return do_once(address, cmd, True, *data)
             except UnkownCommandException:
                 # This happens when the module is stuck in the bootloader.
                 LOGGER.error("Got UnkownCommandException")
-                do_once(address, power_api.bootloader_jump_application())
+                do_once(address, power_api.bootloader_jump_application(), False)
                 time.sleep(1)
                 return self.do_command(address, cmd, *data)
             except CommunicationTimedOutException:
                 # Communication timed out, try again.
-                LOGGER.error("First communication timed out")
-                return do_once(address, cmd, *data)
+                return do_once(address, cmd, False, *data)
             except Exception as ex:
                 LOGGER.exception("Unexpected error: {0}".format(ex))
                 time.sleep(0.25)
-                return do_once(address, cmd, *data)
+                return do_once(address, cmd, False, *data)
 
     def start_address_mode(self):
         """ Start address mode.
@@ -266,7 +271,7 @@ class PowerCommunicator(object):
         """ Returns whether the PowerCommunicator is in address mode. """
         return self.__address_mode
 
-    def __read_from_serial(self):
+    def __read_from_serial(self, ignore_timeout=False):
         """ Read a PowerCommand from the serial port. """
         phase = 0
         index = 0
@@ -331,7 +336,8 @@ class PowerCommunicator(object):
             if crc7(header + data) != crc:
                 raise Exception("CRC doesn't match")
         except Queue.Empty:
-            error = True
+            if ignore_timeout is False:
+                error = True
             raise CommunicationTimedOutException()
         except Exception:
             error = True

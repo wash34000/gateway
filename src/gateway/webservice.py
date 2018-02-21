@@ -20,16 +20,18 @@ import random
 import ConfigParser
 import subprocess
 import os
-import traceback
-import inspect
+import sys
 import time
 import requests
 import logging
 import cherrypy
 import constants
+import msgpack
+from decorator import decorator
 from cherrypy.lib.static import serve_file
+from ws4py.websocket import WebSocket
+from ws4py.server.cherrypyserver import WebSocketPlugin, WebSocketTool
 from master.master_communicator import InMaintenanceModeException
-from gateway.scheduling import SchedulingController
 try:
     import json
 except ImportError:
@@ -60,56 +62,6 @@ def limit_floats(struct):
         return struct
 
 
-def boolean(instance):
-    """
-    Convert object (bool, int, float, str) to bool (True of False).
-    :param instance: Instance to convert to bool
-    """
-    if type(instance) == bool:
-        return instance
-    elif type(instance) == int:
-        return instance != 0
-    elif type(instance) == float:
-        return instance != 0.0
-    elif type(instance) == str or type(instance) == unicode or type(instance) == basestring:
-        return instance.lower() == 'true'
-
-
-class GatewayApiWrapper(object):
-    """
-    Wraps the GatewayApi, catches the InMaintenanceModeException and converts
-    the exception in a HttpError(503).
-    """
-
-    def __init__(self, gateway_api):
-        self.__gateway_api = gateway_api
-
-    def __getattr__(self, name):
-        if hasattr(self.__gateway_api, name):
-            return lambda *args, **kwargs: \
-                GatewayApiWrapper._wrap(getattr(self.__gateway_api, name), args, kwargs)
-        else:
-            raise AttributeError(name)
-
-    @staticmethod
-    def _wrap(func, args, kwargs):
-        """ Wrap a function, convert the InMaintenanceModeException to a HttpError(503). """
-        try:
-            return func(*args, **kwargs)  # pylint: disable=W0142
-        except InMaintenanceModeException:
-            raise cherrypy.HTTPError(503, "maintenance_mode")
-
-
-def timestamp_filter():
-    """ If the request parameters contain a "fe_time" variable, remove it from the parameters.
-    This parameter is used by the gateway frontend to bypass caching by certain browsers.
-    """
-    if "fe_time" in cherrypy.request.params:
-        del cherrypy.request.params["fe_time"]
-
-cherrypy.tools.timestampFilter = cherrypy.Tool('before_handler', timestamp_filter)
-
-
 def error_generic(status, message, *args, **kwargs):
     _ = args, kwargs
     cherrypy.response.headers["Content-Type"] = "application/json"
@@ -122,487 +74,725 @@ def error_unexpected():
     cherrypy.response.status = 500
     return json.dumps({"success": False, "msg": "unknown_error"})
 
+
 cherrypy.config.update({'error_page.404': error_generic,
                         'error_page.401': error_generic,
                         'error_page.503': error_generic,
                         'request.error_response': error_unexpected})
 
 
-class DummyToken(object):
-    """ The DummyToken is used for internal calls from the plugins to the webinterface, so
-    that the plugin does not required a real token. """
-    pass
+def params_parser(params, param_types):
+    for key in set(params).intersection(set(param_types)):
+        value = params[key]
+        if value is None:
+            continue
+        if isinstance(value, basestring) and value.lower() in ['null', 'none']:
+            params[key] = None
+        else:
+            if param_types[key] == bool:
+                params[key] = str(value).lower() not in ['false', '0', '0.0', 'no']
+            elif param_types[key] == 'json':
+                params[key] = json.loads(value)
+            else:
+                params[key] = param_types[key](value)
+
+
+def params_handler(**kwargs):
+    """ Convert specified request params. """
+    request = cherrypy.request
+    try:
+        params_parser(request.params, kwargs)
+    except ValueError:
+        cherrypy.response.headers['Content-Type'] = 'application/json'
+        cherrypy.response.status = 406
+        cherrypy.response.body = '"invalid_parameters"'
+        request.handler = None
+
+
+def timestamp_handler():
+    request = cherrypy.request
+    if 'fe_time' in request.params:
+        del request.params["fe_time"]
+
+
+def cors_handler():
+    if cherrypy.request.method == 'OPTIONS':
+        cherrypy.request.handler = None
+    cherrypy.response.headers['Access-Control-Allow-Origin'] = '*'
+    cherrypy.response.headers['Access-Control-Allow-Headers'] = 'Authorization'
+    cherrypy.response.headers['Access-Control-Allow-Methods'] = 'GET'
+
+
+def authentication_handler(pass_token=False):
+    request = cherrypy.request
+    if request.method == 'OPTIONS':
+        return
+    try:
+        if 'token' in request.params:
+            token = request.params.pop('token')
+        else:
+            token = None
+            header = request.headers.get('Authorization')
+            if header is not None and 'Bearer ' in header:
+                token = header.replace('Bearer ', '')
+        _self = request.handler.callable.__self__
+        if request.remote.ip != '127.0.0.1':
+            check_token = _self._user_controller.check_token if hasattr(_self, '_user_controller') else _self.webinterface.check_token
+            if not check_token(token):
+                raise RuntimeError()
+        if pass_token is True:
+            request.params['token'] = token
+    except Exception:
+        cherrypy.response.headers['Content-Type'] = 'application/json'
+        cherrypy.response.status = 401
+        cherrypy.response.body = '"invalid_token"'
+        request.handler = None
+
+
+cherrypy.tools.timestamp_filter = cherrypy.Tool('before_handler', timestamp_handler)
+cherrypy.tools.cors = cherrypy.Tool('before_handler', cors_handler, priority=10)
+cherrypy.tools.authenticated = cherrypy.Tool('before_handler', authentication_handler)
+cherrypy.tools.params = cherrypy.Tool('before_handler', params_handler)
+
+
+@decorator
+def _openmotics_api(f, *args, **kwargs):
+    start = time.time()
+    timings = {}
+    status = 200
+    try:
+        return_data = f(*args, **kwargs)
+        data = limit_floats(dict({"success": True}.items() + return_data.items()))
+    except cherrypy.HTTPError as ex:
+        status = ex.status
+        data = {"success": False, "msg": ex._message}
+    except InMaintenanceModeException:
+        status = 503
+        data = {"success": False, "msg": 'maintenance_mode'}
+    except Exception as ex:
+        LOGGER.exception('Unexpected error during API call')
+        status = 200
+        data = {"success": False, "msg": str(ex)}
+    timings['process'] = ("Processing", time.time() - start)
+    serialization_start = time.time()
+    contents = json.dumps(data)
+    timings['serialization'] = "Serialization", time.time() - serialization_start
+    cherrypy.response.headers["Content-Type"] = "application/json"
+    cherrypy.response.headers["Server-Timing"] = ','.join(['{0}={1}; "{2}"'.format(key, value[1] * 1000, value[0])
+                                                           for key, value in timings.iteritems()])
+    if hasattr(f, 'deprecated') and f.deprecated is not None:
+        cherrypy.response.headers['Warning'] = 'Warning: 299 - "Deprecated, replaced by: {0}"'.format(f.deprecated)
+    cherrypy.response.status = status
+    return contents
+
+
+def openmotics_api(auth=False, check=None, pass_token=False, plugin_exposed=True, deprecated=None):
+    def wrapper(func):
+        func.deprecated = deprecated
+        func = _openmotics_api(func)
+        if auth is True:
+            func = cherrypy.tools.authenticated(pass_token=pass_token)(func)
+        if check is not None:
+            func = cherrypy.tools.params(**check)(func)
+        func.exposed = True
+        func.plugin_exposed = plugin_exposed
+        func.check = check
+        return func
+    return wrapper
+
+
+def types(**kwargs):
+    return kwargs
+
+
+class OMPlugin(WebSocketPlugin):
+    def __init__(self, bus):
+        WebSocketPlugin.__init__(self, bus)
+        self.metric_receivers = {}
+
+    def start(self):
+        WebSocketPlugin.start(self)
+        self.bus.subscribe('add-metrics-receiver', self.add_metrics_receiver)
+        self.bus.subscribe('get-metrics-receivers', self.get_metrics_receivers)
+        self.bus.subscribe('remove-metrics-receiver', self.remove_metrics_receiver)
+
+    def stop(self):
+        WebSocketPlugin.stop(self)
+        self.bus.unsubscribe('add-metrics-receiver', self.add_metrics_receiver)
+        self.bus.unsubscribe('get-metrics-receivers', self.get_metrics_receivers)
+        self.bus.unsubscribe('remove-metrics-receiver', self.remove_metrics_receiver)
+
+    def add_metrics_receiver(self, client_id, receiver_ino):
+        self.metric_receivers[client_id] = receiver_ino
+
+    def get_metrics_receivers(self):
+        return self.metric_receivers
+
+    def remove_metrics_receiver(self, client_id):
+        del self.metric_receivers[client_id]
+
+
+class MetricsSocket(WebSocket):
+    """
+    Handles web socket communications for metrics
+    """
+    def opened(self):
+        cherrypy.engine.publish('add-metrics-receiver',
+                                self.metadata['client_id'],
+                                {'source': self.metadata['source'],
+                                 'metric_type': self.metadata['metric_type'],
+                                 'token': self.metadata['token'],
+                                 'socket': self})
+        self.metadata['interface'].metrics_collector.set_websocket_interval(self.metadata['client_id'],
+                                                                            self.metadata['metric_type'],
+                                                                            self.metadata['interval'])
+
+    def closed(self, *args, **kwargs):
+        _ = args, kwargs
+        client_id = self.metadata['client_id']
+        cherrypy.engine.publish('remove-metrics-receiver', client_id)
+        self.metadata['interface'].metrics_collector.set_websocket_interval(client_id,
+                                                                            self.metadata['metric_type'],
+                                                                            None)
 
 
 class WebInterface(object):
     """ This class defines the web interface served by cherrypy. """
 
-    def __init__(self, user_controller, gateway_api, scheduling_filename, maintenance_service,
-                 authorized_check):
-        """ Constructor for the WebInterface.
+    def __init__(self, user_controller, gateway_api, maintenance_service,
+                 authorized_check, config_controller, scheduling_controller):
+        """
+        Constructor for the WebInterface.
 
         :param user_controller: used to create and authenticate users.
-        :type user_controller: instance of :class`UserController`.
+        :type user_controller: gateway.users.UserController
         :param gateway_api: used to communicate with the master.
-        :type gateway_api: instance of :class`GatewayApi`.
-        :param scheduling_filename: the filename of the scheduling controller database.
-        :type scheduling_filename: string.
+        :type gateway_api: gateway.gateway_api.GatewayApi
         :param maintenance_service: used when opening maintenance mode.
-        :type maintenance_service: instance of :class`MaintenanceService`.
+        :type maintenance_service: master.maintenance.MaintenanceService
         :param authorized_check: check if the gateway is in authorized mode.
-        :type authorized_check: function (called without arguments).
+        :type authorized_check: () -> boolean
+        :param config_controller: Configuration controller
+        :type config_controller: gateway.config.ConfigController
+        :param scheduling_controller: Scheduling Controller
+        :type scheduling_controller: gateway.scheduling.SchedulingController
         """
-        self.__user_controller = user_controller
-        self.__gateway_api = GatewayApiWrapper(gateway_api)
+        self._user_controller = user_controller
+        self._config_controller = config_controller
+        self._scheduling_controller = scheduling_controller
+        self._plugin_controller = None
+        self._metrics_controller = None
 
-        self.__scheduling_controller = SchedulingController(scheduling_filename,
-                                                            self.__exec_scheduled_action)
-        self.__scheduling_controller.start()
+        self._gateway_api = gateway_api
+        self._maintenance_service = maintenance_service
+        self._authorized_check = authorized_check
 
-        self.__maintenance_service = maintenance_service
-        self.__authorized_check = authorized_check
+        self.metrics_collector = None
+        self._ws_metrics_registered = False
+        self._power_dirty = False
 
-        self.__plugin_controller = None
-        self.dummy_token = DummyToken()
+    def distribute_metric(self, metric):
+        try:
+            answers = cherrypy.engine.publish('get-metrics-receivers')
+            if len(answers) == 0:
+                return
+            for client_id, receiver_info in answers.pop().iteritems():
+                try:
+                    if cherrypy.request.remote.ip != '127.0.0.1' and not self._user_controller.check_token(receiver_info['token']):
+                        raise cherrypy.HTTPError(401, 'invalid_token')
+                    sources = self._metrics_controller.get_filter('source', receiver_info['source'])
+                    metric_types = self._metrics_controller.get_filter('metric_type', receiver_info['metric_type'])
+                    if metric['source'] in sources and metric['type'] in metric_types:
+                        receiver_info['socket'].send(msgpack.dumps(metric), binary=True)
+                except cherrypy.HTTPError as ex:  # As might be caught from the `check_token` function
+                    receiver_info['socket'].close(ex.code, ex.message)
+                except Exception as ex:
+                    LOGGER.error('Failed to distribute metrics to WebSocket for client {0}: {1}'.format(client_id, ex))
+        except Exception as ex:
+            LOGGER.error('Failed to distribute metrics to WebSockets: {0}'.format(ex))
 
     def set_plugin_controller(self, plugin_controller):
         """ Set the plugin controller. """
-        self.__plugin_controller = plugin_controller
+        self._plugin_controller = plugin_controller
 
-    def check_token(self, token):
-        """ Check if the token is valid, raises HTTPError(401) if invalid. """
-        if cherrypy.request.remote.ip == "127.0.0.1" or token is self.dummy_token:
-            return
+    def set_metrics_collector(self, metrics_collector):
+        """ Set the metrics collector """
+        self.metrics_collector = metrics_collector
 
-        if not self.__user_controller.check_token(token):
-            raise cherrypy.HTTPError(401, "invalid_token")
-
-    def __error(self, msg):
-        """ Returns a dict with 'success' = False and a 'msg' in json format. """
-        cherrypy.response.headers["Content-Type"] = "application/json"
-        return json.dumps({"success": False, "msg": msg})
-
-    def __success(self, **kwargs):
-        """ Returns a dict with 'success' = True and the keys and values in **kwargs. """
-        cherrypy.response.headers["Content-Type"] = "application/json"
-        return json.dumps(limit_floats(dict({"success" : True}.items() + kwargs.items())))
+    def set_metrics_controller(self, metrics_controller):
+        """ Sets the metrics controller """
+        self._metrics_controller = metrics_controller
 
     @cherrypy.expose
     def index(self):
         """
         Index page of the web service (Gateway GUI)
-        :returns: msg (String)
+        :returns: Contents of index.html
+        :rtype: str
         """
         return serve_file('/opt/openmotics/static/index.html', content_type='text/html')
 
-    @cherrypy.expose
-    def login(self, username, password):
-        """ Login to the web service, returns a token if successful, returns HTTP status code 401
-        otherwise.
-
-        :type username: String
-        :param username: Name of the user.
-        :type password: String
-        :param password: Password of the user.
-        :returns: 'token' : String
+    @openmotics_api(check=types(timeout=int), plugin_exposed=False)
+    def login(self, username, password, timeout=None):
         """
-        token = self.__user_controller.login(username, password)
+        Login to the web service, returns a token if successful, returns HTTP status code 401 otherwise.
+
+        :param username: Name of the user.
+        :type username: str
+        :param password: Password of the user.
+        :type password: str
+        :param timeout: Optional session timeout. 30d >= x >= 1h
+        :type timeout: int
+        :returns: Authentication token
+        :rtype: str
+        """
+        token = self._user_controller.login(username, password, timeout)
         if token is None:
             raise cherrypy.HTTPError(401, "invalid_credentials")
-        else:
-            return self.__success(token=token)
+        return {'token': token}
 
-    @cherrypy.expose
+    @openmotics_api(auth=True, pass_token=True, plugin_exposed=False)
     def logout(self, token):
-        """ Logout from the web service.
+        """
+        Logout from the web service.
 
         :returns: 'status': 'OK'
+        :rtype: str
         """
-        self.__user_controller.logout(token)
-        return self.__success(status='OK')
+        self._user_controller.logout(token)
+        return {'status': 'OK'}
 
-    @cherrypy.expose
+    @openmotics_api(plugin_exposed=False)
     def create_user(self, username, password):
-        """ Create a new user using a username and a password. Only possible in authorized mode.
-
-        :type username: String
-        :param username: Name of the user.
-        :type password: String
-        :param password: Password of the user.
         """
-        if self.__authorized_check():
-            self.__user_controller.create_user(username, password, 'admin', True)
-            return self.__success()
-        else:
-            raise cherrypy.HTTPError(401, "unauthorized")
+        Create a new user using a username and a password. Only possible in authorized mode.
 
-    @cherrypy.expose
+        :param username: Name of the user.
+        :type username: str
+        :param password: Password of the user.
+        :type password: str
+        """
+        if not self._authorized_check():
+            raise cherrypy.HTTPError(401, "unauthorized")
+        self._user_controller.create_user(username, password, 'admin', True)
+        return {}
+
+    @openmotics_api(plugin_exposed=False)
     def get_usernames(self):
-        """ Get the names of the users on the gateway. Only possible in authorized mode.
+        """
+        Get the names of the users on the gateway. Only possible in authorized mode.
 
         :returns: 'usernames': list of usernames (String).
+        :rtype: dict
         """
-        if self.__authorized_check():
-            return self.__success(usernames=self.__user_controller.get_usernames())
-        else:
+        if not self._authorized_check():
             raise cherrypy.HTTPError(401, "unauthorized")
+        return {'usernames': self._user_controller.get_usernames()}
 
-    @cherrypy.expose
+    @openmotics_api(plugin_exposed=False)
     def remove_user(self, username):
-        """ Remove a user. Only possible in authorized mode.
+        """
+        Remove a user. Only possible in authorized mode.
 
-        :type username: String
         :param username: Name of the user to remove.
+        :type username: str
         """
-        if self.__authorized_check():
-            self.__user_controller.remove_user(username)
-            return self.__success()
-        else:
+        if not self._authorized_check():
             raise cherrypy.HTTPError(401, "unauthorized")
+        self._user_controller.remove_user(username)
+        return {}
 
-    @cherrypy.expose
-    def open_maintenance(self, token):
-        """ Open maintenance mode, return the port of the maintenance socket.
-
-        :returns: 'port': Port on which the maintenance ssl socket is listening \
-        (Integer between 6000 and 7000).
+    @openmotics_api(auth=True, plugin_exposed=False)
+    def open_maintenance(self):
         """
-        self.check_token(token)
+        Open maintenance mode, return the port of the maintenance socket.
 
+        :returns: 'port': Port on which the maintenance ssl socket is listening (Integer between 6000 and 7000).
+        :rtype: dict
+        """
         port = random.randint(6000, 7000)
-        self.__maintenance_service.start_in_thread(port)
-        return self.__success(port=port)
+        self._maintenance_service.start_in_thread(port)
+        return {'port': port}
 
-    @cherrypy.expose
-    def reset_master(self, token):
-        """ Perform a cold reset on the master.
+    @openmotics_api(auth=True)
+    def reset_master(self):
+        """
+        Perform a cold reset on the master.
 
         :returns: 'status': 'OK'.
+        :rtype: dict
         """
-        self.check_token(token)
-        return self.__wrap(self.__gateway_api.reset_master)
+        return self._gateway_api.reset_master()
 
-    @cherrypy.expose
-    def module_discover_start(self, token):
-        """ Start the module discover mode on the master.
+    @openmotics_api(auth=True)
+    def module_discover_start(self):
+        """
+        Start the module discover mode on the master.
 
         :returns: 'status': 'OK'.
+        :rtype: dict
         """
-        self.check_token(token)
-        return self.__wrap(self.__gateway_api.module_discover_start)
+        return self._gateway_api.module_discover_start()
 
-    @cherrypy.expose
-    def module_discover_stop(self, token):
-        """ Stop the module discover mode on the master.
+    @openmotics_api(auth=True)
+    def module_discover_stop(self):
+        """
+        Stop the module discover mode on the master.
 
         :returns: 'status': 'OK'.
+        :rtype: dict
         """
-        self.check_token(token)
-        return self.__wrap(self.__gateway_api.module_discover_stop)
+        return self._gateway_api.module_discover_stop()
 
-    @cherrypy.expose
-    def module_discover_status(self, token):
-        """ Gets the status of the module discover mode on the master.
+    @openmotics_api(auth=True)
+    def module_discover_status(self):
+        """
+        Gets the status of the module discover mode on the master.
 
         :returns 'running': true|false
+        :rtype: dict
         """
-        self.check_token(token)
-        return self.__wrap(self.__gateway_api.module_discover_status)
+        return self._gateway_api.module_discover_status()
 
-    @cherrypy.expose
-    def get_module_log(self, token):
-        """ Get the log messages from the module discovery mode. This returns the current log
+    @openmotics_api(auth=True)
+    def get_module_log(self):
+        """
+        Get the log messages from the module discovery mode. This returns the current log
         messages and clear the log messages.
 
         :returns: 'log': list of tuples (log_level, message).
+        :rtype: dict
         """
-        self.check_token(token)
-        return self.__wrap(self.__gateway_api.get_module_log)
+        return self._gateway_api.get_module_log()
 
-    @cherrypy.expose
-    def get_modules(self, token):
-        """ Get a list of all modules attached and registered with the master.
-
-        :returns: 'outputs': list of output module types (O,R,D), 'inputs': list of input module \
-        types (I,T,L) and 'shutters': list of shutter module types (S).
+    @openmotics_api(auth=True)
+    def get_modules(self):
         """
-        self.check_token(token)
-        return self.__wrap(self.__gateway_api.get_modules)
+        Get a list of all modules attached and registered with the master.
 
-    @cherrypy.expose
-    def flash_leds(self, token, type, id):
-        """ Flash the leds on the module for an output/input/sensor.
+        :returns: Dict with:
+        * 'outputs' (list of module types: O,R,D),
+        * 'inputs' (list of input module types: I,T,L,C)
+        * 'shutters' (List of modules types: S).
+        :rtype: dict
+        """
+        return self._gateway_api.get_modules()
 
-        :type type: Integer
+    @openmotics_api(auth=True)
+    def get_features(self):
+        """
+        Returns all available features this Gateway supports. This allows to make flexible clients
+        """
+        return {'features': [
+            'metrics',     # Advanced metrics (including metrics over websockets)
+            'dirty_flag',  # A dirty flag that can be used to trigger syncs on power & master
+            'scheduling'   # Gateway backed scheduling
+        ]}
+
+    @openmotics_api(auth=True, check=types(type=int, id=int))
+    def flash_leds(self, type, id):
+        """
+        Flash the leds on the module for an output/input/sensor.
+
         :param type: The module type: output/dimmer (0), input (1), sensor/temperatur (2).
-        :type id: Integer
+        :type type: int
         :param id: The id of the output/input/sensor.
+        :type id: int
         :returns: 'status': 'OK'.
+        :rtype: dict
         """
-        self.check_token(token)
-        return self.__wrap(lambda: self.__gateway_api.flash_leds(int(type), int(id)))
+        return self._gateway_api.flash_leds(type, id)
 
-    @cherrypy.expose
-    def get_status(self, token):
-        """ Get the status of the master.
+    @openmotics_api(auth=True)
+    def get_status(self):
+        """
+        Get the status of the master.
 
         :returns: 'time': hour and minutes (HH:MM), 'date': day, month, year (DD:MM:YYYY), \
-        'mode': Integer, 'version': a.b.c and 'hw_version': hardware version (Integer).
+            'mode': Integer, 'version': a.b.c and 'hw_version': hardware version (Integer).
+        :rtype: dict
         """
-        self.check_token(token)
-        return self.__success(**self.__gateway_api.get_status())
+        return self._gateway_api.get_status()
 
-    @cherrypy.expose
-    def get_output_status(self, token):
-        """ Get the status of the outputs.
-
-        :returns: 'status': list of dictionaries with the following keys: id,\
-        status, dimmer and ctimer.
+    @openmotics_api(auth=True)
+    def get_output_status(self):
         """
-        self.check_token(token)
-        return self.__success(status=self.__gateway_api.get_output_status())
+        Get the status of the outputs.
 
-    @cherrypy.expose
-    def set_output(self, token, id, is_on, dimmer=None, timer=None):
-        """ Set the status, dimmer and timer of an output.
+        :returns: 'status': list of dictionaries with the following keys: id, status, dimmer and ctimer.
+        """
+        return {'status': self._gateway_api.get_output_status()}
+
+    @openmotics_api(auth=True, check=types(id=int, is_on=bool, dimmer=int, timer=int))
+    def set_output(self, id, is_on, dimmer=None, timer=None):
+        """
+        Set the status, dimmer and timer of an output.
 
         :param id: The id of the output to set
-        :type id: Integer [0, 240]
+        :type id: int
         :param is_on: Whether the output should be on
-        :type is_on: Boolean
+        :type is_on: bool
         :param dimmer: The dimmer value to set, None if unchanged
-        :type dimmer: Integer [0, 100] or None
+        :type dimmer: int or None
         :param timer: The timer value to set, None if unchanged
-        :type timer: Integer in (150, 450, 900, 1500, 2220, 3120)
+        :type timer: int
         """
-        self.check_token(token)
-        return self.__wrap(lambda: self.__gateway_api.set_output(
-                                        int(id), is_on.lower() == "true",
-                                        int(dimmer) if dimmer is not None else None,
-                                        int(timer) if timer is not None else None))
+        return self._gateway_api.set_output(id, is_on, dimmer, timer)
 
-    @cherrypy.expose
-    def set_all_lights_off(self, token):
-        """ Turn all lights off.
+    @openmotics_api(auth=True)
+    def set_all_lights_off(self):
         """
-        self.check_token(token)
-        return self.__wrap(self.__gateway_api.set_all_lights_off)
+        Turn all lights off.
+        """
+        return self._gateway_api.set_all_lights_off()
 
-    @cherrypy.expose
-    def set_all_lights_floor_off(self, token, floor):
-        """ Turn all lights on a given floor off.
+    @openmotics_api(auth=True, check=types(floor=int))
+    def set_all_lights_floor_off(self, floor):
+        """
+        Turn all lights on a given floor off.
 
         :param floor: The id of the floor
-        :type floor: Byte
+        :type floor: int
         """
-        self.check_token(token)
-        return self.__wrap(lambda: self.__gateway_api.set_all_lights_floor_off(int(floor)))
+        return self._gateway_api.set_all_lights_floor_off(floor)
 
-    @cherrypy.expose
-    def set_all_lights_floor_on(self, token, floor):
-        """ Turn all lights on a given floor on.
+    @openmotics_api(auth=True, check=types(floor=int))
+    def set_all_lights_floor_on(self, floor):
+        """
+        Turn all lights on a given floor on.
 
         :param floor: The id of the floor
-        :type floor: Byte
+        :type floor: int
         """
-        self.check_token(token)
-        return self.__wrap(lambda: self.__gateway_api.set_all_lights_floor_on(int(floor)))
+        return self._gateway_api.set_all_lights_floor_on(floor)
 
-    @cherrypy.expose
-    def get_last_inputs(self, token):
-        """ Get the 5 last pressed inputs during the last 5 minutes.
+    @openmotics_api(auth=True)
+    def get_last_inputs(self):
+        """
+        Get the 5 last pressed inputs during the last 5 minutes.
 
         :returns: 'inputs': list of tuples (input, output).
+        :rtype: dict
         """
-        self.check_token(token)
-        return self.__success(inputs=self.__gateway_api.get_last_inputs())
+        return {'inputs': self._gateway_api.get_last_inputs()}
 
-    @cherrypy.expose
-    def get_shutter_status(self, token):
-        """ Get the status of the shutters.
+    @openmotics_api(auth=True)
+    def get_shutter_status(self):
+        """
+        Get the status of the shutters.
 
         :returns: 'status': list of dictionaries with the following keys: id, position.
+        :rtype: dict
         """
-        self.check_token(token)
-        return self.__success(status=self.__gateway_api.get_shutter_status())
+        return {'status': self._gateway_api.get_shutter_status()}
 
-    @cherrypy.expose
-    def do_shutter_down(self, token, id):
-        """ Make a shutter go down. The shutter stops automatically when the down position is
+    @openmotics_api(auth=True, check=types(id=int))
+    def do_shutter_down(self, id):
+        """
+        Make a shutter go down. The shutter stops automatically when the down position is
         reached (after the predefined number of seconds).
 
         :param id: The id of the shutter.
-        :type id: Byte
+        :type id: int
         :returns:'status': 'OK'.
+        :rtype: dict
         """
-        self.check_token(token)
-        return self.__wrap(lambda: self.__gateway_api.do_shutter_down(int(id)))
+        return self._gateway_api.do_shutter_down(id)
 
-    @cherrypy.expose
-    def do_shutter_up(self, token, id):
-        """ Make a shutter go up. The shutter stops automatically when the up position is
+    @openmotics_api(auth=True, check=types(id=int))
+    def do_shutter_up(self, id):
+        """
+        Make a shutter go up. The shutter stops automatically when the up position is
         reached (after the predefined number of seconds).
 
         :param id: The id of the shutter.
-        :type id: Byte
+        :type id: int
         :returns:'status': 'OK'.
+        :rtype: dict
         """
-        self.check_token(token)
-        return self.__wrap(lambda: self.__gateway_api.do_shutter_up(int(id)))
+        return self._gateway_api.do_shutter_up(id)
 
-    @cherrypy.expose
-    def do_shutter_stop(self, token, id):
-        """ Make a shutter stop.
+    @openmotics_api(auth=True, check=types(id=int))
+    def do_shutter_stop(self, id):
+        """
+        Make a shutter stop.
 
         :param id: The id of the shutter.
-        :type id: Byte
+        :type id: int
         :returns:'status': 'OK'.
+        :rtype: dict
         """
-        self.check_token(token)
-        return self.__wrap(lambda: self.__gateway_api.do_shutter_stop(int(id)))
+        return self._gateway_api.do_shutter_stop(id)
 
-    @cherrypy.expose
-    def do_shutter_group_down(self, token, id):
-        """ Make a shutter group go down. The shutters stop automatically when the down position is
+    @openmotics_api(auth=True, check=types(id=int))
+    def do_shutter_group_down(self, id):
+        """
+        Make a shutter group go down. The shutters stop automatically when the down position is
         reached (after the predefined number of seconds).
 
         :param id: The id of the shutter group.
-        :type id: Byte
+        :type id: int
         :returns:'status': 'OK'.
+        :rtype: dict
         """
-        self.check_token(token)
-        return self.__wrap(lambda: self.__gateway_api.do_shutter_group_down(int(id)))
+        return self._gateway_api.do_shutter_group_down(id)
 
-    @cherrypy.expose
-    def do_shutter_group_up(self, token, id):
-        """ Make a shutter group go up. The shutters stop automatically when the up position is
+    @openmotics_api(auth=True, check=types(id=int))
+    def do_shutter_group_up(self, id):
+        """
+        Make a shutter group go up. The shutters stop automatically when the up position is
         reached (after the predefined number of seconds).
 
         :param id: The id of the shutter group.
-        :type id: Byte
+        :type id: int
         :returns:'status': 'OK'.
+        :rtype: dict
         """
-        self.check_token(token)
-        return self.__wrap(lambda: self.__gateway_api.do_shutter_group_up(int(id)))
+        return self._gateway_api.do_shutter_group_up(id)
 
-    @cherrypy.expose
-    def do_shutter_group_stop(self, token, id):
-        """ Make a shutter group stop.
+    @openmotics_api(auth=True, check=types(id=int))
+    def do_shutter_group_stop(self, id):
+        """
+        Make a shutter group stop.
 
         :param id: The id of the shutter group.
-        :type id: Byte
+        :type id: int
         :returns:'status': 'OK'.
+        :rtype: dict
         """
-        self.check_token(token)
-        return self.__wrap(lambda: self.__gateway_api.do_shutter_group_stop(int(id)))
+        return self._gateway_api.do_shutter_group_stop(id)
 
-    @cherrypy.expose
-    def get_thermostat_status(self, token):
-        """ Get the status of the thermostats.
+    @openmotics_api(auth=True)
+    def get_thermostat_status(self):
+        """
+        Get the status of the thermostats.
 
         :returns: global status information about the thermostats: 'thermostats_on', \
-        'automatic' and 'setpoint' and 'status': a list with status information for all \
-        thermostats, each element in the list is a dict with the following keys: \
-        'id', 'act', 'csetp', 'output0', 'output1', 'outside', 'mode'.
+            'automatic' and 'setpoint' and 'status': a list with status information for all \
+            thermostats, each element in the list is a dict with the following keys: \
+            'id', 'act', 'csetp', 'output0', 'output1', 'outside', 'mode'.
+        :rtype: dict
         """
-        self.check_token(token)
-        return self.__wrap(self.__gateway_api.get_thermostat_status)
+        return self._gateway_api.get_thermostat_status()
 
-    @cherrypy.expose
-    def set_current_setpoint(self, token, thermostat, temperature):
-        """ Set the current setpoint of a thermostat.
+    @openmotics_api(auth=True, check=types(thermostat=int, temperature=float))
+    def set_current_setpoint(self, thermostat, temperature):
+        """
+        Set the current setpoint of a thermostat.
 
         :param thermostat: The id of the thermostat to set
-        :type thermostat: Integer [0, 24]
+        :type thermostat: int
         :param temperature: The temperature to set in degrees Celcius
         :type temperature: float
         :return: 'status': 'OK'.
+        :rtype: dict
         """
-        self.check_token(token)
-        return self.__wrap(lambda: self.__gateway_api.set_current_setpoint(
-                                            int(thermostat), float(temperature)))
+        return self._gateway_api.set_current_setpoint(thermostat, temperature)
 
-    @cherrypy.expose
-    def set_thermostat_mode(self, token, thermostat_on, automatic, setpoint, cooling_mode=False,
-                            cooling_on=False):
-        """ Set the mode of the thermostats. Thermostats can be on or off, automatic or manual
-        and is set to one of the 6 setpoints.
+    @openmotics_api(auth=True, check=types(thermostat_on=bool, automatic=bool, setpoint=int, cooling_mode=bool, cooling_on=bool))
+    def set_thermostat_mode(self, thermostat_on, automatic=None, setpoint=None, cooling_mode=False, cooling_on=False):
+        """
+        Set the global mode of the thermostats. Thermostats can be on or off (thermostat_on),
+        can be in cooling or heating (cooling_mode), cooling can be turned on or off (cooling_on).
+        The automatic and setpoint parameters are here for backwards compatibility and will be
+        applied to all thermostats. To control the automatic and setpoint parameters per thermostat
+        use the set_per_thermostat_mode call instead.
 
         :param thermostat_on: Whether the thermostats are on
-        :type thermostat_on: Boolean
-        :param automatic: Automatic mode (True) or Manual mode (False)
-        :type automatic: Boolean
-        :param setpoint: The current setpoint
-        :type setpoint: Integer [0, 5]
+        :type thermostat_on: bool
+        :param automatic: Automatic mode (True) or Manual mode (False).  This parameter is here for
+            backwards compatibility, use set_per_thermostat_mode instead.
+        :type automatic: bool or None
+        :param setpoint: The current setpoint.  This parameter is here for backwards compatibility,
+            use set_per_thermostat_mode instead.
+        :type setpoint: int or None
         :param cooling_mode: Cooling mode (True) of Heating mode (False)
-        :type cooling_mode: boolean (optional)
+        :type cooling_mode: bool or None
         :param cooling_on: Turns cooling ON when set to true.
-        :param cooling_on: boolean (optional)
-
+        :param cooling_on: bool or None
         :return: 'status': 'OK'.
+        :rtype: dict
         """
-        self.check_token(token)
-        return self.__wrap(lambda: self.__gateway_api.set_thermostat_mode(
-                       boolean(thermostat_on), boolean(automatic), int(setpoint),
-                       boolean(cooling_mode), boolean(cooling_on)))
+        self._gateway_api.set_thermostat_mode(thermostat_on, cooling_mode, cooling_on, automatic, setpoint)
 
-    @cherrypy.expose
-    def get_airco_status(self, token):
-        """ Get the mode of the airco attached to a all thermostats.
+        return {'status': 'OK'}
 
-        :returns: dict with ASB0-ASB23.
+    @openmotics_api(auth=True, check=types(thermostat_id=int, automatic=bool, setpoint=int))
+    def set_per_thermostat_mode(self, thermostat_id, automatic, setpoint):
         """
-        self.check_token(token)
-        return self.__wrap(lambda: self.__gateway_api.get_airco_status())
+        Set the thermostat mode of a given thermostat. Thermostats can be set to automatic or
+        manual, in case of manual a setpoint (0 to 5) can be provided.
 
-    @cherrypy.expose
-    def set_airco_status(self, token, thermostat_id, airco_on):
-        """ Set the mode of the airco attached to a given thermostat.
+        :param thermostat_id: The thermostat id
+        :type thermostat_id: int
+        :param automatic: Automatic mode (True) or Manual mode (False).
+        :type automatic: bool
+        :param setpoint: The current setpoint.
+        :type setpoint: int
+        """
+        return self._gateway_api.set_per_thermostat_mode(thermostat_id, automatic, setpoint)
+
+    @openmotics_api(auth=True)
+    def get_airco_status(self):
+        """
+        Get the mode of the airco attached to a all thermostats.
+
+        :returns: dict with ASB0-ASB31.
+        :rtype: dict
+        """
+        return self._gateway_api.get_airco_status()
+
+    @openmotics_api(auth=True, check=types(thermostat_id=int, airco_on=bool))
+    def set_airco_status(self, thermostat_id, airco_on):
+        """
+        Set the mode of the airco attached to a given thermostat.
 
         :param thermostat_id: The thermostat id.
-        :type thermostat_id: Integer [0, 23]
+        :type thermostat_id: int
         :param airco_on: Turns the airco on if True.
-        :type airco_on: boolean.
-
-        :returns: dict with 'status'.
+        :type airco_on: bool
+        :returns: dict with 'status'
+        :rtype: dict
         """
-        self.check_token(token)
-        return self.__wrap(lambda: self.__gateway_api.set_airco_status(
-                                        int(thermostat_id), boolean(airco_on)))
+        return self._gateway_api.set_airco_status(thermostat_id, airco_on)
 
-    @cherrypy.expose
-    def get_sensor_temperature_status(self, token):
-        """ Get the current temperature of all sensors.
+    @openmotics_api(auth=True)
+    def get_sensor_temperature_status(self):
+        """
+        Get the current temperature of all sensors.
 
         :returns: 'status': list of 32 temperatures, 1 for each sensor.
+        :rtype: dict
         """
-        self.check_token(token)
-        return self.__success(status=self.__gateway_api.get_sensor_temperature_status())
+        return {'status': self._gateway_api.get_sensor_temperature_status()}
 
-    @cherrypy.expose
-    def get_sensor_humidity_status(self, token):
-        """ Get the current humidity of all sensors.
+    @openmotics_api(auth=True)
+    def get_sensor_humidity_status(self):
+        """
+        Get the current humidity of all sensors.
 
         :returns: 'status': List of 32 bytes, 1 for each sensor.
+        :rtype: dict
         """
-        self.check_token(token)
-        return self.__success(status=self.__gateway_api.get_sensor_humidity_status())
+        return {'status': self._gateway_api.get_sensor_humidity_status()}
 
-    @cherrypy.expose
-    def get_sensor_brightness_status(self, token):
-        """ Get the current brightness of all sensors.
+    @openmotics_api(auth=True)
+    def get_sensor_brightness_status(self):
+        """
+        Get the current brightness of all sensors.
 
         :returns: 'status': List of 32 bytes, 1 for each sensor.
+        :rtype: dict
         """
-        self.check_token(token)
-        return self.__success(status=self.__gateway_api.get_sensor_brightness_status())
+        return {'status': self._gateway_api.get_sensor_brightness_status()}
 
-    @cherrypy.expose
-    def set_virtual_sensor(self, token, sensor_id, temperature, humidity, brightness):
-        """ Set the temperature, humidity and brightness value of a virtual sensor.
+    @openmotics_api(auth=True, check=types(sensor_id=int, temperature=float, humidity=float, brightness=int))
+    def set_virtual_sensor(self, sensor_id, temperature, humidity, brightness):
+        """
+        Set the temperature, humidity and brightness value of a virtual sensor.
 
         :param sensor_id: The id of the sensor.
-        :type sensor_id: Integer [0, 31]
+        :type sensor_id: int
         :param temperature: The temperature to set in degrees Celcius
         :type temperature: float
         :param humidity: The humidity to set in percentage
@@ -610,1115 +800,1131 @@ class WebInterface(object):
         :param brightness: The brightness to set in percentage
         :type brightness: int
         :returns: dict with 'status'.
+        :rtype: dict
         """
-        self.check_token(token)
-        return self.__wrap(lambda: self.__gateway_api.set_virtual_sensor(
-                                        int(sensor_id), float(temperature), float(humidity),
-                                        int(brightness)))
+        return self._gateway_api.set_virtual_sensor(sensor_id, temperature, humidity, brightness)
 
-    @cherrypy.expose
-    def do_basic_action(self, token, action_type, action_number):
-        """ Execute a basic action.
+    @openmotics_api(auth=True, check=types(action_type=int, action_number=int))
+    def do_basic_action(self, action_type, action_number):
+        """
+        Execute a basic action.
 
         :param action_type: The type of the action as defined by the master api.
-        :type action_type: Integer [0, 254]
-        :param action_number: The number provided to the basic action, its meaning depends on the \
-        action_type.
-        :type action_number: Integer [0, 254]
+        :type action_type: int
+        :param action_number: The number provided to the basic action, its meaning depends on the action_type.
+        :type action_number: int
         """
-        self.check_token(token)
-        return self.__wrap(lambda: self.__gateway_api.do_basic_action(int(action_type),
-                                                                      int(action_number)))
+        return self._gateway_api.do_basic_action(action_type, action_number)
 
-    @cherrypy.expose
-    def do_group_action(self, token, group_action_id):
-        """ Execute a group action.
+    @openmotics_api(auth=True, check=types(group_action_id=int))
+    def do_group_action(self, group_action_id):
+        """
+        Execute a group action.
 
         :param group_action_id: The id of the group action
-        :type group_action_id: Integer [0, 159]
+        :type group_action_id: int
         """
-        self.check_token(token)
-        return self.__wrap(lambda: self.__gateway_api.do_group_action(int(group_action_id)))
+        return self._gateway_api.do_group_action(group_action_id)
 
-    @cherrypy.expose
-    def set_master_status_leds(self, token, status):
-        """ Set the status of the leds on the master.
+    @openmotics_api(auth=True, check=types(status=bool))
+    def set_master_status_leds(self, status):
+        """
+        Set the status of the leds on the master.
 
         :param status: whether the leds should be on (true) or off (false).
-        :type status: Boolean
+        :type status: bool
         """
-        self.check_token(token)
-        return self.__wrap(
-                    lambda: self.__gateway_api.set_master_status_leds(status.lower() == "true"))
+        return self._gateway_api.set_master_status_leds(status)
 
     @cherrypy.expose
-    def get_master_backup(self, token):
-        """ Get a backup of the eeprom of the master.
+    @cherrypy.tools.authenticated()
+    def get_full_backup(self):
+        """
+        Get a backup (tar) of the master eeprom and the sqlite databases.
+
+        :returns: Tar containing 4 files: master.eep, config.db, scheduled.db, power.db and
+            eeprom_extensions.db as a string of bytes.
+        :rtype: dict
+        """
+        cherrypy.response.headers['Content-Type'] = 'application/octet-stream'
+        return self._gateway_api.get_full_backup()
+
+    @openmotics_api(auth=True, plugin_exposed=False)
+    def restore_full_backup(self, backup_data):
+        """
+        Restore a full backup containing the master eeprom and the sqlite databases.
+
+        :param backup_data: The full backup to restore: tar containing 4 files: master.eep, config.db, \
+            scheduled.db, power.db and eeprom_extensions.db as a string of bytes.
+        :type backup_data: multipart/form-data encoded bytes.
+        :returns: dict with 'output' key.
+        :rtype: dict
+        """
+        data = backup_data.file.read()
+        if len(data) == 0:
+            raise RuntimeError('backup_data is empty')
+        return self._gateway_api.restore_full_backup(data)
+
+    @cherrypy.expose
+    @cherrypy.tools.authenticated()
+    def get_master_backup(self):
+        """
+        Get a backup of the eeprom of the master.
 
         :returns: This function does not return a dict, unlike all other API functions: it \
-        returns a string of bytes (size = 64kb).
+            returns a string of bytes (size = 64kb).
+        :rtype: bytearray
         """
-        self.check_token(token)
         cherrypy.response.headers['Content-Type'] = 'application/octet-stream'
-        return self.__gateway_api.get_master_backup()
+        return self._gateway_api.get_master_backup()
 
-    @cherrypy.expose
-    def master_restore(self, token, data):
-        """ Restore a backup of the eeprom of the master.
+    @openmotics_api(auth=True)
+    def master_restore(self, data):
+        """
+        Restore a backup of the eeprom of the master.
 
         :param data: The eeprom backup to restore.
         :type data: multipart/form-data encoded bytes (size = 64 kb).
         :returns: 'output': array with the addresses that were written.
+        :rtype: dict
         """
-        self.check_token(token)
         data = data.file.read()
-        return self.__wrap(lambda: self.__gateway_api.master_restore(data))
+        return self._gateway_api.master_restore(data)
 
-    @cherrypy.expose
-    def get_errors(self, token):
-        """ Get the number of seconds since the last successul communication with the master and
+    @openmotics_api(auth=True)
+    def get_errors(self):
+        """
+        Get the number of seconds since the last successul communication with the master and
         power modules (master_last_success, power_last_success) and the error list per module
         (input and output modules). The modules are identified by O1, O2, I1, I2, ...
 
         :returns: 'errors': list of tuples (module, nr_errors), 'master_last_success': UNIX \
-        timestamp of the last succesful master communication and 'power_last_success': UNIX \
-        timestamp of the last successful power communication.
+            timestamp of the last succesful master communication and 'power_last_success': UNIX \
+            timestamp of the last successful power communication.
+        :rtype: dict
         """
-        self.check_token(token)
         try:
-            errors = self.__gateway_api.master_error_list()
+            errors = self._gateway_api.master_error_list()
         except Exception:
             # In case of communications problems with the master.
             errors = []
 
-        master_last = self.__gateway_api.master_last_success()
-        power_last = self.__gateway_api.power_last_success()
+        master_last = self._gateway_api.master_last_success()
+        power_last = self._gateway_api.power_last_success()
 
-        return self.__success(errors=errors, master_last_success=master_last,
-                              power_last_success=power_last)
+        return {'errors': errors,
+                'master_last_success': master_last,
+                'power_last_success': power_last}
 
-    @cherrypy.expose
-    def master_clear_error_list(self, token):
-        """ Clear the number of errors.
+    @openmotics_api(auth=True)
+    def master_clear_error_list(self):
         """
-        self.check_token(token)
-        return self.__wrap(self.__gateway_api.master_clear_error_list)
+        Clear the number of errors.
+        """
+        return self._gateway_api.master_clear_error_list
 
-    ###### Below are the auto generated master configuration api functions
-
-    @cherrypy.expose
-    def get_output_configuration(self, token, id, fields=None):
+    @openmotics_api(auth=True, check=types(id=int, fields='json'))
+    def get_output_configuration(self, id, fields=None):
         """
         Get a specific output_configuration defined by its id.
 
         :param id: The id of the output_configuration
-        :type id: Id
-        :param fields: The field of the output_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
-        :returns: 'config': output_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'floor' (Byte), 'module_type' (String[1]), 'name' (String[16]), 'timer' (Word), 'type' (Byte)
+        :type id: int
+        :param fields: The fields of the output_configuration to get. (None gets all fields)
+        :type fields: list
+        :returns: 'config': output_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'floor' (Byte), 'module_type' (String[1]), 'name' (String[16]), 'room' (Byte), 'timer' (Word), 'type' (Byte)
+        :rtype: dict
         """
-        self.check_token(token)
-        fields = None if fields is None else json.loads(fields)
-        return self.__success(config=self.__gateway_api.get_output_configuration(int(id), fields))
+        return {'config': self._gateway_api.get_output_configuration(id, fields)}
 
-    @cherrypy.expose
-    def get_output_configurations(self, token, fields=None):
+    @openmotics_api(auth=True, check=types(fields='json'))
+    def get_output_configurations(self, fields=None):
         """
         Get all output_configurations.
 
         :param fields: The field of the output_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
-        :returns: 'config': list of output_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'floor' (Byte), 'module_type' (String[1]), 'name' (String[16]), 'timer' (Word), 'type' (Byte)
+        :type fields: list
+        :returns: 'config': list of output_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'floor' (Byte), 'module_type' (String[1]), 'name' (String[16]), 'room' (Byte), 'timer' (Word), 'type' (Byte)
+        :rtype: dict
         """
-        self.check_token(token)
-        fields = None if fields is None else json.loads(fields)
-        return self.__success(config=self.__gateway_api.get_output_configurations(fields))
+        return {'config': self._gateway_api.get_output_configurations(fields)}
 
-    @cherrypy.expose
-    def set_output_configuration(self, token, config):
+    @openmotics_api(auth=True, check=types(config='json'))
+    def set_output_configuration(self, config):
         """
         Set one output_configuration.
 
-        :param config: The output_configuration to set
-        :type config: output_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'floor' (Byte), 'name' (String[16]), 'timer' (Word), 'type' (Byte)
+        :param config: The output_configuration to set: dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'floor' (Byte), 'name' (String[16]), 'room' (Byte), 'timer' (Word), 'type' (Byte)
+        :type config: dict
         """
-        self.check_token(token)
-        self.__gateway_api.set_output_configuration(json.loads(config))
-        return self.__success()
+        self._gateway_api.set_output_configuration(config)
+        return {}
 
-    @cherrypy.expose
-    def set_output_configurations(self, token, config):
+    @openmotics_api(auth=True, check=types(config='json'))
+    def set_output_configurations(self, config):
         """
         Set multiple output_configurations.
 
-        :param config: The list of output_configurations to set
-        :type config: list of output_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'floor' (Byte), 'name' (String[16]), 'timer' (Word), 'type' (Byte)
+        :param config: The list of output_configurations to set: list of output_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'floor' (Byte), 'name' (String[16]), 'room' (Byte), 'timer' (Word), 'type' (Byte)
+        :type config: list
         """
-        self.check_token(token)
-        self.__gateway_api.set_output_configurations(json.loads(config))
-        return self.__success()
+        self._gateway_api.set_output_configurations(config)
+        return {}
 
-    @cherrypy.expose
-    def get_shutter_configuration(self, token, id, fields=None):
+    @openmotics_api(auth=True, check=types(id=int, fields='json'))
+    def get_shutter_configuration(self, id, fields=None):
         """
         Get a specific shutter_configuration defined by its id.
 
         :param id: The id of the shutter_configuration
         :type id: Id
-        :param fields: The field of the shutter_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
-        :returns: 'config': shutter_configuration dict: contains 'id' (Id), 'group_1' (Byte), 'group_2' (Byte), 'name' (String[16]), 'timer_down' (Byte), 'timer_up' (Byte), 'up_down_config' (Byte)
+        :param fields: The fields of the shutter_configuration to get. (None gets all fields)
+        :type fields: list
+        :returns: 'config': shutter_configuration dict: contains 'id' (Id), 'group_1' (Byte), 'group_2' (Byte), 'name' (String[16]), 'room' (Byte), 'timer_down' (Byte), 'timer_up' (Byte), 'up_down_config' (Byte)
+        :rtype: dict
         """
-        self.check_token(token)
-        fields = None if fields is None else json.loads(fields)
-        return self.__success(config=self.__gateway_api.get_shutter_configuration(int(id), fields))
+        return {'config': self._gateway_api.get_shutter_configuration(id, fields)}
 
-    @cherrypy.expose
-    def get_shutter_configurations(self, token, fields=None):
+    @openmotics_api(auth=True, check=types(fields='json'))
+    def get_shutter_configurations(self, fields=None):
         """
         Get all shutter_configurations.
 
-        :param fields: The field of the shutter_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
-        :returns: 'config': list of shutter_configuration dict: contains 'id' (Id), 'group_1' (Byte), 'group_2' (Byte), 'name' (String[16]), 'timer_down' (Byte), 'timer_up' (Byte), 'up_down_config' (Byte)
+        :param fields: The fields of the shutter_configuration to get. (None gets all fields)
+        :type fields: list
+        :returns: 'config': list of shutter_configuration dict: contains 'id' (Id), 'group_1' (Byte), 'group_2' (Byte), 'name' (String[16]), 'room' (Byte), 'timer_down' (Byte), 'timer_up' (Byte), 'up_down_config' (Byte)
+        :rtype: dict
         """
-        self.check_token(token)
-        fields = None if fields is None else json.loads(fields)
-        return self.__success(config=self.__gateway_api.get_shutter_configurations(fields))
+        return {'config': self._gateway_api.get_shutter_configurations(fields)}
 
-    @cherrypy.expose
-    def set_shutter_configuration(self, token, config):
+    @openmotics_api(auth=True, check=types(confi='json'))
+    def set_shutter_configuration(self, config):
         """
         Set one shutter_configuration.
 
-        :param config: The shutter_configuration to set
-        :type config: shutter_configuration dict: contains 'id' (Id), 'group_1' (Byte), 'group_2' (Byte), 'name' (String[16]), 'timer_down' (Byte), 'timer_up' (Byte), 'up_down_config' (Byte)
+        :param config: The shutter_configuration to set: shutter_configuration dict: contains 'id' (Id), 'group_1' (Byte), 'group_2' (Byte), 'name' (String[16]), 'room' (Byte), 'timer_down' (Byte), 'timer_up' (Byte), 'up_down_config' (Byte)
+        :type config: dict
         """
-        self.check_token(token)
-        self.__gateway_api.set_shutter_configuration(json.loads(config))
-        return self.__success()
+        self._gateway_api.set_shutter_configuration(config)
+        return {}
 
-    @cherrypy.expose
-    def set_shutter_configurations(self, token, config):
+    @openmotics_api(auth=True, check=types(config='json'))
+    def set_shutter_configurations(self, config):
         """
         Set multiple shutter_configurations.
 
-        :param config: The list of shutter_configurations to set
-        :type config: list of shutter_configuration dict: contains 'id' (Id), 'group_1' (Byte), 'group_2' (Byte), 'name' (String[16]), 'timer_down' (Byte), 'timer_up' (Byte), 'up_down_config' (Byte)
+        :param config: The list of shutter_configurations to set: list of shutter_configuration dict: contains 'id' (Id), 'group_1' (Byte), 'group_2' (Byte), 'name' (String[16]), 'room' (Byte), 'timer_down' (Byte), 'timer_up' (Byte), 'up_down_config' (Byte)
+        :type config: list
         """
-        self.check_token(token)
-        self.__gateway_api.set_shutter_configurations(json.loads(config))
-        return self.__success()
+        self._gateway_api.set_shutter_configurations(config)
+        return {}
 
-    @cherrypy.expose
-    def get_shutter_group_configuration(self, token, id, fields=None):
+    @openmotics_api(auth=True, check=types(id=int, fields='json'))
+    def get_shutter_group_configuration(self, id, fields=None):
         """
         Get a specific shutter_group_configuration defined by its id.
 
         :param id: The id of the shutter_group_configuration
-        :type id: Id
+        :type id: int
         :param fields: The field of the shutter_group_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
-        :returns: 'config': shutter_group_configuration dict: contains 'id' (Id), 'timer_down' (Byte), 'timer_up' (Byte)
+        :type fields: list
+        :returns: 'config': shutter_group_configuration dict: contains 'id' (Id), 'room' (Byte), 'timer_down' (Byte), 'timer_up' (Byte)
+        :rtype: dict
         """
-        self.check_token(token)
-        fields = None if fields is None else json.loads(fields)
-        return self.__success(config=self.__gateway_api.get_shutter_group_configuration(int(id), fields))
+        return {'config': self._gateway_api.get_shutter_group_configuration(id, fields)}
 
-    @cherrypy.expose
-    def get_shutter_group_configurations(self, token, fields=None):
+    @openmotics_api(auth=True, check=types(fields='json'))
+    def get_shutter_group_configurations(self, fields=None):
         """
         Get all shutter_group_configurations.
 
         :param fields: The field of the shutter_group_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
-        :returns: 'config': list of shutter_group_configuration dict: contains 'id' (Id), 'timer_down' (Byte), 'timer_up' (Byte)
+        :type fields: list
+        :returns: 'config': list of shutter_group_configuration dict: contains 'id' (Id), 'room' (Byte), 'timer_down' (Byte), 'timer_up' (Byte)
+        :rtype: dict
         """
-        self.check_token(token)
-        fields = None if fields is None else json.loads(fields)
-        return self.__success(config=self.__gateway_api.get_shutter_group_configurations(fields))
+        return {'config': self._gateway_api.get_shutter_group_configurations(fields)}
 
-    @cherrypy.expose
-    def set_shutter_group_configuration(self, token, config):
+    @openmotics_api(auth=True, check=types(config='json'))
+    def set_shutter_group_configuration(self, config):
         """
         Set one shutter_group_configuration.
 
-        :param config: The shutter_group_configuration to set
-        :type config: shutter_group_configuration dict: contains 'id' (Id), 'timer_down' (Byte), 'timer_up' (Byte)
+        :param config: The shutter_group_configuration to set: shutter_group_configuration dict: contains 'id' (Id), 'room' (Byte), 'timer_down' (Byte), 'timer_up' (Byte)
+        :type config: dict
         """
-        self.check_token(token)
-        self.__gateway_api.set_shutter_group_configuration(json.loads(config))
-        return self.__success()
+        self._gateway_api.set_shutter_group_configuration(config)
+        return {}
 
-    @cherrypy.expose
-    def set_shutter_group_configurations(self, token, config):
+    @openmotics_api(auth=True, check=types(config='json'))
+    def set_shutter_group_configurations(self, config):
         """
         Set multiple shutter_group_configurations.
 
-        :param config: The list of shutter_group_configurations to set
-        :type config: list of shutter_group_configuration dict: contains 'id' (Id), 'timer_down' (Byte), 'timer_up' (Byte)
+        :param config: The list of shutter_group_configurations to set: list of shutter_group_configuration dict: contains 'id' (Id), 'room' (Byte), 'timer_down' (Byte), 'timer_up' (Byte)
+        :type config: list
         """
-        self.check_token(token)
-        self.__gateway_api.set_shutter_group_configurations(json.loads(config))
-        return self.__success()
+        self._gateway_api.set_shutter_group_configurations(config)
+        return {}
 
-    @cherrypy.expose
-    def get_input_configuration(self, token, id, fields=None):
+    @openmotics_api(auth=True, check=types(id=int, fields='json'))
+    def get_input_configuration(self, id, fields=None):
         """
         Get a specific input_configuration defined by its id.
 
         :param id: The id of the input_configuration
-        :type id: Id
+        :type id: int
         :param fields: The field of the input_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
-        :returns: 'config': input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'module_type' (String[1]), 'name' (String[8])
+        :type fields: list
+        :returns: 'config': input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'module_type' (String[1]), 'name' (String[8]), 'room' (Byte)
+        :rtype: dict
         """
-        self.check_token(token)
-        fields = None if fields is None else json.loads(fields)
-        return self.__success(config=self.__gateway_api.get_input_configuration(int(id), fields))
+        return {'config': self._gateway_api.get_input_configuration(id, fields)}
 
-    @cherrypy.expose
-    def get_input_configurations(self, token, fields=None):
+    @openmotics_api(auth=True, check=types(fields='json'))
+    def get_input_configurations(self, fields=None):
         """
         Get all input_configurations.
 
         :param fields: The field of the input_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
-        :returns: 'config': list of input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'module_type' (String[1]), 'name' (String[8])
+        :type fields: list
+        :returns: 'config': list of input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'module_type' (String[1]), 'name' (String[8]), 'room' (Byte)
+        :rtype: dict
         """
-        self.check_token(token)
-        fields = None if fields is None else json.loads(fields)
-        return self.__success(config=self.__gateway_api.get_input_configurations(fields))
+        return {'config': self._gateway_api.get_input_configurations(fields)}
 
-    @cherrypy.expose
-    def set_input_configuration(self, token, config):
+    @openmotics_api(auth=True, check=types(config='json'))
+    def set_input_configuration(self, config):
         """
         Set one input_configuration.
 
-        :param config: The input_configuration to set
-        :type config: input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'name' (String[8])
+        :param config: The input_configuration to set: input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'name' (String[8]), 'room' (Byte)
+        :type config: dict
         """
-        self.check_token(token)
-        self.__gateway_api.set_input_configuration(json.loads(config))
-        return self.__success()
+        self._gateway_api.set_input_configuration(config)
+        return {}
 
-    @cherrypy.expose
-    def set_input_configurations(self, token, config):
+    @openmotics_api(auth=True, check=types(config='json'))
+    def set_input_configurations(self, config):
         """
         Set multiple input_configurations.
 
-        :param config: The list of input_configurations to set
-        :type config: list of input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'name' (String[8])
+        :param config: The list of input_configurations to set: list of input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'name' (String[8]), 'room' (Byte)
+        :type config: list
         """
-        self.check_token(token)
-        self.__gateway_api.set_input_configurations(json.loads(config))
-        return self.__success()
+        self._gateway_api.set_input_configurations(config)
+        return {}
 
-    @cherrypy.expose
-    def get_thermostat_configuration(self, token, id, fields=None):
+    @openmotics_api(auth=True, check=types(id=int, fields='json'))
+    def get_thermostat_configuration(self, id, fields=None):
         """
         Get a specific thermostat_configuration defined by its id.
 
         :param id: The id of the thermostat_configuration
-        :type id: Id
+        :type id: int
         :param fields: The field of the thermostat_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
-        :returns: 'config': thermostat_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
+        :type fields: list
+        :returns: 'config': thermostat_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'room' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
+        :rtype: dict
         """
-        self.check_token(token)
-        fields = None if fields is None else json.loads(fields)
-        return self.__success(config=self.__gateway_api.get_thermostat_configuration(int(id), fields))
+        return {'config': self._gateway_api.get_thermostat_configuration(id, fields)}
 
-    @cherrypy.expose
-    def get_thermostat_configurations(self, token, fields=None):
+    @openmotics_api(auth=True, check=types(fields='json'))
+    def get_thermostat_configurations(self, fields=None):
         """
         Get all thermostat_configurations.
 
         :param fields: The field of the thermostat_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
-        :returns: 'config': list of thermostat_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
+        :type fields: list
+        :returns: 'config': list of thermostat_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'room' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
+        :rtype: dict
         """
-        self.check_token(token)
-        fields = None if fields is None else json.loads(fields)
-        return self.__success(config=self.__gateway_api.get_thermostat_configurations(fields))
+        return {'config': self._gateway_api.get_thermostat_configurations(fields)}
 
-    @cherrypy.expose
-    def set_thermostat_configuration(self, token, config):
+    @openmotics_api(auth=True, check=types(config='json'))
+    def set_thermostat_configuration(self, config):
         """
         Set one thermostat_configuration.
 
-        :param config: The thermostat_configuration to set
-        :type config: thermostat_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
+        :param config: The thermostat_configuration to set: thermostat_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'room' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
+        :type config: dict
         """
-        self.check_token(token)
-        self.__gateway_api.set_thermostat_configuration(json.loads(config))
-        return self.__success()
+        self._gateway_api.set_thermostat_configuration(config)
+        return {}
 
-    @cherrypy.expose
-    def set_thermostat_configurations(self, token, config):
+    @openmotics_api(auth=True, check=types(config='json'))
+    def set_thermostat_configurations(self, config):
         """
         Set multiple thermostat_configurations.
 
-        :param config: The list of thermostat_configurations to set
-        :type config: list of thermostat_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
+        :param config: The list of thermostat_configurations to set: list of thermostat_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'room' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
+        :type config: list
         """
-        self.check_token(token)
-        self.__gateway_api.set_thermostat_configurations(json.loads(config))
-        return self.__success()
+        self._gateway_api.set_thermostat_configurations(config)
+        return {}
 
-    @cherrypy.expose
-    def get_sensor_configuration(self, token, id, fields=None):
+    @openmotics_api(auth=True, check=types(id=int, fields='json'))
+    def get_sensor_configuration(self, id, fields=None):
         """
         Get a specific sensor_configuration defined by its id.
 
         :param id: The id of the sensor_configuration
-        :type id: Id
+        :type id: int
         :param fields: The field of the sensor_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
-        :returns: 'config': sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees)), 'virtual' (Boolean)
+        :type fields: list
+        :returns: 'config': sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees)), 'room' (Byte), 'virtual' (Boolean)
+        :rtype: dict
         """
-        self.check_token(token)
-        fields = None if fields is None else json.loads(fields)
-        return self.__success(config=self.__gateway_api.get_sensor_configuration(int(id), fields))
+        return {'config': self._gateway_api.get_sensor_configuration(id, fields)}
 
-    @cherrypy.expose
-    def get_sensor_configurations(self, token, fields=None):
+    @openmotics_api(auth=True, check=types(fields='json'))
+    def get_sensor_configurations(self, fields=None):
         """
         Get all sensor_configurations.
 
         :param fields: The field of the sensor_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
-        :returns: 'config': list of sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees)), 'virtual' (Boolean)
+        :type fields: list
+        :returns: 'config': list of sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees)), 'room' (Byte), 'virtual' (Boolean)
+        :rtype: dict
         """
-        self.check_token(token)
-        fields = None if fields is None else json.loads(fields)
-        return self.__success(config=self.__gateway_api.get_sensor_configurations(fields))
+        return {'config': self._gateway_api.get_sensor_configurations(fields)}
 
-    @cherrypy.expose
-    def set_sensor_configuration(self, token, config):
+    @openmotics_api(auth=True, check=types(config='json'))
+    def set_sensor_configuration(self, config):
         """
         Set one sensor_configuration.
 
-        :param config: The sensor_configuration to set
-        :type config: sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees)), 'virtual' (Boolean)
+        :param config: The sensor_configuration to set: sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees)), 'room' (Byte), 'virtual' (Boolean)
+        :type config: dict
         """
-        self.check_token(token)
-        self.__gateway_api.set_sensor_configuration(json.loads(config))
-        return self.__success()
+        self._gateway_api.set_sensor_configuration(config)
+        return {}
 
-    @cherrypy.expose
-    def set_sensor_configurations(self, token, config):
+    @openmotics_api(auth=True, check=types(config='json'))
+    def set_sensor_configurations(self, config):
         """
         Set multiple sensor_configurations.
 
-        :param config: The list of sensor_configurations to set
-        :type config: list of sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees)), 'virtual' (Boolean)
+        :param config: The list of sensor_configurations to set: list of sensor_configuration dict: contains 'id' (Id), 'name' (String[16]), 'offset' (SignedTemp(-7.5 to 7.5 degrees)), 'room' (Byte), 'virtual' (Boolean)
+        :type config: list
         """
-        self.check_token(token)
-        self.__gateway_api.set_sensor_configurations(json.loads(config))
-        return self.__success()
+        self._gateway_api.set_sensor_configurations(config)
+        return {}
 
-    @cherrypy.expose
-    def get_pump_group_configuration(self, token, id, fields=None):
+    @openmotics_api(auth=True, check=types(id=int, fields='json'))
+    def get_pump_group_configuration(self, id, fields=None):
         """
         Get a specific pump_group_configuration defined by its id.
 
         :param id: The id of the pump_group_configuration
-        :type id: Id
+        :type id: int
         :param fields: The field of the pump_group_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
-        :returns: 'config': pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32])
+        :type fields: list
+        :returns: 'config': pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32]), 'room' (Byte)
+        :rtype: dict
         """
-        self.check_token(token)
-        fields = None if fields is None else json.loads(fields)
-        return self.__success(config=self.__gateway_api.get_pump_group_configuration(int(id), fields))
+        return {'config': self._gateway_api.get_pump_group_configuration(id, fields)}
 
-    @cherrypy.expose
-    def get_pump_group_configurations(self, token, fields=None):
+    @openmotics_api(auth=True, check=types(fields='json'))
+    def get_pump_group_configurations(self, fields=None):
         """
         Get all pump_group_configurations.
 
         :param fields: The field of the pump_group_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
-        :returns: 'config': list of pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32])
+        :type fields: list
+        :returns: 'config': list of pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32]), 'room' (Byte)
+        :rtype: dict
         """
-        self.check_token(token)
-        fields = None if fields is None else json.loads(fields)
-        return self.__success(config=self.__gateway_api.get_pump_group_configurations(fields))
+        return {'config': self._gateway_api.get_pump_group_configurations(fields)}
 
-    @cherrypy.expose
-    def set_pump_group_configuration(self, token, config):
+    @openmotics_api(auth=True, check=types(config='json'))
+    def set_pump_group_configuration(self, config):
         """
         Set one pump_group_configuration.
 
-        :param config: The pump_group_configuration to set
-        :type config: pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32])
+        :param config: The pump_group_configuration to set: pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32]), 'room' (Byte)
+        :type config: dict
         """
-        self.check_token(token)
-        self.__gateway_api.set_pump_group_configuration(json.loads(config))
-        return self.__success()
+        self._gateway_api.set_pump_group_configuration(config)
+        return {}
 
-    @cherrypy.expose
-    def set_pump_group_configurations(self, token, config):
+    @openmotics_api(auth=True, check=types(config='json'))
+    def set_pump_group_configurations(self, config):
         """
         Set multiple pump_group_configurations.
 
-        :param config: The list of pump_group_configurations to set
-        :type config: list of pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32])
+        :param config: The list of pump_group_configurations to set: list of pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32]), 'room' (Byte)
+        :type config: list
         """
-        self.check_token(token)
-        self.__gateway_api.set_pump_group_configurations(json.loads(config))
-        return self.__success()
+        self._gateway_api.set_pump_group_configurations(config)
+        return {}
 
-    @cherrypy.expose
-    def get_cooling_configuration(self, token, id, fields=None):
+    @openmotics_api(auth=True, check=types(id=int, fields='json'))
+    def get_cooling_configuration(self, id, fields=None):
         """
         Get a specific cooling_configuration defined by its id.
 
         :param id: The id of the cooling_configuration
-        :type id: Id
+        :type id: int
         :param fields: The field of the cooling_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
-        :returns: 'config': cooling_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
+        :type fields: list
+        :returns: 'config': cooling_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'room' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
+        :rtype: dict
         """
-        self.check_token(token)
-        fields = None if fields is None else json.loads(fields)
-        return self.__success(config=self.__gateway_api.get_cooling_configuration(int(id), fields))
+        return {'config': self._gateway_api.get_cooling_configuration(id, fields)}
 
-    @cherrypy.expose
-    def get_cooling_configurations(self, token, fields=None):
+    @openmotics_api(auth=True, check=types(fields='json'))
+    def get_cooling_configurations(self, fields=None):
         """
         Get all cooling_configurations.
 
         :param fields: The field of the cooling_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
-        :returns: 'config': list of cooling_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
+        :type fields: list
+        :returns: 'config': list of cooling_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'room' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
+        :rtype: dict
         """
-        self.check_token(token)
-        fields = None if fields is None else json.loads(fields)
-        return self.__success(config=self.__gateway_api.get_cooling_configurations(fields))
+        return {'config': self._gateway_api.get_cooling_configurations(fields)}
 
-    @cherrypy.expose
-    def set_cooling_configuration(self, token, config):
+    @openmotics_api(auth=True, check=types(config='json'))
+    def set_cooling_configuration(self, config):
         """
         Set one cooling_configuration.
 
-        :param config: The cooling_configuration to set
-        :type config: cooling_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
+        :param config: The cooling_configuration to set: cooling_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'room' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
+        :type config: dict
         """
-        self.check_token(token)
-        self.__gateway_api.set_cooling_configuration(json.loads(config))
-        return self.__success()
+        self._gateway_api.set_cooling_configuration(config)
+        return {}
 
-    @cherrypy.expose
-    def set_cooling_configurations(self, token, config):
+    @openmotics_api(auth=True, check=types(config='json'))
+    def set_cooling_configurations(self, config):
         """
         Set multiple cooling_configurations.
 
-        :param config: The list of cooling_configurations to set
-        :type config: list of cooling_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
+        :param config: The list of cooling_configurations to set: list of cooling_configuration dict: contains 'id' (Id), 'auto_fri' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_mon' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sat' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_sun' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_thu' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_tue' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'auto_wed' ([temp_n(Temp),start_d1(Time),stop_d1(Time),temp_d1(Temp),start_d2(Time),stop_d2(Time),temp_d2(Temp)]), 'name' (String[16]), 'output0' (Byte), 'output1' (Byte), 'permanent_manual' (Boolean), 'pid_d' (Byte), 'pid_i' (Byte), 'pid_int' (Byte), 'pid_p' (Byte), 'room' (Byte), 'sensor' (Byte), 'setp0' (Temp), 'setp1' (Temp), 'setp2' (Temp), 'setp3' (Temp), 'setp4' (Temp), 'setp5' (Temp)
+        :type config: list
         """
-        self.check_token(token)
-        self.__gateway_api.set_cooling_configurations(json.loads(config))
-        return self.__success()
+        self._gateway_api.set_cooling_configurations(config)
+        return {}
 
-    @cherrypy.expose
-    def get_cooling_pump_group_configuration(self, token, id, fields=None):
+    @openmotics_api(auth=True, check=types(id=int, fields='json'))
+    def get_cooling_pump_group_configuration(self, id, fields=None):
         """
         Get a specific cooling_pump_group_configuration defined by its id.
 
         :param id: The id of the cooling_pump_group_configuration
-        :type id: Id
+        :type id: int
         :param fields: The field of the cooling_pump_group_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
-        :returns: 'config': cooling_pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32])
+        :type fields: list
+        :returns: 'config': cooling_pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32]), 'room' (Byte)
+        :rtype: dict
         """
-        self.check_token(token)
-        fields = None if fields is None else json.loads(fields)
-        return self.__success(config=self.__gateway_api.get_cooling_pump_group_configuration(int(id), fields))
+        return {'config': self._gateway_api.get_cooling_pump_group_configuration(id, fields)}
 
-    @cherrypy.expose
-    def get_cooling_pump_group_configurations(self, token, fields=None):
+    @openmotics_api(auth=True, check=types(fields='json'))
+    def get_cooling_pump_group_configurations(self, fields=None):
         """
         Get all cooling_pump_group_configurations.
 
         :param fields: The field of the cooling_pump_group_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
-        :returns: 'config': list of cooling_pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32])
+        :type fields: list
+        :returns: 'config': list of cooling_pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32]), 'room' (Byte)
+        :rtype: dict
         """
-        self.check_token(token)
-        fields = None if fields is None else json.loads(fields)
-        return self.__success(config=self.__gateway_api.get_cooling_pump_group_configurations(fields))
+        return {'config': self._gateway_api.get_cooling_pump_group_configurations(fields)}
 
-    @cherrypy.expose
-    def set_cooling_pump_group_configuration(self, token, config):
+    @openmotics_api(auth=True, check=types(config='json'))
+    def set_cooling_pump_group_configuration(self, config):
         """
         Set one cooling_pump_group_configuration.
 
-        :param config: The cooling_pump_group_configuration to set
-        :type config: cooling_pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32])
+        :param config: The cooling_pump_group_configuration to set: cooling_pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32]), 'room' (Byte)
+        :type config: dict
         """
-        self.check_token(token)
-        self.__gateway_api.set_cooling_pump_group_configuration(json.loads(config))
-        return self.__success()
+        self._gateway_api.set_cooling_pump_group_configuration(config)
+        return {}
 
-    @cherrypy.expose
-    def set_cooling_pump_group_configurations(self, token, config):
+    @openmotics_api(auth=True, check=types(config='json'))
+    def set_cooling_pump_group_configurations(self, config):
         """
         Set multiple cooling_pump_group_configurations.
 
-        :param config: The list of cooling_pump_group_configurations to set
-        :type config: list of cooling_pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32])
+        :param config: The list of cooling_pump_group_configurations to set: list of cooling_pump_group_configuration dict: contains 'id' (Id), 'outputs' (CSV[32]), 'room' (Byte)
+        :type config: list
         """
-        self.check_token(token)
-        self.__gateway_api.set_cooling_pump_group_configurations(json.loads(config))
-        return self.__success()
+        self._gateway_api.set_cooling_pump_group_configurations(config)
+        return {}
 
-    @cherrypy.expose
-    def get_global_rtd10_configuration(self, token, fields=None):
+    @openmotics_api(auth=True, check=types(fields='json'))
+    def get_global_rtd10_configuration(self, fields=None):
         """
         Get the global_rtd10_configuration.
 
         :param fields: The field of the global_rtd10_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
+        :type fields: list
         :returns: 'config': global_rtd10_configuration dict: contains 'output_value_cooling_16' (Byte), 'output_value_cooling_16_5' (Byte), 'output_value_cooling_17' (Byte), 'output_value_cooling_17_5' (Byte), 'output_value_cooling_18' (Byte), 'output_value_cooling_18_5' (Byte), 'output_value_cooling_19' (Byte), 'output_value_cooling_19_5' (Byte), 'output_value_cooling_20' (Byte), 'output_value_cooling_20_5' (Byte), 'output_value_cooling_21' (Byte), 'output_value_cooling_21_5' (Byte), 'output_value_cooling_22' (Byte), 'output_value_cooling_22_5' (Byte), 'output_value_cooling_23' (Byte), 'output_value_cooling_23_5' (Byte), 'output_value_cooling_24' (Byte), 'output_value_heating_16' (Byte), 'output_value_heating_16_5' (Byte), 'output_value_heating_17' (Byte), 'output_value_heating_17_5' (Byte), 'output_value_heating_18' (Byte), 'output_value_heating_18_5' (Byte), 'output_value_heating_19' (Byte), 'output_value_heating_19_5' (Byte), 'output_value_heating_20' (Byte), 'output_value_heating_20_5' (Byte), 'output_value_heating_21' (Byte), 'output_value_heating_21_5' (Byte), 'output_value_heating_22' (Byte), 'output_value_heating_22_5' (Byte), 'output_value_heating_23' (Byte), 'output_value_heating_23_5' (Byte), 'output_value_heating_24' (Byte)
+        :rtype: dict
         """
-        self.check_token(token)
-        fields = None if fields is None else json.loads(fields)
-        return self.__success(config=self.__gateway_api.get_global_rtd10_configuration(fields))
+        return {'config': self._gateway_api.get_global_rtd10_configuration(fields)}
 
-    @cherrypy.expose
-    def set_global_rtd10_configuration(self, token, config):
+    @openmotics_api(auth=True, check=types(config='json'))
+    def set_global_rtd10_configuration(self, config):
         """
         Set the global_rtd10_configuration.
 
-        :param config: The global_rtd10_configuration to set
-        :type config: global_rtd10_configuration dict: contains 'output_value_cooling_16' (Byte), 'output_value_cooling_16_5' (Byte), 'output_value_cooling_17' (Byte), 'output_value_cooling_17_5' (Byte), 'output_value_cooling_18' (Byte), 'output_value_cooling_18_5' (Byte), 'output_value_cooling_19' (Byte), 'output_value_cooling_19_5' (Byte), 'output_value_cooling_20' (Byte), 'output_value_cooling_20_5' (Byte), 'output_value_cooling_21' (Byte), 'output_value_cooling_21_5' (Byte), 'output_value_cooling_22' (Byte), 'output_value_cooling_22_5' (Byte), 'output_value_cooling_23' (Byte), 'output_value_cooling_23_5' (Byte), 'output_value_cooling_24' (Byte), 'output_value_heating_16' (Byte), 'output_value_heating_16_5' (Byte), 'output_value_heating_17' (Byte), 'output_value_heating_17_5' (Byte), 'output_value_heating_18' (Byte), 'output_value_heating_18_5' (Byte), 'output_value_heating_19' (Byte), 'output_value_heating_19_5' (Byte), 'output_value_heating_20' (Byte), 'output_value_heating_20_5' (Byte), 'output_value_heating_21' (Byte), 'output_value_heating_21_5' (Byte), 'output_value_heating_22' (Byte), 'output_value_heating_22_5' (Byte), 'output_value_heating_23' (Byte), 'output_value_heating_23_5' (Byte), 'output_value_heating_24' (Byte)
+        :param config: The global_rtd10_configuration to set: global_rtd10_configuration dict: contains 'output_value_cooling_16' (Byte), 'output_value_cooling_16_5' (Byte), 'output_value_cooling_17' (Byte), 'output_value_cooling_17_5' (Byte), 'output_value_cooling_18' (Byte), 'output_value_cooling_18_5' (Byte), 'output_value_cooling_19' (Byte), 'output_value_cooling_19_5' (Byte), 'output_value_cooling_20' (Byte), 'output_value_cooling_20_5' (Byte), 'output_value_cooling_21' (Byte), 'output_value_cooling_21_5' (Byte), 'output_value_cooling_22' (Byte), 'output_value_cooling_22_5' (Byte), 'output_value_cooling_23' (Byte), 'output_value_cooling_23_5' (Byte), 'output_value_cooling_24' (Byte), 'output_value_heating_16' (Byte), 'output_value_heating_16_5' (Byte), 'output_value_heating_17' (Byte), 'output_value_heating_17_5' (Byte), 'output_value_heating_18' (Byte), 'output_value_heating_18_5' (Byte), 'output_value_heating_19' (Byte), 'output_value_heating_19_5' (Byte), 'output_value_heating_20' (Byte), 'output_value_heating_20_5' (Byte), 'output_value_heating_21' (Byte), 'output_value_heating_21_5' (Byte), 'output_value_heating_22' (Byte), 'output_value_heating_22_5' (Byte), 'output_value_heating_23' (Byte), 'output_value_heating_23_5' (Byte), 'output_value_heating_24' (Byte)
+        :type config: dict
         """
-        self.check_token(token)
-        self.__gateway_api.set_global_rtd10_configuration(json.loads(config))
-        return self.__success()
+        self._gateway_api.set_global_rtd10_configuration(config)
+        return {}
 
-    @cherrypy.expose
-    def get_rtd10_heating_configuration(self, token, id, fields=None):
+    @openmotics_api(auth=True, check=types(id=int, fields='json'))
+    def get_rtd10_heating_configuration(self, id, fields=None):
         """
         Get a specific rtd10_heating_configuration defined by its id.
 
         :param id: The id of the rtd10_heating_configuration
-        :type id: Id
+        :type id: int
         :param fields: The field of the rtd10_heating_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
-        :returns: 'config': rtd10_heating_configuration dict: contains 'id' (Id), 'mode_output' (Byte), 'mode_value' (Byte), 'on_off_output' (Byte), 'poke_angle_output' (Byte), 'poke_angle_value' (Byte), 'temp_setpoint_output' (Byte), 'ventilation_speed_output' (Byte), 'ventilation_speed_value' (Byte)
+        :type fields: list
+        :returns: 'config': rtd10_heating_configuration dict: contains 'id' (Id), 'mode_output' (Byte), 'mode_value' (Byte), 'on_off_output' (Byte), 'poke_angle_output' (Byte), 'poke_angle_value' (Byte), 'room' (Byte), 'temp_setpoint_output' (Byte), 'ventilation_speed_output' (Byte), 'ventilation_speed_value' (Byte)
+        :rtype: dict
         """
-        self.check_token(token)
-        fields = None if fields is None else json.loads(fields)
-        return self.__success(config=self.__gateway_api.get_rtd10_heating_configuration(int(id), fields))
+        return {'config': self._gateway_api.get_rtd10_heating_configuration(id, fields)}
 
-    @cherrypy.expose
-    def get_rtd10_heating_configurations(self, token, fields=None):
+    @openmotics_api(auth=True, check=types(fields='json'))
+    def get_rtd10_heating_configurations(self, fields=None):
         """
         Get all rtd10_heating_configurations.
 
         :param fields: The field of the rtd10_heating_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
-        :returns: 'config': list of rtd10_heating_configuration dict: contains 'id' (Id), 'mode_output' (Byte), 'mode_value' (Byte), 'on_off_output' (Byte), 'poke_angle_output' (Byte), 'poke_angle_value' (Byte), 'temp_setpoint_output' (Byte), 'ventilation_speed_output' (Byte), 'ventilation_speed_value' (Byte)
+        :type fields: list
+        :returns: 'config': list of rtd10_heating_configuration dict: contains 'id' (Id), 'mode_output' (Byte), 'mode_value' (Byte), 'on_off_output' (Byte), 'poke_angle_output' (Byte), 'poke_angle_value' (Byte), 'room' (Byte), 'temp_setpoint_output' (Byte), 'ventilation_speed_output' (Byte), 'ventilation_speed_value' (Byte)
+        :rtype: dict
         """
-        self.check_token(token)
-        fields = None if fields is None else json.loads(fields)
-        return self.__success(config=self.__gateway_api.get_rtd10_heating_configurations(fields))
+        return {'config': self._gateway_api.get_rtd10_heating_configurations(fields)}
 
-    @cherrypy.expose
-    def set_rtd10_heating_configuration(self, token, config):
+    @openmotics_api(auth=True, check=types(config='json'))
+    def set_rtd10_heating_configuration(self, config):
         """
         Set one rtd10_heating_configuration.
 
-        :param config: The rtd10_heating_configuration to set
-        :type config: rtd10_heating_configuration dict: contains 'id' (Id), 'mode_output' (Byte), 'mode_value' (Byte), 'on_off_output' (Byte), 'poke_angle_output' (Byte), 'poke_angle_value' (Byte), 'temp_setpoint_output' (Byte), 'ventilation_speed_output' (Byte), 'ventilation_speed_value' (Byte)
+        :param config: The rtd10_heating_configuration to set: rtd10_heating_configuration dict: contains 'id' (Id), 'mode_output' (Byte), 'mode_value' (Byte), 'on_off_output' (Byte), 'poke_angle_output' (Byte), 'poke_angle_value' (Byte), 'room' (Byte), 'temp_setpoint_output' (Byte), 'ventilation_speed_output' (Byte), 'ventilation_speed_value' (Byte)
+        :type config: dict
         """
-        self.check_token(token)
-        self.__gateway_api.set_rtd10_heating_configuration(json.loads(config))
-        return self.__success()
+        self._gateway_api.set_rtd10_heating_configuration(config)
+        return {}
 
-    @cherrypy.expose
-    def set_rtd10_heating_configurations(self, token, config):
+    @openmotics_api(auth=True, check=types(config='json'))
+    def set_rtd10_heating_configurations(self, config):
         """
         Set multiple rtd10_heating_configurations.
 
-        :param config: The list of rtd10_heating_configurations to set
-        :type config: list of rtd10_heating_configuration dict: contains 'id' (Id), 'mode_output' (Byte), 'mode_value' (Byte), 'on_off_output' (Byte), 'poke_angle_output' (Byte), 'poke_angle_value' (Byte), 'temp_setpoint_output' (Byte), 'ventilation_speed_output' (Byte), 'ventilation_speed_value' (Byte)
+        :param config: The list of rtd10_heating_configurations to set: list of rtd10_heating_configuration dict: contains 'id' (Id), 'mode_output' (Byte), 'mode_value' (Byte), 'on_off_output' (Byte), 'poke_angle_output' (Byte), 'poke_angle_value' (Byte), 'room' (Byte), 'temp_setpoint_output' (Byte), 'ventilation_speed_output' (Byte), 'ventilation_speed_value' (Byte)
+        :type config: list
         """
-        self.check_token(token)
-        self.__gateway_api.set_rtd10_heating_configurations(json.loads(config))
-        return self.__success()
+        self._gateway_api.set_rtd10_heating_configurations(config)
+        return {}
 
-    @cherrypy.expose
-    def get_rtd10_cooling_configuration(self, token, id, fields=None):
+    @openmotics_api(auth=True, check=types(id=int, fields='json'))
+    def get_rtd10_cooling_configuration(self, id, fields=None):
         """
         Get a specific rtd10_cooling_configuration defined by its id.
 
         :param id: The id of the rtd10_cooling_configuration
-        :type id: Id
+        :type id: int
         :param fields: The field of the rtd10_cooling_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
-        :returns: 'config': rtd10_cooling_configuration dict: contains 'id' (Id), 'mode_output' (Byte), 'mode_value' (Byte), 'on_off_output' (Byte), 'poke_angle_output' (Byte), 'poke_angle_value' (Byte), 'temp_setpoint_output' (Byte), 'ventilation_speed_output' (Byte), 'ventilation_speed_value' (Byte)
+        :type fields: list
+        :returns: 'config': rtd10_cooling_configuration dict: contains 'id' (Id), 'mode_output' (Byte), 'mode_value' (Byte), 'on_off_output' (Byte), 'poke_angle_output' (Byte), 'poke_angle_value' (Byte), 'room' (Byte), 'temp_setpoint_output' (Byte), 'ventilation_speed_output' (Byte), 'ventilation_speed_value' (Byte)
+        :rtype: dict
         """
-        self.check_token(token)
-        fields = None if fields is None else json.loads(fields)
-        return self.__success(config=self.__gateway_api.get_rtd10_cooling_configuration(int(id), fields))
+        return {'config': self._gateway_api.get_rtd10_cooling_configuration(id, fields)}
 
-    @cherrypy.expose
-    def get_rtd10_cooling_configurations(self, token, fields=None):
+    @openmotics_api(auth=True, check=types(fields='json'))
+    def get_rtd10_cooling_configurations(self, fields=None):
         """
         Get all rtd10_cooling_configurations.
 
         :param fields: The field of the rtd10_cooling_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
-        :returns: 'config': list of rtd10_cooling_configuration dict: contains 'id' (Id), 'mode_output' (Byte), 'mode_value' (Byte), 'on_off_output' (Byte), 'poke_angle_output' (Byte), 'poke_angle_value' (Byte), 'temp_setpoint_output' (Byte), 'ventilation_speed_output' (Byte), 'ventilation_speed_value' (Byte)
+        :type fields: list
+        :returns: 'config': list of rtd10_cooling_configuration dict: contains 'id' (Id), 'mode_output' (Byte), 'mode_value' (Byte), 'on_off_output' (Byte), 'poke_angle_output' (Byte), 'poke_angle_value' (Byte), 'room' (Byte), 'temp_setpoint_output' (Byte), 'ventilation_speed_output' (Byte), 'ventilation_speed_value' (Byte)
+        :rtype: dict
         """
-        self.check_token(token)
-        fields = None if fields is None else json.loads(fields)
-        return self.__success(config=self.__gateway_api.get_rtd10_cooling_configurations(fields))
+        return {'config': self._gateway_api.get_rtd10_cooling_configurations(fields)}
 
-    @cherrypy.expose
-    def set_rtd10_cooling_configuration(self, token, config):
+    @openmotics_api(auth=True, check=types(config='json'))
+    def set_rtd10_cooling_configuration(self, config):
         """
         Set one rtd10_cooling_configuration.
 
-        :param config: The rtd10_cooling_configuration to set
-        :type config: rtd10_cooling_configuration dict: contains 'id' (Id), 'mode_output' (Byte), 'mode_value' (Byte), 'on_off_output' (Byte), 'poke_angle_output' (Byte), 'poke_angle_value' (Byte), 'temp_setpoint_output' (Byte), 'ventilation_speed_output' (Byte), 'ventilation_speed_value' (Byte)
+        :param config: The rtd10_cooling_configuration to set: rtd10_cooling_configuration dict: contains 'id' (Id), 'mode_output' (Byte), 'mode_value' (Byte), 'on_off_output' (Byte), 'poke_angle_output' (Byte), 'poke_angle_value' (Byte), 'room' (Byte), 'temp_setpoint_output' (Byte), 'ventilation_speed_output' (Byte), 'ventilation_speed_value' (Byte)
+        :type config: dict
         """
-        self.check_token(token)
-        self.__gateway_api.set_rtd10_cooling_configuration(json.loads(config))
-        return self.__success()
+        self._gateway_api.set_rtd10_cooling_configuration(config)
+        return {}
 
-    @cherrypy.expose
-    def set_rtd10_cooling_configurations(self, token, config):
+    @openmotics_api(auth=True, check=types(config='json'))
+    def set_rtd10_cooling_configurations(self, config):
         """
         Set multiple rtd10_cooling_configurations.
 
-        :param config: The list of rtd10_cooling_configurations to set
-        :type config: list of rtd10_cooling_configuration dict: contains 'id' (Id), 'mode_output' (Byte), 'mode_value' (Byte), 'on_off_output' (Byte), 'poke_angle_output' (Byte), 'poke_angle_value' (Byte), 'temp_setpoint_output' (Byte), 'ventilation_speed_output' (Byte), 'ventilation_speed_value' (Byte)
+        :param config: The list of rtd10_cooling_configurations to set: list of rtd10_cooling_configuration dict: contains 'id' (Id), 'mode_output' (Byte), 'mode_value' (Byte), 'on_off_output' (Byte), 'poke_angle_output' (Byte), 'poke_angle_value' (Byte), 'room' (Byte), 'temp_setpoint_output' (Byte), 'ventilation_speed_output' (Byte), 'ventilation_speed_value' (Byte)
+        :type config: list
         """
-        self.check_token(token)
-        self.__gateway_api.set_rtd10_cooling_configurations(json.loads(config))
-        return self.__success()
+        self._gateway_api.set_rtd10_cooling_configurations(config)
+        return {}
 
-    @cherrypy.expose
-    def get_group_action_configuration(self, token, id, fields=None):
+    @openmotics_api(auth=True, check=types(id=int, fields='json'))
+    def get_group_action_configuration(self, id, fields=None):
         """
         Get a specific group_action_configuration defined by its id.
 
         :param id: The id of the group_action_configuration
-        :type id: Id
+        :type id: int
         :param fields: The field of the group_action_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
+        :type fields: list
         :returns: 'config': group_action_configuration dict: contains 'id' (Id), 'actions' (Actions[16]), 'name' (String[16])
+        :rtype: dict
         """
-        self.check_token(token)
-        fields = None if fields is None else json.loads(fields)
-        return self.__success(config=self.__gateway_api.get_group_action_configuration(int(id), fields))
+        return {'config': self._gateway_api.get_group_action_configuration(id, fields)}
 
-    @cherrypy.expose
-    def get_group_action_configurations(self, token, fields=None):
+    @openmotics_api(auth=True, check=types(fields='json'))
+    def get_group_action_configurations(self, fields=None):
         """
         Get all group_action_configurations.
 
         :param fields: The field of the group_action_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
+        :type fields: list
         :returns: 'config': list of group_action_configuration dict: contains 'id' (Id), 'actions' (Actions[16]), 'name' (String[16])
+        :rtype: dict
         """
-        self.check_token(token)
-        fields = None if fields is None else json.loads(fields)
-        return self.__success(config=self.__gateway_api.get_group_action_configurations(fields))
+        return {'config': self._gateway_api.get_group_action_configurations(fields)}
 
-    @cherrypy.expose
-    def set_group_action_configuration(self, token, config):
+    @openmotics_api(auth=True, check=types(config='json'))
+    def set_group_action_configuration(self, config):
         """
         Set one group_action_configuration.
 
-        :param config: The group_action_configuration to set
-        :type config: group_action_configuration dict: contains 'id' (Id), 'actions' (Actions[16]), 'name' (String[16])
+        :param config: The group_action_configuration to set: group_action_configuration dict: contains 'id' (Id), 'actions' (Actions[16]), 'name' (String[16])
+        :type config: dict
         """
-        self.check_token(token)
-        self.__gateway_api.set_group_action_configuration(json.loads(config))
-        return self.__success()
+        self._gateway_api.set_group_action_configuration(config)
+        return {}
 
-    @cherrypy.expose
-    def set_group_action_configurations(self, token, config):
+    @openmotics_api(auth=True, check=types(config='json'))
+    def set_group_action_configurations(self, config):
         """
         Set multiple group_action_configurations.
 
-        :param config: The list of group_action_configurations to set
-        :type config: list of group_action_configuration dict: contains 'id' (Id), 'actions' (Actions[16]), 'name' (String[16])
+        :param config: The list of group_action_configurations to set: list of group_action_configuration dict: contains 'id' (Id), 'actions' (Actions[16]), 'name' (String[16])
+        :type config: list
         """
-        self.check_token(token)
-        self.__gateway_api.set_group_action_configurations(json.loads(config))
-        return self.__success()
+        self._gateway_api.set_group_action_configurations(config)
+        return {}
 
-    @cherrypy.expose
-    def get_scheduled_action_configuration(self, token, id, fields=None):
+    @openmotics_api(auth=True, check=types(id=int, fields='json'))
+    def get_scheduled_action_configuration(self, id, fields=None):
         """
         Get a specific scheduled_action_configuration defined by its id.
 
         :param id: The id of the scheduled_action_configuration
-        :type id: Id
+        :type id: int
         :param fields: The field of the scheduled_action_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
+        :type fields: list
         :returns: 'config': scheduled_action_configuration dict: contains 'id' (Id), 'action' (Actions[1]), 'day' (Byte), 'hour' (Byte), 'minute' (Byte)
+        :rtype: dict
         """
-        self.check_token(token)
-        fields = None if fields is None else json.loads(fields)
-        return self.__success(config=self.__gateway_api.get_scheduled_action_configuration(int(id), fields))
+        return {'config': self._gateway_api.get_scheduled_action_configuration(id, fields)}
 
-    @cherrypy.expose
-    def get_scheduled_action_configurations(self, token, fields=None):
+    @openmotics_api(auth=True, check=types(fields='json'))
+    def get_scheduled_action_configurations(self, fields=None):
         """
         Get all scheduled_action_configurations.
 
         :param fields: The field of the scheduled_action_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
+        :type fields: list
         :returns: 'config': list of scheduled_action_configuration dict: contains 'id' (Id), 'action' (Actions[1]), 'day' (Byte), 'hour' (Byte), 'minute' (Byte)
+        :rtype: dict
         """
-        self.check_token(token)
-        fields = None if fields is None else json.loads(fields)
-        return self.__success(config=self.__gateway_api.get_scheduled_action_configurations(fields))
+        return {'config': self._gateway_api.get_scheduled_action_configurations(fields)}
 
-    @cherrypy.expose
-    def set_scheduled_action_configuration(self, token, config):
+    @openmotics_api(auth=True, check=types(config='json'))
+    def set_scheduled_action_configuration(self, config):
         """
         Set one scheduled_action_configuration.
 
-        :param config: The scheduled_action_configuration to set
-        :type config: scheduled_action_configuration dict: contains 'id' (Id), 'action' (Actions[1]), 'day' (Byte), 'hour' (Byte), 'minute' (Byte)
+        :param config: The scheduled_action_configuration to set: scheduled_action_configuration dict: contains 'id' (Id), 'action' (Actions[1]), 'day' (Byte), 'hour' (Byte), 'minute' (Byte)
+        :type config: dict
         """
-        self.check_token(token)
-        self.__gateway_api.set_scheduled_action_configuration(json.loads(config))
-        return self.__success()
+        self._gateway_api.set_scheduled_action_configuration(config)
+        return {}
 
-    @cherrypy.expose
-    def set_scheduled_action_configurations(self, token, config):
+    @openmotics_api(auth=True, check=types(config='json'))
+    def set_scheduled_action_configurations(self, config):
         """
         Set multiple scheduled_action_configurations.
 
-        :param config: The list of scheduled_action_configurations to set
-        :type config: list of scheduled_action_configuration dict: contains 'id' (Id), 'action' (Actions[1]), 'day' (Byte), 'hour' (Byte), 'minute' (Byte)
+        :param config: The list of scheduled_action_configurations to set: list of scheduled_action_configuration dict: contains 'id' (Id), 'action' (Actions[1]), 'day' (Byte), 'hour' (Byte), 'minute' (Byte)
+        :type config: list
         """
-        self.check_token(token)
-        self.__gateway_api.set_scheduled_action_configurations(json.loads(config))
-        return self.__success()
+        self._gateway_api.set_scheduled_action_configurations(config)
+        return {}
 
-    @cherrypy.expose
-    def get_pulse_counter_configuration(self, token, id, fields=None):
+    @openmotics_api(auth=True, check=types(id=int, fields='json'))
+    def get_pulse_counter_configuration(self, id, fields=None):
         """
         Get a specific pulse_counter_configuration defined by its id.
 
         :param id: The id of the pulse_counter_configuration
-        :type id: Id
+        :type id: int
         :param fields: The field of the pulse_counter_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
-        :returns: 'config': pulse_counter_configuration dict: contains 'id' (Id), 'input' (Byte), 'name' (String[16])
+        :type fields: list
+        :returns: 'config': pulse_counter_configuration dict: contains 'id' (Id), 'input' (Byte), 'name' (String[16]), 'room' (Byte)
+        :rtype: dict
         """
-        self.check_token(token)
-        fields = None if fields is None else json.loads(fields)
-        return self.__success(config=self.__gateway_api.get_pulse_counter_configuration(int(id), fields))
+        return {'config': self._gateway_api.get_pulse_counter_configuration(id, fields)}
 
-    @cherrypy.expose
-    def get_pulse_counter_configurations(self, token, fields=None):
+    @openmotics_api(auth=True, check=types(fields='json'))
+    def get_pulse_counter_configurations(self, fields=None):
         """
         Get all pulse_counter_configurations.
 
         :param fields: The field of the pulse_counter_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
-        :returns: 'config': list of pulse_counter_configuration dict: contains 'id' (Id), 'input' (Byte), 'name' (String[16])
+        :type fields: list
+        :returns: 'config': list of pulse_counter_configuration dict: contains 'id' (Id), 'input' (Byte), 'name' (String[16]), 'room' (Byte)
+        :rtype: dict
         """
-        self.check_token(token)
-        fields = None if fields is None else json.loads(fields)
-        return self.__success(config=self.__gateway_api.get_pulse_counter_configurations(fields))
+        return {'config': self._gateway_api.get_pulse_counter_configurations(fields)}
 
-    @cherrypy.expose
-    def set_pulse_counter_configuration(self, token, config):
+    @openmotics_api(auth=True, check=types(config='json'))
+    def set_pulse_counter_configuration(self, config):
         """
         Set one pulse_counter_configuration.
 
-        :param config: The pulse_counter_configuration to set
-        :type config: pulse_counter_configuration dict: contains 'id' (Id), 'input' (Byte), 'name' (String[16])
+        :param config: The pulse_counter_configuration to set: pulse_counter_configuration dict: contains 'id' (Id), 'input' (Byte), 'name' (String[16]), 'room' (Byte)
+        :type config: dict
         """
-        self.check_token(token)
-        self.__gateway_api.set_pulse_counter_configuration(json.loads(config))
-        return self.__success()
+        self._gateway_api.set_pulse_counter_configuration(config)
+        return {}
 
-    @cherrypy.expose
-    def set_pulse_counter_configurations(self, token, config):
+    @openmotics_api(auth=True, check=types(config='json'))
+    def set_pulse_counter_configurations(self, config):
         """
         Set multiple pulse_counter_configurations.
 
-        :param config: The list of pulse_counter_configurations to set
-        :type config: list of pulse_counter_configuration dict: contains 'id' (Id), 'input' (Byte), 'name' (String[16])
+        :param config: The list of pulse_counter_configurations to set: list of pulse_counter_configuration dict: contains 'id' (Id), 'input' (Byte), 'name' (String[16]), 'room' (Byte)
+        :type config: list
         """
-        self.check_token(token)
-        self.__gateway_api.set_pulse_counter_configurations(json.loads(config))
-        return self.__success()
+        self._gateway_api.set_pulse_counter_configurations(config)
+        return {}
 
-    @cherrypy.expose
-    def get_startup_action_configuration(self, token, fields=None):
+    @openmotics_api(auth=True, check=types(fields='json'))
+    def get_startup_action_configuration(self, fields=None):
         """
         Get the startup_action_configuration.
 
         :param fields: The field of the startup_action_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
+        :type fields: list
         :returns: 'config': startup_action_configuration dict: contains 'actions' (Actions[100])
+        :rtype: dict
         """
-        self.check_token(token)
-        fields = None if fields is None else json.loads(fields)
-        return self.__success(config=self.__gateway_api.get_startup_action_configuration(fields))
+        return {'config': self._gateway_api.get_startup_action_configuration(fields)}
 
-    @cherrypy.expose
-    def set_startup_action_configuration(self, token, config):
+    @openmotics_api(auth=True, check=types(config='json'))
+    def set_startup_action_configuration(self, config):
         """
         Set the startup_action_configuration.
 
-        :param config: The startup_action_configuration to set
-        :type config: startup_action_configuration dict: contains 'actions' (Actions[100])
+        :param config: The startup_action_configuration to set: startup_action_configuration dict: contains 'actions' (Actions[100])
+        :type config: dict
         """
-        self.check_token(token)
-        self.__gateway_api.set_startup_action_configuration(json.loads(config))
-        return self.__success()
+        self._gateway_api.set_startup_action_configuration(config)
+        return {}
 
-    @cherrypy.expose
-    def get_dimmer_configuration(self, token, fields=None):
+    @openmotics_api(auth=True, check=types(fields='json'))
+    def get_dimmer_configuration(self, fields=None):
         """
         Get the dimmer_configuration.
 
         :param fields: The field of the dimmer_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
+        :type fields: list
         :returns: 'config': dimmer_configuration dict: contains 'dim_memory' (Byte), 'dim_step' (Byte), 'dim_wait_cycle' (Byte), 'min_dim_level' (Byte)
+        :rtype: dict
         """
-        self.check_token(token)
-        fields = None if fields is None else json.loads(fields)
-        return self.__success(config=self.__gateway_api.get_dimmer_configuration(fields))
+        return {'config': self._gateway_api.get_dimmer_configuration(fields)}
 
-    @cherrypy.expose
-    def set_dimmer_configuration(self, token, config):
+    @openmotics_api(auth=True, check=types(config='json'))
+    def set_dimmer_configuration(self, config):
         """
         Set the dimmer_configuration.
 
-        :param config: The dimmer_configuration to set
-        :type config: dimmer_configuration dict: contains 'dim_memory' (Byte), 'dim_step' (Byte), 'dim_wait_cycle' (Byte), 'min_dim_level' (Byte)
+        :param config: The dimmer_configuration to set: dimmer_configuration dict: contains 'dim_memory' (Byte), 'dim_step' (Byte), 'dim_wait_cycle' (Byte), 'min_dim_level' (Byte)
+        :type config: dict
         """
-        self.check_token(token)
-        self.__gateway_api.set_dimmer_configuration(json.loads(config))
-        return self.__success()
+        self._gateway_api.set_dimmer_configuration(config)
+        return {}
 
-    @cherrypy.expose
-    def get_global_thermostat_configuration(self, token, fields=None):
+    @openmotics_api(auth=True, check=types(fields='json'))
+    def get_global_thermostat_configuration(self, fields=None):
         """
         Get the global_thermostat_configuration.
 
         :param fields: The field of the global_thermostat_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
+        :type fields: list
         :returns: 'config': global_thermostat_configuration dict: contains 'outside_sensor' (Byte), 'pump_delay' (Byte), 'switch_to_cooling_output_0' (Byte), 'switch_to_cooling_output_1' (Byte), 'switch_to_cooling_output_2' (Byte), 'switch_to_cooling_output_3' (Byte), 'switch_to_cooling_value_0' (Byte), 'switch_to_cooling_value_1' (Byte), 'switch_to_cooling_value_2' (Byte), 'switch_to_cooling_value_3' (Byte), 'switch_to_heating_output_0' (Byte), 'switch_to_heating_output_1' (Byte), 'switch_to_heating_output_2' (Byte), 'switch_to_heating_output_3' (Byte), 'switch_to_heating_value_0' (Byte), 'switch_to_heating_value_1' (Byte), 'switch_to_heating_value_2' (Byte), 'switch_to_heating_value_3' (Byte), 'threshold_temp' (Temp)
+        :rtype: str
         """
-        self.check_token(token)
-        fields = None if fields is None else json.loads(fields)
-        return self.__success(config=self.__gateway_api.get_global_thermostat_configuration(fields))
+        return {'config': self._gateway_api.get_global_thermostat_configuration(fields)}
 
-    @cherrypy.expose
-    def set_global_thermostat_configuration(self, token, config):
+    @openmotics_api(auth=True, check=types(config='json'))
+    def set_global_thermostat_configuration(self, config):
         """
         Set the global_thermostat_configuration.
 
-        :param config: The global_thermostat_configuration to set
-        :type config: global_thermostat_configuration dict: contains 'outside_sensor' (Byte), 'pump_delay' (Byte), 'switch_to_cooling_output_0' (Byte), 'switch_to_cooling_output_1' (Byte), 'switch_to_cooling_output_2' (Byte), 'switch_to_cooling_output_3' (Byte), 'switch_to_cooling_value_0' (Byte), 'switch_to_cooling_value_1' (Byte), 'switch_to_cooling_value_2' (Byte), 'switch_to_cooling_value_3' (Byte), 'switch_to_heating_output_0' (Byte), 'switch_to_heating_output_1' (Byte), 'switch_to_heating_output_2' (Byte), 'switch_to_heating_output_3' (Byte), 'switch_to_heating_value_0' (Byte), 'switch_to_heating_value_1' (Byte), 'switch_to_heating_value_2' (Byte), 'switch_to_heating_value_3' (Byte), 'threshold_temp' (Temp)
+        :param config: The global_thermostat_configuration to set: global_thermostat_configuration dict: contains 'outside_sensor' (Byte), 'pump_delay' (Byte), 'switch_to_cooling_output_0' (Byte), 'switch_to_cooling_output_1' (Byte), 'switch_to_cooling_output_2' (Byte), 'switch_to_cooling_output_3' (Byte), 'switch_to_cooling_value_0' (Byte), 'switch_to_cooling_value_1' (Byte), 'switch_to_cooling_value_2' (Byte), 'switch_to_cooling_value_3' (Byte), 'switch_to_heating_output_0' (Byte), 'switch_to_heating_output_1' (Byte), 'switch_to_heating_output_2' (Byte), 'switch_to_heating_output_3' (Byte), 'switch_to_heating_value_0' (Byte), 'switch_to_heating_value_1' (Byte), 'switch_to_heating_value_2' (Byte), 'switch_to_heating_value_3' (Byte), 'threshold_temp' (Temp)
+        :type config: dict
         """
-        self.check_token(token)
-        self.__gateway_api.set_global_thermostat_configuration(json.loads(config))
-        return self.__success()
+        self._gateway_api.set_global_thermostat_configuration(config)
+        return {}
 
-    @cherrypy.expose
-    def get_can_led_configuration(self, token, id, fields=None):
+    @openmotics_api(auth=True, check=types(id=int, fields='json'))
+    def get_can_led_configuration(self, id, fields=None):
         """
         Get a specific can_led_configuration defined by its id.
 
         :param id: The id of the can_led_configuration
-        :type id: Id
+        :type id: int
         :param fields: The field of the can_led_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
-        :returns: 'config': can_led_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte)
+        :type fields: list
+        :returns: 'config': can_led_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'room' (Byte)
+        :rtype: dict
         """
-        self.check_token(token)
-        fields = None if fields is None else json.loads(fields)
-        return self.__success(config=self.__gateway_api.get_can_led_configuration(int(id), fields))
+        return {'config': self._gateway_api.get_can_led_configuration(id, fields)}
 
-    @cherrypy.expose
-    def get_can_led_configurations(self, token, fields=None):
+    @openmotics_api(auth=True, check=types(fields='json'))
+    def get_can_led_configurations(self, fields=None):
         """
         Get all can_led_configurations.
 
         :param fields: The field of the can_led_configuration to get. (None gets all fields)
-        :type fields: Json encoded list of strings
-        :returns: 'config': list of can_led_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte)
+        :type fields: list
+        :returns: 'config': list of can_led_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'room' (Byte)
+        :rtype: dict
         """
-        self.check_token(token)
-        fields = None if fields is None else json.loads(fields)
-        return self.__success(config=self.__gateway_api.get_can_led_configurations(fields))
+        return {'config': self._gateway_api.get_can_led_configurations(fields)}
 
-    @cherrypy.expose
-    def set_can_led_configuration(self, token, config):
+    @openmotics_api(auth=True, check=types(config='json'))
+    def set_can_led_configuration(self, config):
         """
         Set one can_led_configuration.
 
-        :param config: The can_led_configuration to set
-        :type config: can_led_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte)
+        :param config: The can_led_configuration to set: can_led_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'room' (Byte)
+        :type config: dict
         """
-        self.check_token(token)
-        self.__gateway_api.set_can_led_configuration(json.loads(config))
-        return self.__success()
+        self._gateway_api.set_can_led_configuration(config)
+        return {}
 
-    @cherrypy.expose
-    def set_can_led_configurations(self, token, config):
+    @openmotics_api(auth=True, check=types(config='json'))
+    def set_can_led_configurations(self, config):
         """
         Set multiple can_led_configurations.
 
-        :param config: The list of can_led_configurations to set
-        :type config: list of can_led_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte)
+        :param config: The list of can_led_configurations to set: list of can_led_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'room' (Byte)
+        :type config: list
         """
-        self.check_token(token)
-        self.__gateway_api.set_can_led_configurations(json.loads(config))
-        return self.__success()
+        self._gateway_api.set_can_led_configurations(config)
+        return {}
 
-    ###### End of the the autogenerated configuration api
+    @openmotics_api(auth=True, check=types(id=int, fields='json'))
+    def get_room_configuration(self, id, fields=None):
+        """
+        Get a specific room_configuration defined by its id.
 
-    @cherrypy.expose
-    def get_power_modules(self, token):
-        """ Get information on the power modules. The times format is a comma seperated list of
+        :param id: The id of the room_configuration
+        :type id: int
+        :param fields: The field of the room_configuration to get. (None gets all fields)
+        :type fields: list
+        :returns: 'config': room_configuration dict: contains 'id' (Id), 'floor' (Byte), 'name' (String)
+        :rtype: dict
+        """
+        return {'config': self._gateway_api.get_room_configuration(id, fields)}
+
+    @openmotics_api(auth=True, check=types(fields='json'))
+    def get_room_configurations(self, fields=None):
+        """
+        Get all room_configurations.
+
+        :param fields: The field of the room_configuration to get. (None gets all fields)
+        :type fields: list
+        :returns: 'config': list of room_configuration dict: contains 'id' (Id), 'floor' (Byte), 'name' (String)
+        :rtype: dict
+        """
+        return {'config': self._gateway_api.get_room_configurations(fields)}
+
+    @openmotics_api(auth=True, check=types(config='json'))
+    def set_room_configuration(self, config):
+        """
+        Set one room_configuration.
+
+        :param config: The room_configuration to set: room_configuration dict: contains 'id' (Id), 'floor' (Byte), 'name' (String)
+        :type config: dict
+        """
+        self._gateway_api.set_room_configuration(config)
+        return {}
+
+    @openmotics_api(auth=True, check=types(config='json'))
+    def set_room_configurations(self, config):
+        """
+        Set multiple room_configurations.
+
+        :param config: The list of room_configurations to set: list of room_configuration dict: contains 'id' (Id), 'floor' (Byte), 'name' (String)
+        :type config: list
+        """
+        self._gateway_api.set_room_configurations(config)
+        return {}
+
+    @openmotics_api(auth=True)
+    def get_reset_dirty_flag(self):
+        """
+        Gets the dirty flags, and immediately clears them
+        """
+        power_dirty = self._power_dirty
+        self._power_dirty = False
+        return {'eeprom': self._gateway_api.get_reset_eeprom_dirty_flag(),
+                'power': power_dirty}
+
+    @openmotics_api(auth=True)
+    def get_power_modules(self):
+        """
+        Get information on the power modules. The times format is a comma seperated list of
         HH:MM formatted times times (index 0 = start Monday, index 1 = stop Monday,
         index 2 = start Tuesday, ...).
 
         :returns: 'modules': list of dictionaries with the following keys: 'id', 'name', \
-        'address', 'input0', 'input1', 'input2', 'input3', 'input4', 'input5', 'input6', \
-        'input7', 'sensor0', 'sensor1', 'sensor2', 'sensor3', 'sensor4', 'sensor5', 'sensor6', \
-        'sensor7', 'times0', 'times1', 'times2', 'times3', 'times4', 'times5', 'times6', 'times7'.
+            'address', 'input0', 'input1', 'input2', 'input3', 'input4', 'input5', 'input6', \
+            'input7', 'sensor0', 'sensor1', 'sensor2', 'sensor3', 'sensor4', 'sensor5', 'sensor6', \
+            'sensor7', 'times0', 'times1', 'times2', 'times3', 'times4', 'times5', 'times6', 'times7'.
+        :rtype: dict
         """
-        self.check_token(token)
-        return self.__success(modules=self.__gateway_api.get_power_modules())
+        return {'modules': self._gateway_api.get_power_modules()}
 
-    @cherrypy.expose
-    def set_power_modules(self, token, modules):
-        """ Set information for the power modules.
+    @openmotics_api(auth=True)
+    def set_power_modules(self, modules):
+        """
+        Set information for the power modules.
 
         :param modules: json encoded list of dicts with keys: 'id', 'name', 'input0', 'input1', \
-        'input2', 'input3', 'input4', 'input5', 'input6', 'input7', 'sensor0', 'sensor1', \
-        'sensor2', 'sensor3', 'sensor4', 'sensor5', 'sensor6', 'sensor7', 'times0', 'times1', \
-        'times2', 'times3', 'times4', 'times5', 'times6', 'times7'.
+            'input2', 'input3', 'input4', 'input5', 'input6', 'input7', 'sensor0', 'sensor1', \
+            'sensor2', 'sensor3', 'sensor4', 'sensor5', 'sensor6', 'sensor7', 'times0', 'times1', \
+            'times2', 'times3', 'times4', 'times5', 'times6', 'times7'.
+        :type modules: str
         """
-        self.check_token(token)
-        return self.__wrap(lambda: self.__gateway_api.set_power_modules(json.loads(modules)))
+        return self._gateway_api.set_power_modules(json.loads(modules))
 
-    @cherrypy.expose
-    def get_realtime_power(self, token):
-        """ Get the realtime power measurements.
+    @openmotics_api(auth=True)
+    def get_realtime_power(self):
+        """
+        Get the realtime power measurements.
 
         :returns: module id as the keys: [voltage, frequency, current, power].
+        :rtype: dict
         """
-        self.check_token(token)
-        return self.__wrap(self.__gateway_api.get_realtime_power)
+        return self._gateway_api.get_realtime_power()
 
-    @cherrypy.expose
-    def get_total_energy(self, token):
-        """ Get the total energy (Wh) consumed by the power modules.
+    @openmotics_api(auth=True)
+    def get_total_energy(self):
+        """
+        Get the total energy (Wh) consumed by the power modules.
 
         :returns: modules id as key: [day, night].
+        :rtype: dict
         """
-        self.check_token(token)
-        return self.__wrap(self.__gateway_api.get_total_energy)
+        return self._gateway_api.get_total_energy()
 
-    @cherrypy.expose
-    def start_power_address_mode(self, token):
-        """ Start the address mode on the power modules. """
-        self.check_token(token)
-        return self.__wrap(self.__gateway_api.start_power_address_mode)
+    @openmotics_api(auth=True)
+    def start_power_address_mode(self):
+        """
+        Start the address mode on the power modules.
+        """
+        return self._gateway_api.start_power_address_mode()
 
-    @cherrypy.expose
-    def stop_power_address_mode(self, token):
-        """ Stop the address mode on the power modules. """
-        self.check_token(token)
-        return self.__wrap(self.__gateway_api.stop_power_address_mode)
+    @openmotics_api(auth=True)
+    def stop_power_address_mode(self):
+        """
+        Stop the address mode on the power modules.
+        """
+        self._power_dirty = True
+        return self._gateway_api.stop_power_address_mode()
 
-    @cherrypy.expose
-    def in_power_address_mode(self, token):
-        """ Check if the power modules are in address mode.
+    @openmotics_api(auth=True)
+    def in_power_address_mode(self):
+        """
+        Check if the power modules are in address mode.
 
         :returns: 'address_mode': Boolean
+        :rtype: dict
         """
-        self.check_token(token)
-        return self.__wrap(self.__gateway_api.in_power_address_mode)
+        return self._gateway_api.in_power_address_mode()
 
-    @cherrypy.expose
-    def set_power_voltage(self, token, module_id, voltage):
-        """ Set the voltage for a given module.
+    @openmotics_api(auth=True, check=types(module_id=int, voltage=float))
+    def set_power_voltage(self, module_id, voltage):
+        """
+        Set the voltage for a given module.
 
         :param module_id: The id of the power module.
-        :type module_id: Byte
+        :type module_id: int
         :param voltage: The voltage to set for the power module.
-        :type voltage: Float
+        :type voltage: float
         """
-        self.check_token(token)
-        return self.__wrap(
-                lambda: self.__gateway_api.set_power_voltage(int(module_id), float(voltage)))
+        return self._gateway_api.set_power_voltage(module_id, voltage)
 
-    @cherrypy.expose
-    def get_pulse_counter_status(self, token):
-        """ Get the pulse counter values.
+    @openmotics_api(auth=True)
+    def get_pulse_counter_status(self):
+        """
+        Get the pulse counter values.
 
         :returns: 'counters': array with the 8 pulse counter values.
+        :rtype: dict
         """
-        self.check_token(token)
-        return self.__success(counters=self.__gateway_api.get_pulse_counter_status())
+        return {'counters': self._gateway_api.get_pulse_counter_status()}
 
-    @cherrypy.expose
-    def get_energy_time(self, token, module_id, input_id=None):
-        """ Gets 1 period of given module and optional input (no input means all).
+    @openmotics_api(auth=True, check=types(module_id=int, input_id=int))
+    def get_energy_time(self, module_id, input_id=None):
+        """
+        Gets 1 period of given module and optional input (no input means all).
 
-        :param token: The authentication token
-        :type token: str
         :param module_id: The id of the power module.
-        :type module_id: Byte
+        :type module_id: int
         :param input_id: The id of the input on the given power module
-        :type input_id: Byte or None
+        :type input_id: int or None
         :returns: A dict with the input_id(s) as key, and as value another dict with
                   (up to 80) voltage and current samples.
+        :rtype: dict
         """
-        self.check_token(token)
-        module_id = int(module_id)
-        input_id = int(input_id) if input_id is not None else None
-        return self.__wrap(lambda: self.__gateway_api.get_energy_time(module_id, input_id))
+        return self._gateway_api.get_energy_time(module_id, input_id)
 
-    @cherrypy.expose
-    def get_energy_frequency(self, token, module_id, input_id=None):
-        """ Gets the frequency components for a given module and optional input (no input means all)
+    @openmotics_api(auth=True, check=types(module_id=int, input_id=int))
+    def get_energy_frequency(self, module_id, input_id=None):
+        """
+        Gets the frequency components for a given module and optional input (no input means all)
 
-        :param token: The authentication token
-        :type token: str
         :param module_id: The id of the power module
-        :type module_id: Byte
+        :type module_id: int
         :param input_id: The id of the input on the given power module
-        :type input_id: Byte or None
+        :type input_id: int | None
         :returns: A dict with the input_id(s) as key, and as value another dict with for
                   voltage and current the 20 frequency components
+        :rtype: dict
         """
-        self.check_token(token)
-        module_id = int(module_id)
-        input_id = int(input_id) if input_id is not None else None
-        return self.__wrap(lambda: self.__gateway_api.get_energy_frequency(module_id, input_id))
+        return self._gateway_api.get_energy_frequency(module_id, input_id)
 
-    @cherrypy.expose
-    def do_raw_energy_command(self, token, address, mode, command, data):
-        """ Perform a raw energy module command, for debugging purposes.
+    @openmotics_api(auth=True, check=types(address=int), plugin_exposed=False)
+    def do_raw_energy_command(self, address, mode, command, data):
+        """
+        Perform a raw energy module command, for debugging purposes.
 
-        :param token: The authentication token
-        :type token: str
         :param address: The address of the energy module
-        :type address: Byte
+        :type address: int
         :param mode: 1 char: S or G
         :type mode: str
         :param command: 3 char power command
@@ -1726,49 +1932,47 @@ class WebInterface(object):
         :param data: comma seperated list of Bytes
         :type data: str
         :returns: dict with 'data': comma separated list of Bytes
+        :rtype: dict
         """
-        self.check_token(token)
-
-        address = int(address)
-
-        if mode not in [ 'S', 'G' ]:
+        if mode not in ['S', 'G']:
             raise ValueError("mode not in [S, G]: %s" % mode)
 
         if len(command) != 3:
             raise ValueError('Command should be 3 chars, got "%s"' % command)
 
         if data is not None and len(data) > 0:
-            bdata = [ int(c) for c in data.split(",") ]
+            bdata = [int(c) for c in data.split(",")]
         else:
             bdata = []
 
-        ret = self.__gateway_api.do_raw_energy_command(address, mode, command, bdata)
+        ret = self._gateway_api.do_raw_energy_command(address, mode, command, bdata)
+        return {'data': ",".join([str(d) for d in ret])}
 
-        return self.__success(data=",".join([ str(d) for d in ret ]))
-
-    @cherrypy.expose
-    def get_version(self, token):
-        """ Get the version of the openmotics software.
+    @openmotics_api(auth=True)
+    def get_version(self):
+        """
+        Get the version of the openmotics software.
 
         :returns: 'version': String (a.b.c).
+        :rtype: dict
         """
-        self.check_token(token)
         config = ConfigParser.ConfigParser()
         config.read(constants.get_config_file())
-        return self.__success(version=str(config.get('OpenMotics', 'version')))
+        return {'version': str(config.get('OpenMotics', 'version')),
+                'gateway': '2.4.3'}
 
-    @cherrypy.expose
-    def update(self, token, version, md5, update_data):
-        """ Perform an update.
+    @openmotics_api(auth=True, plugin_exposed=False)
+    def update(self, version, md5, update_data):
+        """
+        Perform an update.
 
         :param version: the new version number.
-        :type version: String
+        :type version: str
         :param md5: the md5 sum of update_data.
-        :type md5: String
+        :type md5: str
         :param update_data: a tgz file containing the update script (update.sh) and data.
         :type update_data: multipart/form-data encoded byte string.
         """
-        self.check_token(token)
         update_data = update_data.file.read()
 
         if not os.path.exists(constants.get_update_dir()):
@@ -1784,265 +1988,216 @@ class WebInterface(object):
 
         subprocess.Popen(constants.get_update_cmd(version, md5), close_fds=True)
 
-        return self.__success()
+        return {}
 
-    @cherrypy.expose
-    def get_update_output(self, token):
-        """ Get the output of the last update.
+    @openmotics_api(auth=True)
+    def get_update_output(self):
+        """
+        Get the output of the last update.
 
         :returns: 'output': String with the output from the update script.
+        :rtype: dict
         """
-        self.check_token(token)
-
         output_file = open(constants.get_update_output_file(), "r")
         output = output_file.read()
         output_file.close()
 
-        return self.__success(output=output)
+        return {'output': output}
 
-    @cherrypy.expose
-    def set_timezone(self, token, timezone):
-        """ Set the timezone for the gateway.
+    @openmotics_api(auth=True)
+    def set_timezone(self, timezone):
+        """
+        Set the timezone for the gateway.
 
         :param timezone: in format 'Continent/City'.
-        :type timezone: String
+        :type timezone: str
         """
-        self.check_token(token)
+        self._gateway_api.set_timezone(timezone)
+        self._gateway_api.sync_master_time(True)
+        return {}
 
-        timezone_file_path = "/usr/share/zoneinfo/" + timezone
-        if os.path.isfile(timezone_file_path):
-            if os.path.exists(constants.get_timezone_file()):
-                os.remove(constants.get_timezone_file())
-
-            os.symlink(timezone_file_path, constants.get_timezone_file())
-
-            self.__gateway_api.sync_master_time()
-            return self.__success()
-        else:
-            return self.__error("Could not find timezone '" + timezone + "'")
-
-    @cherrypy.expose
-    def get_timezone(self, token):
-        """ Get the timezone for the gateway.
+    @openmotics_api(auth=True)
+    def get_timezone(self):
+        """
+        Get the timezone for the gateway.
 
         :returns: 'timezone': the timezone in 'Continent/City' format (String).
+        :rtype: dict
         """
-        self.check_token(token)
+        return {'timezone': self._gateway_api.get_timezone()}
 
-        path = os.path.realpath(constants.get_timezone_file())
-        if path.startswith("/usr/share/zoneinfo/"):
-            return self.__success(timezone=path[20:])
-        else:
-            return self.__error("Could not determine timezone.")
-
-    @cherrypy.expose
-    def do_url_action(self, token, url, method='GET', headers=None, data=None, auth=None,
-                      timeout=10):
-        """ Execute an url action.
+    @openmotics_api(auth=True, check=types(headers='json', auth='json', timeout=int), plugin_exposed=False)
+    def do_url_action(self, url, method='GET', headers=None, data=None, auth=None, timeout=10):
+        """
+        Execute an url action.
 
         :param url: The url to fetch.
-        :type url: String
+        :type url: str
         :param method: (optional) The http method (defaults to GET).
-        :type method: String
+        :type method: str | None
         :param headers: (optional) The http headers to send (format: json encoded dict)
-        :type headers: String
+        :type headers: str | None
         :param data: (optional) Bytes to send in the body of the request.
-        :type data: String
+        :type data: str | None
         :param auth: (optional) Json encoded tuple (username, password).
-        :type auth: String
+        :type auth: str | None
         :param timeout: (optional) Timeout in seconds for the http request (default = 10 sec).
-        :type timeout: Integer
+        :type timeout: int | None
         :returns: 'headers': response headers, 'data': response body.
+        :rtype: dict
         """
-        self.check_token(token)
+        response = requests.request(method, url,
+                                    headers=headers,
+                                    data=data,
+                                    auth=auth,
+                                    timeout=timeout)
 
-        try:
-            headers = json.loads(headers) if headers != None else None
-            auth = json.loads(auth) if auth != None else None
+        if response.status_code != requests.codes.ok:
+            raise RuntimeError("Got bad resonse code: %d" % response.status_code)
+        return {'headers': response.headers._store,
+                'data': response.text}
 
-            request = requests.request(method, url, headers=headers, data=data, auth=auth,
-                                 timeout=timeout)
+    @openmotics_api(auth=True, check=types(timestamp=int, action='json'), deprecated='add_schedule')
+    def schedule_action(self, timestamp, action):
+        self.add_schedule(name=action['description'],
+                          start=timestamp,
+                          schedule_type='LOCAL_API',
+                          arguments={'name': action['action'],
+                                     'parameters': action['params']})
+        return {}
 
-            if request.status_code == requests.codes.ok:
-                return self.__success(headers=request.headers._store, data=request.text)
-            else:
-                return self.__error("Got bad resonse code: %d" % request.status_code)
-        except Exception as exception:
-            return self.__error("Got exception '%s'" % str(exception))
+    @openmotics_api(auth=True, check=types(name=str, start=int, schedule_type=str, arguments='json', repeat='json', duration=int, end=int))
+    def add_schedule(self, name, start, schedule_type, arguments=None, repeat=None, duration=None, end=None):
+        self._scheduling_controller.add_schedule(name, start, schedule_type, arguments, repeat, duration, end)
+        return {}
 
-    @cherrypy.expose
-    def schedule_action(self, token, timestamp, action):
-        """ Schedule an action at a given point in the future. An action can be any function of the
-        OpenMotics webservice. The action is JSON encoded dict with keys: 'type', 'action',
-        'params' and 'description'. At the moment 'type' can only be 'basic'. 'action' contains
-        the name of the function on the webservice. 'params' is a dict maps the names of the
-        parameters given to the function to their desired values. 'description' can be used to
-        identify the scheduled action.
+    @openmotics_api(auth=True, deprecated='list_schedules')
+    def list_scheduled_actions(self):
+        return {'actions': [{'timestamp': schedule.start,
+                             'from_now': schedule.start - time.time(),
+                             'id': schedule.id,
+                             'description': schedule.name,
+                             'action': json.dumps({'action': schedule.arguments['name'],
+                                                   'params': schedule.arguments['parameters']})}
+                            for schedule in self._scheduling_controller.schedules
+                            if schedule.schedule_type == 'LOCAL_API']}
 
-        :param timestamp: UNIX timestamp.
-        :type timestamp: Integer.
-        :param action: JSON encoded dict (see above).
-        :type action: String.
+    @openmotics_api(auth=True)
+    def list_schedules(self):
+        return {'schedules': [schedule.serialize() for schedule in self._scheduling_controller.schedules]}
+
+    @openmotics_api(auth=True, check=types(id=int), deprecated='remove_schedule')
+    def remove_scheduled_action(self, id):
+        self._scheduling_controller.remove_schedule(id)
+        return {}
+
+    @openmotics_api(auth=True, check=types(schedule_id=int))
+    def remove_schedule(self, schedule_id):
+        self._scheduling_controller.remove_schedule(schedule_id)
+        return {}
+
+    @openmotics_api(auth=True)
+    def get_plugins(self):
         """
-        self.check_token(token)
-        timestamp = int(timestamp)
-        action = json.loads(action)
-
-        if not ('type' in action and action['type'] == 'basic' and 'action' in action):
-            self.__error("action does not contain the required keys 'type' and 'action'")
-        else:
-            func_name = action['action']
-            if func_name in WebInterface.__dict__:
-                func = WebInterface.__dict__[func_name]
-                if 'exposed' in func.__dict__ and func.exposed == True:
-                    params = action.get('params', {})
-
-                    args = inspect.getargspec(func).args
-                    args = [arg for arg in args if arg != "token" and arg != "self"]
-
-                    if len(args) != len(params):
-                        return self.__error("The number of params (%d) does not match the number "
-                                            "of arguments (%d) for function %s" %
-                                            (len(params), len(args), func_name))
-
-                    bad_args = [arg for arg in args if arg not in params]
-                    if len(bad_args) > 0:
-                        return self.__error("The following param are missing for function %s: %s" %
-                                            (func_name, str(bad_args)))
-                    else:
-                        description = action.get('description', '')
-                        action = json.dumps({'type' : 'basic', 'action': func_name,
-                                             'params': params})
-
-                        self.__scheduling_controller.schedule_action(timestamp, description,
-                                                                     action)
-
-                        return self.__success()
-
-            return self.__error("Could not find function WebInterface.%s" % func_name)
-
-    @cherrypy.expose
-    def list_scheduled_actions(self, token):
-        """ Get a list of all scheduled actions.
-
-        :returns: 'actions': a list of dicts with keys: 'timestamp', 'from_now', 'id', \
-        'description' and 'action'. 'timestamp' is the UNIX timestamp when the action will be \
-        executed. 'from_now' is the number of seconds until the action will be scheduled. 'id' \
-        is a unique integer for the scheduled action. 'description' contains a user set \
-        description for the action. 'action' contains the function and params that will be \
-        used to execute the scheduled action.
-        """
-        self.check_token(token)
-        now = time.time()
-        actions = self.__scheduling_controller.list_scheduled_actions()
-        for action in actions:
-            action['from_now'] = action['timestamp'] - now
-
-        return self.__success(actions=actions)
-
-    @cherrypy.expose
-    def remove_scheduled_action(self, token, id):
-        """ Remove a scheduled action when the id of the action is given.
-
-        :param id: the id of the scheduled action to remove.
-        :type id: Integer
-        """
-        self.check_token(token)
-        self.__scheduling_controller.remove_scheduled_action(id)
-        return self.__success()
-
-    def __exec_scheduled_action(self, action):
-        """ Callback for the SchedulingController executing a scheduled actions.
-
-        :param action: JSON encoded action.
-        """
-        action = json.loads(action)
-        func_name = action['action']
-        kwargs = action['params']
-        kwargs['self'] = self
-        kwargs['token'] = None
-
-        if func_name in WebInterface.__dict__:
-            try:
-                WebInterface.__dict__[func_name](**kwargs)
-            except:
-                LOGGER.exception("Exception while executing scheduled action")
-        else:
-            LOGGER.error("Could not find function WebInterface.%s", func_name)
-
-    def __wrap(self, func):
-        """ Wrap a gateway_api function and catches a possible Exception.
-
-        :returns: {'success': False, 'msg': ...} on Exception, otherwise {'success': True, ...}
-        """
-        try:
-            ret = func()
-        except Exception as exception:
-            traceback.print_exc()
-            return self.__error(str(exception))
-        else:
-            return self.__success(**ret)
-
-    @cherrypy.expose
-    def get_plugins(self, token):
-        """ Get the installed plugins.
+        Get the installed plugins.
 
         :returns: 'plugins': dict with name, version and interfaces where name and version \
-        are strings and interfaces is a list of tuples (interface, version) which are both strings.
+            are strings and interfaces is a list of tuples (interface, version) which are both strings.
+        :rtype: dict
         """
-        self.check_token(token)
-        plugins = self.__plugin_controller.get_plugins()
-        ret = [{'name' : p.name, 'version' : p.version, 'interfaces' : p.interfaces}
+        plugins = self._plugin_controller.get_plugins()
+        ret = [{'name': p.name, 'version': p.version, 'interfaces': p.interfaces}
                for p in plugins]
-        return self.__success(plugins=ret)
+        return {'plugins': ret}
 
-    @cherrypy.expose
-    def get_plugin_logs(self, token):
-        """ Get the logs for all plugins.
+    @openmotics_api(auth=True, plugin_exposed=False)
+    def get_plugin_logs(self):
+        """
+        Get the logs for all plugins.
 
         :returns: 'logs': dict with the names of the plugins as keys and the logs (String) as \
-        value.
+            value.
+        :rtype: dict
         """
-        self.check_token(token)
-        return self.__success(logs=self.__plugin_controller.get_logs())
+        return {'logs': self._plugin_controller.get_logs()}
 
-    @cherrypy.expose
-    def install_plugin(self, token, md5, package_data):
-        """ Install a new plugin. The package_data should include a __init__.py file and
+    @openmotics_api(auth=True, plugin_exposed=False)
+    def install_plugin(self, md5, package_data):
+        """
+        Install a new plugin. The package_data should include a __init__.py file and
         will be installed in /opt/openmotics/python/plugins/<name>.
 
-        :param name: Name of the plugin to install.
-        :type name: String
-        :param version: Version of the plugin to install.
-        :type version: String
         :param md5: md5 sum of the package_data.
         :type md5: String
-        :param update_data: a tgz file containing the content of the plugin package.
-        :type update_data: multipart/form-data encoded byte string.
+        :param package_data: a tgz file containing the content of the plugin package.
+        :type package_data: multipart/form-data encoded byte string.
         """
-        self.check_token(token)
-        return self.__wrap(lambda: self.__plugin_controller.install_plugin(
-                                                                md5, package_data.file.read()))
+        return self._plugin_controller.install_plugin(md5, package_data.file.read())
 
-    @cherrypy.expose
-    def remove_plugin(self, token, name):
-        """ Remove a plugin. This removes the package data and configuration data of the plugin.
+    @openmotics_api(auth=True, plugin_exposed=False)
+    def remove_plugin(self, name):
+        """
+        Remove a plugin. This removes the package data and configuration data of the plugin.
 
         :param name: Name of the plugin to remove.
-        :param type: String
+        :type name: str
         """
-        self.check_token(token)
-        return self.__wrap(lambda: self.__plugin_controller.remove_plugin(name))
+        return self._plugin_controller.remove_plugin(name)
+
+    @openmotics_api(auth=True, check=types(settings='json'), plugin_exposed=False)
+    def get_settings(self, settings):
+        """
+        Gets a given setting
+        """
+        values = {}
+        for setting in settings:
+            value = self._config_controller.get_setting(setting)
+            if value is not None:
+                values[setting] = value
+        return {'values': values}
+
+    @openmotics_api(auth=True, check=types(value='json'), plugin_exposed=False)
+    def set_setting(self, setting, value):
+        """
+        Configures a setting
+        """
+        if setting not in ['cloud_enabled', 'cloud_metrics_enabled|energy', 'cloud_metrics_enabled|counter']:
+            raise RuntimeError('Setting {0} cannot be set'.format(setting))
+        self._config_controller.set_setting(setting, value)
+        return {}
+
+    @openmotics_api(auth=True)
+    def self_test(self):
+        """
+        Perform a Gateway self-test.
+        """
+        if not self._authorized_check():
+            raise cherrypy.HTTPError(401, "unauthorized")
+        subprocess.Popen(constants.get_self_test_cmd(), close_fds=True)
+        return {}
+
+    @openmotics_api(auth=True)
+    def get_metric_definitions(self, source=None, metric_type=None):
+        sources = self._metrics_controller.get_filter('source', source)
+        metric_types = self._metrics_controller.get_filter('metric_type', metric_type)
+        definitions = {}
+        for _source, _metric_types in self._metrics_controller.definitions.iteritems():
+            if _source in sources:
+                definitions[_source] = {}
+                for _metric_type, definition in _metric_types.iteritems():
+                    if _metric_type in metric_types:
+                        definitions[_source][_metric_type] = definition
+        return {'definitions': definitions}
 
     @cherrypy.expose
-    def self_test(self, token):
-        """ Perform a Gateway self-test. """
-        self.check_token(token)
-        if self.__authorized_check():
-            subprocess.Popen(constants.get_self_test_cmd(), close_fds=True)
-            return self.__success()
-        else:
-            raise cherrypy.HTTPError(401, "unauthorized")
+    @cherrypy.tools.authenticated(pass_token=True)
+    def ws_metrics(self, token, client_id, source=None, metric_type=None, interval=None):
+        cherrypy.request.ws_handler.metadata = {'token': token,
+                                                'client_id': client_id,
+                                                'source': source,
+                                                'metric_type': metric_type,
+                                                'interval': None if interval is None else int(interval),
+                                                'interface': self}
 
 
 class WebService(object):
@@ -2050,41 +2205,54 @@ class WebService(object):
 
     name = 'web'
 
-    def __init__(self, webinterface):
-        self.__webinterface = webinterface
-        self.__https_server = None
-        self.__http_server = None
+    def __init__(self, webinterface, config_controller):
+        self._webinterface = webinterface
+        self._config_controller = config_controller
+        self._https_server = None
+        self._http_server = None
 
     def run(self):
         """ Run the web service: start cherrypy. """
-        cherrypy.tree.mount(self.__webinterface,
-                            config={'/static': {'tools.staticdir.on' : True,
-                                                'tools.staticdir.dir' : '/opt/openmotics/static'},
-                                    '/' : {'tools.timestampFilter.on' : True,
-                                           'tools.sessions.on' : False}})
+        try:
+            OMPlugin(cherrypy.engine).subscribe()
+            cherrypy.tools.websocket = WebSocketTool()
 
-        cherrypy.config.update({'engine.autoreload.on': False})
-        cherrypy.server.unsubscribe()
+            config = {'/static': {'tools.staticdir.on': True,
+                                  'tools.staticdir.dir': '/opt/openmotics/static'},
+                      '/ws_metrics': {'tools.websocket.on': True,
+                                      'tools.websocket.handler_cls': MetricsSocket},
+                      '/': {'tools.timestamp_filter.on': True,
+                            'tools.cors.on': self._config_controller.get_setting('cors_enabled', False),
+                            'tools.sessions.on': False}}
 
-        self.__https_server = cherrypy._cpserver.Server()
-        self.__https_server.socket_port = 443
-        self.__https_server._socket_host = '0.0.0.0'
-        self.__https_server.socket_timeout = 60
-        self.__https_server.ssl_module = 'pyopenssl'
-        self.__https_server.ssl_certificate = constants.get_ssl_certificate_file()
-        self.__https_server.ssl_private_key = constants.get_ssl_private_key_file()
-        self.__https_server.subscribe()
+            cherrypy.tree.mount(self._webinterface,
+                                config=config)
 
-        self.__http_server = cherrypy._cpserver.Server()
-        self.__http_server.socket_port = 80
-        self.__http_server._socket_host = '127.0.0.1'
-        self.__http_server.socket_timeout = 60
-        self.__http_server.subscribe()
+            cherrypy.config.update({'engine.autoreload.on': False})
+            cherrypy.server.unsubscribe()
 
-        cherrypy.engine.autoreload_on = False
+            self._https_server = cherrypy._cpserver.Server()
+            self._https_server.socket_port = 443
+            self._https_server._socket_host = '0.0.0.0'
+            self._https_server.socket_timeout = 60
+            self._https_server.ssl_module = 'pyopenssl'
+            self._https_server.ssl_certificate = constants.get_ssl_certificate_file()
+            self._https_server.ssl_private_key = constants.get_ssl_private_key_file()
+            self._https_server.subscribe()
 
-        cherrypy.engine.start()
-        cherrypy.engine.block()
+            self._http_server = cherrypy._cpserver.Server()
+            self._http_server.socket_port = 80
+            self._http_server._socket_host = '127.0.0.1'
+            self._http_server.socket_timeout = 60
+            self._http_server.subscribe()
+
+            cherrypy.engine.autoreload_on = False
+
+            cherrypy.engine.start()
+            cherrypy.engine.block()
+        except Exception:
+            LOGGER.exception("Could not start webservice. Dying...")
+            sys.exit(1)
 
     def start(self):
         """ Start the web service in a new thread. """
@@ -2096,7 +2264,7 @@ class WebService(object):
     def stop(self):
         """ Stop the web service. """
         cherrypy.engine.exit()  # Shutdown the cherrypy server: no new requests
-        if self.__https_server is not None:
-            self.__https_server.stop()
-        if self.__http_server is not None:
-            self.__http_server.stop()
+        if self._https_server is not None:
+            self._https_server.stop()
+        if self._http_server is not None:
+            self._http_server.stop()

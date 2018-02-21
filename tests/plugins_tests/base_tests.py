@@ -63,7 +63,7 @@ class P1(OMPluginBase):
 """)
             from plugins.base import PluginController
 
-            controller = PluginController(None)
+            controller = PluginController(None, None)
             plugin_list = controller.get_plugins()
             self.assertEquals(1, len(plugin_list))
             self.assertEquals("P1", plugin_list[0].name)
@@ -93,7 +93,7 @@ class P2(OMPluginBase):
 
             from plugins.base import PluginController
 
-            controller = PluginController(None)
+            controller = PluginController(None, None)
             plugin_list = controller.get_plugins()
             self.assertEquals(2, len(plugin_list))
 
@@ -145,7 +145,7 @@ class P2(OMPluginBase):
 
         from plugins.base import PluginController
 
-        controller = PluginController(None)
+        controller = PluginController(None, None)
         plugin1 = P1(None, None)
 
         ins = controller._get_special_methods(plugin1, "input_status")
@@ -166,7 +166,7 @@ class P2(OMPluginBase):
                                  background_task
 
         from plugins.base import PluginController
-        controller = PluginController(None)
+        controller = PluginController(None, None)
 
         class P1(OMPluginBase):
             """ Plugin without name. """
