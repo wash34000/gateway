@@ -2012,13 +2012,7 @@ class WebInterface(object):
         :param timezone: in format 'Continent/City'.
         :type timezone: str
         """
-        timezone_file_path = "/usr/share/zoneinfo/" + timezone
-        if not os.path.isfile(timezone_file_path):
-            raise RuntimeError("Could not find timezone '" + timezone + "'")
-
-        if os.path.exists(constants.get_timezone_file()):
-            os.remove(constants.get_timezone_file())
-        os.symlink(timezone_file_path, constants.get_timezone_file())
+        self._gateway_api.set_timezone(timezone)
         self._gateway_api.sync_master_time(True)
         return {}
 

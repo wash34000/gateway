@@ -277,6 +277,30 @@ class DataCollector(object):
             return None
 
 
+def ping(target):
+    """ Check if the target can be pinged. Returns True if at least 1/4 pings was successful. """
+    if target is None:
+        return False
+
+    print("Testing ping to %s" % target)
+    try:
+        # Ping returns status code 0 if at least 1 ping is successful
+        subprocess.check_output("ping -c 4 %s" % target, shell=True)
+        return True
+    except Exception as ex:
+        print("Error during ping: %s" % ex)
+        return False
+
+
+def get_gateway():
+    """ Get the default gateway. """
+    try:
+        return subprocess.check_output("ip r | grep '^default via' | awk '{ print $3; }'", shell=True)
+    except Exception as ex:
+        print("Error during get_gateway: %s" % ex)
+        return None
+
+
 def main():
     """
     The main function contains the loop that check if the vpn should be opened every 2 seconds.
@@ -336,9 +360,11 @@ def main():
         should_open = cloud.should_open_vpn(vpn_data)
 
         if iterations > 20 and cloud.get_last_connect() < time.time() - REBOOT_TIMEOUT:
-            # The cloud is not responding for a while, perhaps the BeagleBone network stack is
-            # hanging, reboot the gateway to reset the BeagleBone.
-            reboot_gateway()
+            # The cloud is not responding for a while.
+            if not ping('cloud.openmotics.com') and not ping('8.8.8.8') and not ping(get_gateway()):
+                # Perhaps the BeagleBone network stack is hanging, reboot the gateway
+                # to reset the BeagleBone.
+                reboot_gateway()
         iterations += 1
 
         # Open or close the VPN
