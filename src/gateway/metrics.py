@@ -16,13 +16,11 @@
 The metrics module collects and re-distributes metric data
 """
 
-import os
 import re
 import time
 import copy
 import logging
 import requests
-import constants
 from threading import Thread
 from collections import deque
 try:
@@ -256,8 +254,9 @@ class MetricsController(object):
 
         # Buffer counters that need to be buffered and will be send
         if include_this_metric is True:
-            self._cloud_queue.append([metric])
             entry['timestamp'] = timestamp
+            self._cloud_queue.append([metric])
+            self._cloud_queue = self._cloud_queue[-10000:]  # 10k metrics buffer
             if len(counters_to_buffer) > 0:
                 cache_data = {}
                 for counter in counters_to_buffer:
