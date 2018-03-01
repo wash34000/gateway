@@ -538,7 +538,7 @@ class MetricsCollector(object):
                 MetricsCollector._log('Error getting total energy: {0}'.format(ex))
             for device_id in power_data:
                 device = power_data[device_id]
-                if device['name'] != '':
+                if device['name'] != '' and 'voltage' in device and 'counter' in device:
                     try:
                         self._enqueue_metrics(metric_type=metric_type,
                                               values={'voltage': device['voltage'],
@@ -833,7 +833,8 @@ class MetricsCollector(object):
              'tags': ['name', 'input'],
              'metrics': [{'name': 'value',
                           'description': 'Number of received pulses',
-                          'type': 'gauge',
+                          'type': 'counter',
+                          'policies': ['persistent', 'buffered'],
                           'unit': ''}]},
             # energy
             {'type': 'energy',
@@ -844,27 +845,30 @@ class MetricsCollector(object):
                           'unit': 'V'},
                          {'name': 'current',
                           'description': 'Current current',
-                          'mtype': 'gauge',
+                          'type': 'gauge',
                           'unit': 'A'},
                          {'name': 'frequency',
                           'description': 'Current frequency',
-                          'mtype': 'gauge',
+                          'type': 'gauge',
                           'unit': 'Hz'},
                          {'name': 'power',
                           'description': 'Current power consumption',
-                          'mtype': 'gauge',
+                          'type': 'gauge',
                           'unit': 'W'},
                          {'name': 'counter',
                           'description': 'Total energy consumed',
-                          'mtype': 'counter',
+                          'type': 'counter',
+                          'policies': ['persistent', 'buffered'],
                           'unit': 'Wh'},
                          {'name': 'counter_day',
                           'description': 'Total energy consumed during daytime',
-                          'mtype': 'counter',
+                          'type': 'counter',
+                          'policies': ['persistent', 'buffered'],
                           'unit': 'Wh'},
                          {'name': 'counter_night',
                           'description': 'Total energy consumed during nighttime',
-                          'mtype': 'counter',
+                          'type': 'counter',
+                          'policies': ['persistent', 'buffered'],
                           'unit': 'Wh'}]},
             # energy_analytics
             {'type': 'energy_analytics',
