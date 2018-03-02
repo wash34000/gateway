@@ -90,22 +90,24 @@ class MetricsCacheController(object):
             data = self._execute_unlocked("SELECT timestamp FROM counters_buffer WHERE source_id=? ORDER BY timestamp DESC LIMIT 1;", (id,)).fetchone()
             if data is None or data[0] < timestamp:
                 self._execute_unlocked("INSERT INTO counters_buffer (source_id, counters, timestamp) VALUES (?, ?, ?);", (id, json.dumps(counters), timestamp))
+                return True
+            return False
 
-    def load_buffer(self):
-        metrics = []
+    def load_buffer(self, before):
         with self._lock:
             buffer_items = self._execute_unlocked("SELECT source, type, identifier, counters, timestamp FROM counters_buffer INNER JOIN counter_sources ON counter_sources.id = counters_buffer.source_id;")
         for item in buffer_items:
-            metrics.append({'source': item[0],
-                            'type': item[1],
-                            'tags': json.loads(item[2]),
-                            'values': json.loads(item[3]),
-                            'timestamp': item[4]})
-        return metrics
+            if before == -1 or before > item[4]:
+                yield {'source': item[0],
+                       'type': item[1],
+                       'tags': json.loads(item[2]),
+                       'values': json.loads(item[3]),
+                       'timestamp': item[4]}
 
     def clear_buffer(self, timestamp):
         with self._lock:
             self._execute_unlocked("DELETE FROM counters_buffer WHERE timestamp < ?;", (timestamp,))
+            return self._execute_unlocked("SELECT changes();").fetchone()[0]
 
     def _get_counter_id(self, source, mtype, identifier):
         data = self._execute_unlocked("SELECT id FROM counter_sources WHERE source=? AND type=? AND identifier=?;", (source, mtype, identifier)).fetchone()

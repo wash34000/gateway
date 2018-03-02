@@ -71,8 +71,10 @@ class MetricsController(object):
         self.outbound_rates = {'total': 0}
         self._openmotics_receivers = []
         self._cloud_cache = {}
-        self._cloud_buffer = [[metric] for metric in self._metrics_cache_controller.load_buffer()]
         self._cloud_queue = []
+        self._cloud_buffer = []
+        self._cloud_buffer_length = 0
+        self._load_cloud_buffer()
         self._cloud_last_send = time.time()
         self._cloud_last_try = time.time()
         self._gateway_uuid = gateway_uuid
@@ -202,6 +204,11 @@ class MetricsController(object):
                     self._buffered_counters.setdefault(plugin, {})[definition['type']] = [metric['name'] for metric in definition['metrics']
                                                                                           if metric['type'] == 'counter' and 'buffered' in metric.get('policies', [])]
 
+    def _load_cloud_buffer(self):
+        oldest_queue_timestamp = max([-1] + [metric[0]['timestamp'] for metric in self._cloud_queue])
+        self._cloud_buffer = [[metric] for metric in self._metrics_cache_controller.load_buffer(before=oldest_queue_timestamp)]
+        self._cloud_buffer_length = len(self._cloud_buffer)
+
     def receiver(self, metric):
         """
         Collects all metrics made available by the MetricsCollector and the plugins. These metrics
@@ -261,8 +268,10 @@ class MetricsController(object):
                 cache_data = {}
                 for counter in counters_to_buffer:
                     cache_data[counter] = metric['values'][counter]
-                self._metrics_cache_controller.buffer_counter(metric_source, metric_type, metric['tags'], cache_data, metric['timestamp'])
-                self._metrics_cache_controller.clear_buffer(time.time() - 365 * 24 * 60 * 60)
+                if self._metrics_cache_controller.buffer_counter(metric_source, metric_type, metric['tags'], cache_data, metric['timestamp']):
+                    self._cloud_buffer_length += 1
+                if self._metrics_cache_controller.clear_buffer(time.time() - 365 * 24 * 60 * 60) > 0:
+                    self._load_cloud_buffer()
 
         # Check timings/rates
         now = time.time()
@@ -274,7 +283,7 @@ class MetricsController(object):
                  (time_ago_send > cloud_min_interval and time_ago_send == time_ago_try) or  # Last send was successful, but it has been too long ago
                  (time_ago_send > time_ago_try > cloud_min_interval)))  # Last send was unsuccessful, and it has been a while
         self.cloud_stats['queue'] = len(self._cloud_queue)
-        self.cloud_stats['buffer'] = len(self._cloud_buffer)
+        self.cloud_stats['buffer'] = self._cloud_buffer_length
         self.cloud_stats['time_ago_send'] = time_ago_send
         self.cloud_stats['time_ago_try'] = time_ago_try
 
@@ -288,9 +297,9 @@ class MetricsController(object):
                 if return_data.get('success', False) is False:
                     raise RuntimeError('{0}'.format(return_data.get('error')))
                 # If successful; clear buffers
-                self._metrics_cache_controller.clear_buffer(metric['timestamp'])
+                if self._metrics_cache_controller.clear_buffer(metric['timestamp']) > 0:
+                    self._load_cloud_buffer()
                 self._cloud_queue = []
-                self._cloud_buffer = []
                 self._cloud_last_send = now
                 # Restore intervals
                 for mtype, interval in return_data.get('intervals', {}).iteritems():
