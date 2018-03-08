@@ -256,7 +256,7 @@ class MetricsController(object):
             include_this_metric = True
         else:
             old_timestamp = entry['timestamp']
-            if old_timestamp != timestamp:
+            if old_timestamp < timestamp:
                 include_this_metric = True
 
         # Buffer counters that need to be buffered and will be send
@@ -309,7 +309,13 @@ class MetricsController(object):
                 if time_ago_send > 60 * 60:
                     # Decrease metrics rate, but at least every 6 hours
                     for mtype in metric_types:
-                        self.set_cloud_interval(mtype, min(time_ago_send / 2, 6 * 60 * 60))
+                        if time_ago_send < 6 * 60 * 60:
+                            new_interval = 30 * 60
+                        elif time_ago_send < 24 * 60 * 60:
+                            new_interval = 60 * 60
+                        else:
+                            new_interval = 2 * 60 * 60
+                        self.set_cloud_interval(mtype, new_interval)
     
     def _put(self, metric):
         rate_key = '{0}.{1}'.format(metric['source'].lower(), metric['type'].lower())
