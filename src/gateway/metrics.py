@@ -77,6 +77,7 @@ class MetricsController(object):
         self._load_cloud_buffer()
         self._cloud_last_send = time.time()
         self._cloud_last_try = time.time()
+        self._cloud_retry_interval = None
         self._gateway_uuid = gateway_uuid
         self.cloud_stats = {'queue': 0,
                             'buffer': 0,
@@ -239,6 +240,8 @@ class MetricsController(object):
 
         cloud_batch_size = self._config_controller.get_setting('cloud_metrics_batch_size')
         cloud_min_interval = self._config_controller.get_setting('cloud_metrics_min_interval')
+        if self._cloud_retry_interval is None:
+            self._cloud_retry_interval = cloud_min_interval
         metrics_endpoint = 'https://{0}/{1}?uuid={2}'.format(
             self._config_controller.get_setting('cloud_endpoint'),
             self._config_controller.get_setting('cloud_endpoint_metrics'),
@@ -263,7 +266,7 @@ class MetricsController(object):
         if include_this_metric is True:
             entry['timestamp'] = timestamp
             self._cloud_queue.append([metric])
-            self._cloud_queue = self._cloud_queue[-10000:]  # 10k metrics buffer
+            self._cloud_queue = self._cloud_queue[-5000:]  # 5k metrics buffer
             if len(counters_to_buffer) > 0:
                 cache_data = {}
                 for counter in counters_to_buffer:
@@ -281,7 +284,7 @@ class MetricsController(object):
         send = (outstanding_data_length > 0 and  # There must be outstanding data
                 ((outstanding_data_length > cloud_batch_size and time_ago_send == time_ago_try) or  # Last send was successful, but the buffer length > batch size
                  (time_ago_send > cloud_min_interval and time_ago_send == time_ago_try) or  # Last send was successful, but it has been too long ago
-                 (time_ago_send > time_ago_try > cloud_min_interval)))  # Last send was unsuccessful, and it has been a while
+                 (time_ago_send > time_ago_try > self._cloud_retry_interval)))  # Last send was unsuccessful, and it has been a while
         self.cloud_stats['queue'] = len(self._cloud_queue)
         self.cloud_stats['buffer'] = self._cloud_buffer_length
         self.cloud_stats['time_ago_send'] = time_ago_send
@@ -301,20 +304,25 @@ class MetricsController(object):
                     self._load_cloud_buffer()
                 self._cloud_queue = []
                 self._cloud_last_send = now
+                self._cloud_retry_interval = cloud_min_interval
                 # Restore intervals
                 for mtype, interval in return_data.get('intervals', {}).iteritems():
                     self.set_cloud_interval(mtype, interval)
             except Exception as ex:
                 LOGGER.error('Error sending metrics to Cloud: {0}'.format(ex))
                 if time_ago_send > 60 * 60:
-                    # Decrease metrics rate, but at least every 6 hours
+                    # Decrease metrics rate, but at least every 2 hours
+                    # Decrease cloud try interval, but at least every hour
+                    if time_ago_send < 6 * 60 * 60:
+                        self._cloud_retry_interval = 15 * 60
+                        new_interval = 30 * 60
+                    elif time_ago_send < 24 * 60 * 60:
+                        self._cloud_retry_interval = 30 * 60
+                        new_interval = 60 * 60
+                    else:
+                        self._cloud_retry_interval = 60 * 60
+                        new_interval = 2 * 60 * 60
                     for mtype in metric_types:
-                        if time_ago_send < 6 * 60 * 60:
-                            new_interval = 30 * 60
-                        elif time_ago_send < 24 * 60 * 60:
-                            new_interval = 60 * 60
-                        else:
-                            new_interval = 2 * 60 * 60
                         self.set_cloud_interval(mtype, new_interval)
     
     def _put(self, metric):
