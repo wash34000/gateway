@@ -42,6 +42,7 @@ from gateway.gateway_api import GatewayApi
 from gateway.users import UserController
 from gateway.metrics import MetricsController
 from gateway.metrics_collector import MetricsCollector
+from gateway.metrics_caching import MetricsCacheController
 from gateway.config import ConfigurationController
 from gateway.scheduling import SchedulingController
 
@@ -138,8 +139,9 @@ def main():
     web_interface.set_plugin_controller(plugin_controller)
     gateway_api.set_plugin_controller(plugin_controller)
 
+    metrics_cache_controller = MetricsCacheController(constants.get_metrics_database_file(), threading.Lock())
     metrics_collector = MetricsCollector(gateway_api)
-    metrics_controller = MetricsController(plugin_controller, metrics_collector, config_controller, gateway_uuid)
+    metrics_controller = MetricsController(plugin_controller, metrics_collector, metrics_cache_controller, config_controller, gateway_uuid)
 
     metrics_collector.set_controllers(metrics_controller, plugin_controller)
     metrics_collector.set_plugin_intervals(plugin_controller.metric_intervals)
