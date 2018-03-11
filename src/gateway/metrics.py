@@ -287,7 +287,7 @@ class MetricsController(object):
             try:
                 # Try to send the metrics
                 request = requests.post(metrics_endpoint, data={'metrics': json.dumps(self._cloud_buffer + self._cloud_queue)},
-                                        timeout=10.0, verify=True)
+                                        timeout=30.0, verify=True)
                 return_data = json.loads(request.text)
                 if return_data.get('success', False) is False:
                     raise RuntimeError('{0}'.format(return_data.get('error')))
