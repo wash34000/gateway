@@ -858,7 +858,7 @@ class GatewayApi(object):
 
         for (key, config) in [('heating', heating_config), ('cooling', cooling_config)]:
             for thermostat in config:
-                info = {'active': (thermostat['sensor'] < 30 or thermostat['sensor'] == 240) and thermostat['output0'] <= 240,
+                info = {'active': (thermostat['sensor'] <= 31 or thermostat['sensor'] == 240) and thermostat['output0'] <= 240,
                         'sensor_nr': thermostat['sensor'],
                         'output0_nr': thermostat['output0'],
                         'output1_nr': thermostat['output1'],
