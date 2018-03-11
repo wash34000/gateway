@@ -262,19 +262,11 @@ class MetricsController(object):
             if old_timestamp < timestamp:
                 include_this_metric = True
 
-        # Buffer counters that need to be buffered and will be send
+        # Add metrics to the send queue if they need to be send
         if include_this_metric is True:
             entry['timestamp'] = timestamp
             self._cloud_queue.append([metric])
             self._cloud_queue = self._cloud_queue[-5000:]  # 5k metrics buffer
-            if len(counters_to_buffer) > 0:
-                cache_data = {}
-                for counter in counters_to_buffer:
-                    cache_data[counter] = metric['values'][counter]
-                if self._metrics_cache_controller.buffer_counter(metric_source, metric_type, metric['tags'], cache_data, metric['timestamp']):
-                    self._cloud_buffer_length += 1
-                if self._metrics_cache_controller.clear_buffer(time.time() - 365 * 24 * 60 * 60) > 0:
-                    self._load_cloud_buffer()
 
         # Check timings/rates
         now = time.time()
@@ -324,6 +316,18 @@ class MetricsController(object):
                         new_interval = 2 * 60 * 60
                     for mtype in metric_types:
                         self.set_cloud_interval(mtype, new_interval)
+
+        # Buffer metrics if appropriate
+        time_ago_send = int(now - self._cloud_last_send)
+        time_ago_try = int(now - self._cloud_last_try)
+        if time_ago_send > time_ago_try and include_this_metric is True and len(counters_to_buffer) > 0:
+            cache_data = {}
+            for counter in counters_to_buffer:
+                cache_data[counter] = metric['values'][counter]
+            if self._metrics_cache_controller.buffer_counter(metric_source, metric_type, metric['tags'], cache_data, metric['timestamp']):
+                self._cloud_buffer_length += 1
+            if self._metrics_cache_controller.clear_buffer(time.time() - 365 * 24 * 60 * 60) > 0:
+                self._load_cloud_buffer()
     
     def _put(self, metric):
         rate_key = '{0}.{1}'.format(metric['source'].lower(), metric['type'].lower())
