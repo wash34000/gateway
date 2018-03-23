@@ -533,27 +533,24 @@ class MetricsCollector(object):
                 LOGGER.error('Error getting total energy: CommunicationTimedOutException')
             except Exception as ex:
                 MetricsCollector._log('Error getting total energy: {0}'.format(ex))
-            try:
-                for device_id in power_data:
-                    device = power_data[device_id]
+            for device_id in power_data:
+                device = power_data[device_id]
+                try:
                     if device['name'] != '':
-                        try:
-                            self._enqueue_metrics(metric_type=metric_type,
-                                                  values={'voltage': device['voltage'],
-                                                          'current': device['current'],
-                                                          'frequency': device['frequency'],
-                                                          'power': device['power'],
-                                                          'counter': float(device['counter']),
-                                                          'counter_day': float(device['counter_day']),
-                                                          'counter_night': float(device['counter_night'])},
-                                                  tags={'type': 'openmotics',
-                                                        'id': device_id,
-                                                        'name': device['name']},
-                                                  timestamp=now)
-                        except Exception as ex:
-                            MetricsCollector._log('Error processing OpenMotics power device {0}: {1}'.format(device_id, ex))
-            except Exception as ex:
-                MetricsCollector._log('Error processing OpenMotics power devices: {0}'.format(ex))
+                        self._enqueue_metrics(metric_type=metric_type,
+                                              values={'voltage': device['voltage'],
+                                                      'current': device['current'],
+                                                      'frequency': device['frequency'],
+                                                      'power': device['power'],
+                                                      'counter': float(device['counter']),
+                                                      'counter_day': float(device['counter_day']),
+                                                      'counter_night': float(device['counter_night'])},
+                                              tags={'type': 'openmotics',
+                                                    'id': device_id,
+                                                    'name': device['name']},
+                                              timestamp=now)
+                except Exception as ex:
+                    MetricsCollector._log('Error processing OpenMotics power device {0}: {1}'.format(device_id, ex))
             if self._stopped:
                 return
             self._pause(start, metric_type)
