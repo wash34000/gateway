@@ -37,7 +37,7 @@ class EepromController(object):
         """
         self._eeprom_file = eeprom_file
         self._eeprom_extension = eeprom_extension
-        self.dirty = False
+        self.dirty = True
 
     def invalidate_cache(self):
         """ Invalidate the cache, this should happen when maintenance mode was used. """

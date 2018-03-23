@@ -244,6 +244,7 @@ class PumpGroupConfiguration(EepromModel):
     """ Models a pump group. The maximum number of pump groups is 8. """
     id = EepromId(8)
     outputs = EepromCSV(32, lambda mid: (143, mid * 32))
+    output = EepromByte(lambda mid: (144, mid))
     room = EextByte()
 
 
@@ -335,6 +336,7 @@ class CoolingPumpGroupConfiguration(EepromModel):
     """ Models a pump group for cooling. The maximum number of pump groups is 8. """
     id = EepromId(8)
     outputs = EepromCSV(32, lambda mid: (202, mid * 32))
+    output = EepromByte(lambda mid: (203, mid))
     room = EextByte()
 
 
