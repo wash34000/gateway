@@ -858,7 +858,7 @@ class GatewayApi(object):
 
         for (key, config) in [('heating', heating_config), ('cooling', cooling_config)]:
             for thermostat in config:
-                info = {'active': (thermostat['sensor'] < 30 or thermostat['sensor'] == 240) and thermostat['output0'] <= 240,
+                info = {'active': (thermostat['sensor'] <= 31 or thermostat['sensor'] == 240) and thermostat['output0'] <= 240,
                         'sensor_nr': thermostat['sensor'],
                         'output0_nr': thermostat['output0'],
                         'output1_nr': thermostat['output1'],
@@ -2391,3 +2391,46 @@ class GatewayApi(object):
         return self.__power_communicator.do_command(address,
                                                     power_api.raw_command(mode, command, len(data)),
                                                     *data)
+
+    def cleanup_eeprom(self):
+        """
+        Cleans up the EEPROM:
+        * Removes 65536 second timeouts
+        * Clean memory of non-existing modules
+        """
+        input_ids = []
+        input_ids_can = []
+        for config in self.get_input_configurations():
+            input_ids.append(config['id'])
+            if config['can'] == 'C':
+                input_ids_can.append(config['id'])
+        for id in xrange(240):
+            if id not in input_ids:
+                self.set_input_configuration({'id': id,
+                                              'name': '',
+                                              'basic_actions': '',
+                                              'invert': 255,
+                                              'module_type': '',
+                                              'can': '',
+                                              'action': 255,
+                                              'room': 255})
+        for config in self.get_output_configurations():
+            change = False
+            if config['timer'] == 65535:
+                config['timer'] = 0
+                change = True
+            for i in [1, 2, 3, 4]:
+                if config['can_led_{0}_id'.format(i)] not in input_ids_can and config['can_led_{0}_id'.format(i)] != 255:
+                    config['can_led_{0}_id'.format(i)] = 255
+                    config['can_led_{0}_function'.format(i)] = 'UNKNOWN'
+            if change is True:
+                self.set_output_configuration(config)
+        for config in self.get_can_led_configurations():
+            change = False
+            for i in [1, 2, 3, 4]:
+                if config['can_led_{0}_id'.format(i)] not in input_ids_can and config['can_led_{0}_id'.format(i)] != 255:
+                    config['can_led_{0}_id'.format(i)] = 255
+                    config['can_led_{0}_function'.format(i)] = 'UNKNOWN'
+                    change = True
+            if change is True:
+                self.set_can_led_configuration(config)

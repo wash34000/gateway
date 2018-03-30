@@ -44,6 +44,11 @@ def get_eeprom_extension_database_file():
     return "/opt/openmotics/etc/eeprom_ext.db"
 
 
+def get_metrics_database_file():
+    """ Get the filename of the metrics database file. This file is in sqlite format. """
+    return "/opt/openmotics/etc/metrics.db"
+
+
 def get_ssl_certificate_file():
     """ Get the filename of the ssl certificate. """
     return "/opt/openmotics/etc/https.crt"
@@ -87,8 +92,3 @@ def get_timezone_file():
 def get_self_test_cmd():
     """ Get the path of the bash script that executes the self test. """
     return "/opt/openmotics/bin/self_test.sh"
-
-
-def get_buffer_file(name):
-    """ Get the path of a buffer file. """
-    return "/opt/openmotics/%s.buffer" % name
