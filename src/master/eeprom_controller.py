@@ -19,6 +19,7 @@ Contains controller from reading and writing to the Master EEPROM.
 import inspect
 import types
 import logging
+from threading import Lock
 from master_api import eeprom_list, write_eeprom, activate_eeprom
 
 LOGGER = logging.getLogger("openmotics")
@@ -37,7 +38,7 @@ class EepromController(object):
         """
         self._eeprom_file = eeprom_file
         self._eeprom_extension = eeprom_extension
-        self.dirty = False
+        self.dirty = True
 
     def invalidate_cache(self):
         """ Invalidate the cache, this should happen when maintenance mode was used. """
@@ -282,6 +283,7 @@ class EepromModel(object):
 
     cache_fields = {}
     cache_addresses = {}
+    cache_lock = Lock()
 
     def __init__(self, id=None):
         self.check_id(id)
@@ -474,13 +476,21 @@ class EepromModel(object):
 
     @classmethod
     def get_address_cache(cls, id):
-        cache = EepromModel.cache_addresses.setdefault(cls.__name__, {}).setdefault(id, {})
-        if len(cache) == 0:
+        if cls.__name__ in EepromModel.cache_addresses:
+            class_cache = EepromModel.cache_addresses[cls.__name__]
+        else:
+            with EepromModel.cache_lock:
+                class_cache = EepromModel.cache_addresses.setdefault(cls.__name__, {})
+        if id in class_cache:
+            return class_cache[id]
+        with EepromModel.cache_lock:
+            cache = {}
             for field_name, field_type in cls.get_fields(include_eeprom=True):
                 if isinstance(field_type, CompositeDataType):
                     cache[field_name] = field_type.get_addresses(id, field_name)
                 else:
                     cache[field_name] = field_type.get_address(id, field_name)
+            class_cache[id] = cache
         return cache
 
     @classmethod

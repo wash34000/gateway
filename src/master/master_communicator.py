@@ -162,6 +162,24 @@ class MasterCommunicator(object):
         """
         self.__consumers.append(consumer)
 
+    def do_basic_action(self, action_type, action_number):
+        """
+        Sends a basic action to the master with the given action type and action number
+        :param action_type: The action type to execute
+        :type action_type: int
+        :param action_number: The action number to execute
+        :type action_number: int
+        :raises: :class`CommunicationTimedOutException` if master did not respond in time
+        :raises: :class`InMaintenanceModeException` if master is in maintenance mode
+        :returns: dict containing the output fields of the command
+        """
+        LOGGER.info('BA: Execute {0} {1}'.format(action_type, action_number))
+        return self.do_command(
+            master_api.basic_action(),
+            {'action_type': action_type,
+             'action_number': action_number}
+        )
+
     def do_command(self, cmd, fields=None, timeout=2):
         """ Send a command over the serial port and block until an answer is received.
         If the master does not respond within the timeout period, a CommunicationTimedOutException
