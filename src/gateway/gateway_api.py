@@ -446,6 +446,7 @@ class GatewayApi(object):
             self.__discover_mode_timer = None
 
         self.__module_log = []
+        self.__eeprom_controller.dirty = True
 
         return {'status': ret['resp']}
 
@@ -977,16 +978,22 @@ class GatewayApi(object):
         :returns: dict with 'status'
         """
 
-        # First, set basic configuration
+        # Figure out whether the system should be on or off
         set_on = False
         if cooling_mode is True and cooling_on is True:
             set_on = True
         if cooling_mode is False:
             # Heating means threshold based
             global_config = self.get_global_thermostat_configuration()
-            current_temperature = self.get_sensor_temperature_status()[global_config['outside_sensor']]
-            set_on = global_config['threshold_temp'] > current_temperature
+            outside_sensor = global_config['outside_sensor']
+            current_temperatures = self.get_sensor_temperature_status()
+            if len(current_temperatures) > outside_sensor:
+                current_temperature = current_temperatures[outside_sensor]
+                set_on = global_config['threshold_temp'] > current_temperature
+            else:
+                set_on = True
 
+        # Calculate and set the global mode
         mode = 0
         mode |= (1 if set_on is True else 0) << 7
         mode |= 1 << 6  # multi-tenant mode
@@ -994,27 +1001,30 @@ class GatewayApi(object):
         if automatic is not None:
             mode |= (1 if automatic else 0) << 3
 
-        check_basic_action(self.__master_communicator.do_command(
-            master_api.basic_action(),
-            {'action_type': master_api.BA_THERMOSTAT_MODE,
-             'action_number': mode}
+        check_basic_action(self.__master_communicator.do_basic_action(
+            master_api.BA_THERMOSTAT_MODE, mode
+        ))
+
+        # Caclulate and set the cooling/heating mode
+        cooling_heating_mode = 0
+        if cooling_mode is True:
+            cooling_heating_mode = 1 if cooling_on is False else 2
+
+        check_basic_action(self.__master_communicator.do_basic_action(
+            master_api.BA_THERMOSTAT_COOLING_HEATING, cooling_heating_mode
         ))
 
         # Then, set manual/auto
         if automatic is not None:
             action_number = 1 if automatic is True else 0
-            check_basic_action(self.__master_communicator.do_command(
-                master_api.basic_action(),
-                {'action_type': master_api.BA_THERMOSTAT_AUTOMATIC,
-                 'action_number': action_number}
+            check_basic_action(self.__master_communicator.do_basic_action(
+                master_api.BA_THERMOSTAT_AUTOMATIC, action_number
             ))
 
         # If manual, set the setpoint if appropriate
         if automatic is False and setpoint is not None and 3 <= setpoint <= 5:
-            check_basic_action(self.__master_communicator.do_command(
-                master_api.basic_action(),
-                {'action_type': getattr(master_api, 'BA_ALL_SETPOINT_{0}'.format(setpoint)),
-                 'action_number': 0}
+            check_basic_action(self.__master_communicator.do_basic_action(
+                getattr(master_api, 'BA_ALL_SETPOINT_{0}'.format(setpoint)), 0
             ))
 
         return {'status': 'OK'}
@@ -1037,22 +1047,16 @@ class GatewayApi(object):
             raise ValueError("Setpoint not in [0, 5]: %d" % setpoint)
 
         if automatic:
-            check_basic_action(self.__master_communicator.do_command(
-                master_api.basic_action(),
-                {'action_type': master_api.BA_THERMOSTAT_TENANT_AUTO,
-                 'action_number': thermostat_id}
+            check_basic_action(self.__master_communicator.do_basic_action(
+                master_api.BA_THERMOSTAT_TENANT_AUTO, thermostat_id
             ))
         else:
-            check_basic_action(self.__master_communicator.do_command(
-                master_api.basic_action(),
-                {'action_type': master_api.BA_THERMOSTAT_TENANT_MANUAL,
-                 'action_number': thermostat_id}
+            check_basic_action(self.__master_communicator.do_basic_action(
+                master_api.BA_THERMOSTAT_TENANT_MANUAL, thermostat_id
             ))
 
-            check_basic_action(self.__master_communicator.do_command(
-                master_api.basic_action(),
-                {'action_type': getattr(master_api, 'BA_ONE_SETPOINT_{0}'.format(setpoint)),
-                 'action_number': thermostat_id}
+            check_basic_action(self.__master_communicator.do_basic_action(
+                getattr(master_api, 'BA_ONE_SETPOINT_{0}'.format(setpoint)), thermostat_id
             ))
 
         self.__eeprom_controller.write(
@@ -1085,10 +1089,8 @@ class GatewayApi(object):
 
         modifier = 0 if airco_on else 100
 
-        check_basic_action(self.__master_communicator.do_command(
-            master_api.basic_action(),
-            {'action_type': master_api.BA_THERMOSTAT_AIRCO_STATUS,
-             'action_number': modifier + thermostat_id}
+        check_basic_action(self.__master_communicator.do_basic_action(
+            master_api.BA_THERMOSTAT_AIRCO_STATUS, modifier + thermostat_id
         ))
 
         return {'status': 'OK'}
