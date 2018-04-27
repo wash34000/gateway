@@ -464,27 +464,24 @@ class MetricsCollector(object):
                 for counter_id, counter in self._environment['pulse_counters'].iteritems():
                     counters_data[counter_id] = {'name': counter['name'],
                                                  'input': counter['input']}
-            except Exception as ex:
-                MetricsCollector._log('Error getting pulse counter configuration: {0}'.format(ex))
-            try:
                 result = self._gateway_api.get_pulse_counter_status()
                 counters = result
                 for counter_id in counters_data:
                     if len(counters) > counter_id:
                         counters_data[counter_id]['count'] = counters[counter_id]
+                for counter_id in counters_data:
+                    counter = counters_data[counter_id]
+                    if counter['name'] != '':
+                        self._enqueue_metrics(metric_type=metric_type,
+                                              values={'value': int(counter['count'])},
+                                              tags={'name': counter['name'],
+                                                    'input': counter['input'],
+                                                    'id': 'P{0}'.format(counter_id)},
+                                              timestamp=now)
             except CommunicationTimedOutException:
                 LOGGER.error('Error getting pulse counter status: CommunicationTimedOutException')
             except Exception as ex:
                 MetricsCollector._log('Error getting pulse counter status: {0}'.format(ex))
-            for counter_id in counters_data:
-                counter = counters_data[counter_id]
-                if counter['name'] != '':
-                    self._enqueue_metrics(metric_type=metric_type,
-                                          values={'value': int(counter['count'])},
-                                          tags={'name': counter['name'],
-                                                'input': counter['input'],
-                                                'id': 'P{0}'.format(counter_id)},
-                                          timestamp=now)
             if self._stopped:
                 return
             self._pause(start, metric_type)
@@ -538,8 +535,8 @@ class MetricsCollector(object):
                 MetricsCollector._log('Error getting total energy: {0}'.format(ex))
             for device_id in power_data:
                 device = power_data[device_id]
-                if device['name'] != '' and 'voltage' in device and 'counter' in device:
-                    try:
+                try:
+                    if device['name'] != '' and 'voltage' in device and 'counter' in device:
                         self._enqueue_metrics(metric_type=metric_type,
                                               values={'voltage': device['voltage'],
                                                       'current': device['current'],
@@ -552,8 +549,8 @@ class MetricsCollector(object):
                                                     'id': device_id,
                                                     'name': device['name']},
                                               timestamp=now)
-                    except Exception as ex:
-                        MetricsCollector._log('Error processing OpenMotics power device {0}: {1}'.format(device_id, ex))
+                except Exception as ex:
+                    MetricsCollector._log('Error processing OpenMotics power device {0}: {1}'.format(device_id, ex))
             if self._stopped:
                 return
             self._pause(start, metric_type)
