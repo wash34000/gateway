@@ -27,6 +27,8 @@ from random import randint
 class UserController(object):
     """ The UserController provides methods for the creation and authentication of users. """
 
+    TERMS_VERSION = 1
+
     def __init__(self, db_filename, lock, config, token_timeout=3600):
         """ Constructor a new UserController.
 
@@ -36,36 +38,50 @@ class UserController(object):
         :type config: A dict with keys 'username' and 'password'.
         :param token_timeout: the number of seconds a token is valid.
         """
-        self.__lock = lock
-        self.__config = config
-        self.__connection = sqlite3.connect(db_filename,
-                                            detect_types=sqlite3.PARSE_DECLTYPES,
-                                            check_same_thread=False,
-                                            isolation_level=None)
-        self.__cursor = self.__connection.cursor()
-        self.__token_timeout = token_timeout
-        self.__tokens = {}
-        self.__check_tables()
+        self._lock = lock
+        self._config = config
+        self._connection = sqlite3.connect(db_filename,
+                                           detect_types=sqlite3.PARSE_DECLTYPES,
+                                           check_same_thread=False,
+                                           isolation_level=None)
+        self._cursor = self._connection.cursor()
+        self._token_timeout = token_timeout
+        self._tokens = {}
+        self._schema = {'username': "TEXT UNIQUE",
+                        'password': "TEXT",
+                        'role': "TEXT",
+                        'enabled': "INT",
+                        'accepted_terms': "INT default 0"}
+        self._check_tables()
 
         # Create the user for the cloud
-        self.create_user(self.__config['username'].lower(), self.__config['password'], "admin", True)
+        self.create_user(self._config['username'].lower(), self._config['password'], "admin", True)
 
-    def __execute(self, *args, **kwargs):
-        with self.__lock:
+    def _execute(self, *args, **kwargs):
+        with self._lock:
             try:
-                return self.__cursor.execute(*args, **kwargs)
+                return self._cursor.execute(*args, **kwargs)
             except sqlite3.OperationalError:
                 time.sleep(randint(1, 20) / 10.0)
-                return self.__cursor.execute(*args, **kwargs)
+                return self._cursor.execute(*args, **kwargs)
 
-    def __check_tables(self):
+    def _check_tables(self):
         """
         Creates tables and execute migrations
         """
-        self.__execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT UNIQUE, password TEXT, role TEXT, enabled INTEGER);")
+        with self._lock:
+            self._cursor.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, {0});".format(
+                ", ".join(['{0} {1}'.format(key, value) for key, value in self._schema.iteritems()])
+            ))
+            fields = []
+            for row in self._cursor.execute("PRAGMA table_info('users');"):
+                fields.append(row[1])
+            for field, field_type in self._schema.iteritems():
+                if field not in fields:
+                    self._cursor.execute("ALTER TABLE users ADD COLUMN {0} {1};".format(field, field_type))
 
     @staticmethod
-    def __hash(password):
+    def _hash(password):
         """ Hash the password using sha1. """
         sha = hashlib.sha1()
         sha.update("OpenMotics")
@@ -83,8 +99,8 @@ class UserController(object):
         """
         username = username.lower()
 
-        self.__execute("INSERT OR REPLACE INTO users (username, password, role, enabled) VALUES (?, ?, ?, ?);",
-                       (username, UserController.__hash(password), role, int(enabled)))
+        self._execute("INSERT OR REPLACE INTO users (username, password, role, enabled) VALUES (?, ?, ?, ?);",
+                      (username, UserController._hash(password), role, int(enabled)))
 
     def get_usernames(self):
         """ Get all usernames.
@@ -92,7 +108,7 @@ class UserController(object):
         :returns: a list of strings.
         """
         usernames = []
-        for row in self.__execute("SELECT username FROM users;"):
+        for row in self._execute("SELECT username FROM users;"):
             usernames.append(row[0])
         return usernames
 
@@ -103,27 +119,26 @@ class UserController(object):
         """
         username = username.lower()
 
-        if self.get_role(username) == "admin" and self.__get_num_admins() == 1:
+        if self.get_role(username) == "admin" and self._get_num_admins() == 1:
             raise Exception("Cannot delete last admin account")
         else:
-            self.__execute("DELETE FROM users WHERE username = ?;", (username,))
+            self._execute("DELETE FROM users WHERE username = ?;", (username,))
 
             to_remove = []
-            for token in self.__tokens:
-                if self.__tokens[token][0] == username:
+            for token in self._tokens:
+                if self._tokens[token][0] == username:
                     to_remove.append(token)
 
             for token in to_remove:
-                del self.__tokens[token]
+                del self._tokens[token]
 
-    def __get_num_admins(self):
+    def _get_num_admins(self):
         """ Get the number of admin users in the system. """
-        for row in self.__execute("SELECT count(*) FROM users WHERE role = ?", ("admin", )):
+        for row in self._execute("SELECT count(*) FROM users WHERE role = ?", ("admin",)):
             return row[0]
-
         return 0
 
-    def login(self, username, password, timeout=None):
+    def login(self, username, password, accept_terms=None, timeout=None):
         """ Login with a username and password, returns a token for this user.
 
         :returns: a token that identifies this user, None for invalid credentials.
@@ -136,46 +151,52 @@ class UserController(object):
             except ValueError:
                 timeout = None
         if timeout is None:
-            timeout = self.__token_timeout
+            timeout = self._token_timeout
 
-        for _ in self.__execute("SELECT id FROM users WHERE username = ? AND password = ? AND enabled = ?;",
-                                (username, UserController.__hash(password), 1)):
-            return self.__gen_token(username, time.time() + timeout)
-
-        return None
+        for row in self._execute("SELECT id, accepted_terms FROM users WHERE username = ? AND password = ? AND enabled = ?;",
+                                 (username, UserController._hash(password), 1)):
+            user_id, accepted_terms = row[0], row[1]
+            if accepted_terms == UserController.TERMS_VERSION:
+                return True, self._gen_token(username, time.time() + timeout)
+            if accept_terms is True:
+                self._execute("UPDATE users SET accepted_terms = ? WHERE id = ?;",
+                              (UserController.TERMS_VERSION, user_id))
+                return True, self._gen_token(username, time.time() + timeout)
+            return False, 'terms_not_accepted'
+        return False, 'invalid_credentials'
 
     def logout(self, token):
         """ Removes the token from the controller. """
-        self.__tokens.pop(token, None)
+        self._tokens.pop(token, None)
 
     def get_role(self, username):
         """ Get the role for a certain user. Returns None is user was not found. """
         username = username.lower()
 
-        for row in self.__execute("SELECT role FROM users WHERE username = ?;", (username,)):
+        for row in self._execute("SELECT role FROM users WHERE username = ?;", (username,)):
             return row[0]
 
         return None
 
-    def __gen_token(self, username, valid_until):
+    def _gen_token(self, username, valid_until):
         """ Generate a token and insert it into the tokens dict. """
         ret = uuid.uuid4().hex
-        self.__tokens[ret] = (username, valid_until)
+        self._tokens[ret] = (username, valid_until)
 
         # Delete the expired tokens
-        for token in self.__tokens.keys():
-            if self.__tokens[token][1] < time.time():
-                self.__tokens.pop(token, None)
+        for token in self._tokens.keys():
+            if self._tokens[token][1] < time.time():
+                self._tokens.pop(token, None)
 
         return ret
 
     def check_token(self, token):
         """ Returns True if the token is valid, False if the token is invalid. """
-        if token is None or token not in self.__tokens:
+        if token is None or token not in self._tokens:
             return False
         else:
-            return self.__tokens[token][1] >= time.time()
+            return self._tokens[token][1] >= time.time()
 
     def close(self):
         """ Cose the database connection. """
-        self.__connection.close()
+        self._connection.close()

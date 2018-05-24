@@ -332,8 +332,8 @@ class WebInterface(object):
         """
         return serve_file('/opt/openmotics/static/index.html', content_type='text/html')
 
-    @openmotics_api(check=types(timeout=int), plugin_exposed=False)
-    def login(self, username, password, timeout=None):
+    @openmotics_api(check=types(accept_terms=bool, timeout=int), plugin_exposed=False)
+    def login(self, username, password, accept_terms=None, timeout=None):
         """
         Login to the web service, returns a token if successful, returns HTTP status code 401 otherwise.
 
@@ -341,15 +341,20 @@ class WebInterface(object):
         :type username: str
         :param password: Password of the user.
         :type password: str
+        :param accept_terms: True if the terms are accepted
+        :type accept_terms: bool | None
         :param timeout: Optional session timeout. 30d >= x >= 1h
         :type timeout: int
         :returns: Authentication token
         :rtype: str
         """
-        token = self._user_controller.login(username, password, timeout)
-        if token is None:
-            raise cherrypy.HTTPError(401, "invalid_credentials")
-        return {'token': token}
+
+        success, data = self._user_controller.login(username, password, accept_terms, timeout)
+        if success is True:
+            return {'token': data}
+        if data == 'terms_not_accepted':
+            return {'next_step': 'accept_terms'}
+        raise cherrypy.HTTPError(401, "invalid_credentials")
 
     @openmotics_api(auth=True, pass_token=True, plugin_exposed=False)
     def logout(self, token):
@@ -1959,7 +1964,7 @@ class WebInterface(object):
         config = ConfigParser.ConfigParser()
         config.read(constants.get_config_file())
         return {'version': str(config.get('OpenMotics', 'version')),
-                'gateway': '2.5.1'}
+                'gateway': '2.5.2'}
 
     @openmotics_api(auth=True, plugin_exposed=False)
     def update(self, version, md5, update_data):
@@ -2222,7 +2227,9 @@ class WebService(object):
             OMPlugin(cherrypy.engine).subscribe()
             cherrypy.tools.websocket = WebSocketTool()
 
-            config = {'/static': {'tools.staticdir.on': True,
+            config = {'/terms': {'tools.staticdir.on': True,
+                                 'tools.staticdir.dir': '/opt/openmotics/python/terms'},
+                      '/static': {'tools.staticdir.on': True,
                                   'tools.staticdir.dir': '/opt/openmotics/static'},
                       '/ws_metrics': {'tools.websocket.on': True,
                                       'tools.websocket.handler_cls': MetricsSocket},
