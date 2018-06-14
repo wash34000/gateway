@@ -44,6 +44,7 @@ from master.eeprom_models import OutputConfiguration, InputConfiguration, Thermo
     GlobalRTD10Configuration, RTD10HeatingConfiguration, RTD10CoolingConfiguration, \
     CanLedConfiguration, RoomConfiguration, ThermostatSetpointConfiguration
 import power.power_api as power_api
+from pulses import PulseCounterController
 
 LOGGER = logging.getLogger("openmotics")
 
@@ -80,6 +81,11 @@ class GatewayApi(object):
         )
         self.__power_communicator = power_communicator
         self.__power_controller = power_controller
+        self.__pulse_controller = PulseCounterController(
+            constants.get_pulse_counter_database_file(),
+            self.__master_communicator,
+            self.__eeprom_controller
+        )
         self.__plugin_controller = None
 
         self.__last_maintenance_send_time = 0
@@ -1392,18 +1398,71 @@ class GatewayApi(object):
 
     # Pulse counter functions
 
-    def get_pulse_counter_status(self):
-        """ Get the pulse counter values.
-
-        :returns: array with the 24 pulse counter values.
+    def set_pulse_counter_amount(self, amount):
         """
-        out_dict = self.__master_communicator.do_command(master_api.pulse_list())
-        return [out_dict['pv0'], out_dict['pv1'], out_dict['pv2'], out_dict['pv3'],
-                out_dict['pv4'], out_dict['pv5'], out_dict['pv6'], out_dict['pv7'],
-                out_dict['pv8'], out_dict['pv9'], out_dict['pv10'], out_dict['pv11'],
-                out_dict['pv12'], out_dict['pv13'], out_dict['pv14'], out_dict['pv15'],
-                out_dict['pv16'], out_dict['pv17'], out_dict['pv18'], out_dict['pv19'],
-                out_dict['pv20'], out_dict['pv21'], out_dict['pv22'], out_dict['pv23']]
+        Set the number of pulse counters.
+
+        :param amount: The number of pulse counters.
+        :type amount: int
+        :returns: the number of pulse counters.
+        """
+        return self.__pulse_controller.set_pulse_counter_amount(amount)
+
+    def get_pulse_counter_status(self):
+        """
+        Get the pulse counter values.
+
+        :returns: array with the pulse counter values.
+        """
+        return self.__pulse_controller.get_pulse_counter_status()
+
+    def set_pulse_counter_status(self, pulse_counter_id, value):
+        """
+        Sets a pulse counter to a value.
+
+        :returns: the updated value of the pulse counter.
+        """
+        return self.__pulse_controller.set_pulse_counter_status(pulse_counter_id, value)
+
+    def get_pulse_counter_configuration(self, pulse_counter_id, fields=None):
+        """
+        Get a specific pulse_counter_configuration defined by its id.
+
+        :param pulse_counter_id: The id of the pulse_counter_configuration
+        :type pulse_counter_id: Id
+        :param fields: The field of the pulse_counter_configuration to get. (None gets all fields)
+        :type fields: List of strings
+        :returns: pulse_counter_configuration dict: contains 'id' (Id), 'input' (Byte), 'name' (String[16]), 'room' (Byte)
+        """
+        return self.__pulse_controller.get_configuration(pulse_counter_id, fields)
+
+    def get_pulse_counter_configurations(self, fields=None):
+        """
+        Get all pulse_counter_configurations.
+
+        :param fields: The field of the pulse_counter_configuration to get. (None gets all fields)
+        :type fields: List of strings
+        :returns: list of pulse_counter_configuration dict: contains 'id' (Id), 'input' (Byte), 'name' (String[16]), 'room' (Byte)
+        """
+        return self.__pulse_controller.get_configurations(fields)
+
+    def set_pulse_counter_configuration(self, config):
+        """
+        Set one pulse_counter_configuration.
+
+        :param config: The pulse_counter_configuration to set
+        :type config: pulse_counter_configuration dict: contains 'id' (Id), 'input' (Byte), 'name' (String[16]), 'room' (Byte)
+        """
+        self.__pulse_controller.set_configuration(config)
+
+    def set_pulse_counter_configurations(self, config):
+        """
+        Set multiple pulse_counter_configurations.
+
+        :param config: The list of pulse_counter_configurations to set
+        :type config: list of pulse_counter_configuration dict: contains 'id' (Id), 'input' (Byte), 'name' (String[16]), 'room' (Byte)
+        """
+        self.__pulse_controller.set_configurations(config)
 
     # Below are the auto generated master configuration functions
 
@@ -1949,46 +2008,6 @@ class GatewayApi(object):
         :type config: list of scheduled_action_configuration dict: contains 'id' (Id), 'action' (Actions[1]), 'day' (Byte), 'hour' (Byte), 'minute' (Byte)
         """
         self.__eeprom_controller.write_batch([ScheduledActionConfiguration.deserialize(o) for o in config])
-
-    def get_pulse_counter_configuration(self, pulse_counter_id, fields=None):
-        """
-        Get a specific pulse_counter_configuration defined by its id.
-
-        :param pulse_counter_id: The id of the pulse_counter_configuration
-        :type pulse_counter_id: Id
-        :param fields: The field of the pulse_counter_configuration to get. (None gets all fields)
-        :type fields: List of strings
-        :returns: pulse_counter_configuration dict: contains 'id' (Id), 'input' (Byte), 'name' (String[16]), 'room' (Byte)
-        """
-        return self.__eeprom_controller.read(PulseCounterConfiguration, pulse_counter_id, fields).serialize()
-
-    def get_pulse_counter_configurations(self, fields=None):
-        """
-        Get all pulse_counter_configurations.
-
-        :param fields: The field of the pulse_counter_configuration to get. (None gets all fields)
-        :type fields: List of strings
-        :returns: list of pulse_counter_configuration dict: contains 'id' (Id), 'input' (Byte), 'name' (String[16]), 'room' (Byte)
-        """
-        return [o.serialize() for o in self.__eeprom_controller.read_all(PulseCounterConfiguration, fields)]
-
-    def set_pulse_counter_configuration(self, config):
-        """
-        Set one pulse_counter_configuration.
-
-        :param config: The pulse_counter_configuration to set
-        :type config: pulse_counter_configuration dict: contains 'id' (Id), 'input' (Byte), 'name' (String[16]), 'room' (Byte)
-        """
-        self.__eeprom_controller.write(PulseCounterConfiguration.deserialize(config))
-
-    def set_pulse_counter_configurations(self, config):
-        """
-        Set multiple pulse_counter_configurations.
-
-        :param config: The list of pulse_counter_configurations to set
-        :type config: list of pulse_counter_configuration dict: contains 'id' (Id), 'input' (Byte), 'name' (String[16]), 'room' (Byte)
-        """
-        self.__eeprom_controller.write_batch([PulseCounterConfiguration.deserialize(o) for o in config])
 
     def get_startup_action_configuration(self, fields=None):
         """

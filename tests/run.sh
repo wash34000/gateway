@@ -48,3 +48,6 @@ python2 -m plugins_tests.base_tests
 
 echo "Running plugin interfaces tests"
 python2 -m plugins_tests.interfaces_tests
+
+echo "Running pulse counter controller tests"
+python2 -m gateway_tests.pulses_tests
