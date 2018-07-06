@@ -445,13 +445,14 @@ class GatewayApi(object):
 
         :returns: dict with 'status' ('OK').
         """
-        ret = self.__master_communicator.do_command(master_api.module_discover_stop())
-
         if self.__discover_mode_timer is not None:
             self.__discover_mode_timer.cancel()
             self.__discover_mode_timer = None
 
+        ret = self.__master_communicator.do_command(master_api.module_discover_stop())
+
         self.__module_log = []
+        self.__eeprom_controller.invalidate_cache()
         self.__eeprom_controller.dirty = True
 
         return {'status': ret['resp']}
