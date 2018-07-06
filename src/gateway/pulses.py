@@ -1,4 +1,4 @@
-# Copyright (C) 2016 OpenMotics BVBA
+# Copyright (C) 2018 OpenMotics BVBA
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -18,13 +18,13 @@ The pulses module contains the PulseCounterController.
 
 import sqlite3
 import logging
-import time
 
 import master.master_api as master_api
 from master.eeprom_models import PulseCounterConfiguration
 
 LOGGER = logging.getLogger('openmotics')
 MASTER_PULSE_COUNTERS = 24
+
 
 class PulseCounterController(object):
     """
@@ -55,7 +55,7 @@ class PulseCounterController(object):
         """
         Creates the table.
         """
-        self._execute("CREATE TABLE IF NOT EXISTS pulse_counters " \
+        self._execute("CREATE TABLE IF NOT EXISTS pulse_counters " 
                       "(id INTEGER PRIMARY KEY, name TEXT, room INTEGER, status INTEGER);")
 
     def set_pulse_counter_amount(self, amount):
@@ -64,8 +64,8 @@ class PulseCounterController(object):
 
         # Create new pulse counters if required
         for i in xrange(24, amount):
-            self._execute('INSERT INTO pulse_counters (id, name, room, status) ' \
-                          'SELECT ?, "", 255, 0 ' \
+            self._execute('INSERT INTO pulse_counters (id, name, room, status) ' 
+                          'SELECT ?, "", 255, 0 ' 
                           'WHERE NOT EXISTS (SELECT 1 FROM pulse_counters WHERE id = ?);', (i, i))
 
         # Delete pulse counters with a higher id
@@ -73,8 +73,8 @@ class PulseCounterController(object):
 
     def get_pulse_counter_amount(self):
         for row in self._execute("SELECT max(id) FROM pulse_counters;"):
-            max = row[0]
-            return max + 1 if max is not None else 24
+            max_id = row[0]
+            return max_id + 1 if max_id is not None else 24
 
     def _check_id(self, pulse_counter_id, check_not_physical):
         if check_not_physical and pulse_counter_id < MASTER_PULSE_COUNTERS:
@@ -104,8 +104,9 @@ class PulseCounterController(object):
                 out_dict['pv16'], out_dict['pv17'], out_dict['pv18'], out_dict['pv19'],
                 out_dict['pv20'], out_dict['pv21'], out_dict['pv22'], out_dict['pv23']]
 
-    def _row_to_config(self, row):
-        return {"id":row[0], "name":str(row[1]), "input":-1, "room":row[2]}
+    @staticmethod
+    def _row_to_config(row):
+        return {"id": row[0], "name": str(row[1]), "input": -1, "room": row[2]}
 
     def get_configuration(self, pulse_counter_id, fields=None):
         self._check_id(pulse_counter_id, False)
@@ -114,13 +115,13 @@ class PulseCounterController(object):
             return self.__eeprom_controller.read(PulseCounterConfiguration, pulse_counter_id, fields).serialize()
         else:
             for row in self._execute("SELECT id, name, room FROM pulse_counters WHERE id = ?;", (pulse_counter_id,)):
-                return self._row_to_config(row)
+                return PulseCounterController._row_to_config(row)
 
     def get_configurations(self, fields=None):
         configs = [o.serialize() for o in self.__eeprom_controller.read_all(PulseCounterConfiguration, fields)]
 
         for row in self._execute("SELECT id, name, room FROM pulse_counters ORDER BY id ASC;"):
-            configs.append(self._row_to_config(row))
+            configs.append(PulseCounterController._row_to_config(row))
 
         return configs
 
@@ -134,7 +135,7 @@ class PulseCounterController(object):
                 raise ValueError('virtual pulse counter %d can only have input -1' % config['id'])
             else:
                 self._execute("UPDATE pulse_counters SET name = ?, room = ? WHERE id = ?;",
-                            (config['name'], config['room'], config['id']))
+                              (config['name'], config['room'], config['id']))
 
     def set_configurations(self, config):
         for item in config:
