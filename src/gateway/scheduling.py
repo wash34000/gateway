@@ -279,7 +279,7 @@ class SchedulingController(object):
         elif schedule_type == 'GROUP_ACTION':
             if duration is not None:
                 raise RuntimeError('A schedule of type GROUP_ACTION does not have a duration. It is a one-time trigger')
-            if not isinstance(arguments, int) or arguments < 1 or arguments > 254:
+            if not isinstance(arguments, int) or arguments < 0 or arguments > 254:
                 raise RuntimeError('The arguments of a GROUP_ACTION schedule must be an integer, representing the Group Action to be executed')
         elif schedule_type == 'LOCAL_API':
             if duration is not None:
