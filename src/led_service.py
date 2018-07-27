@@ -61,17 +61,15 @@ class LOGGER(object):
 def is_beagle_bone_black():
     """ Use the total memory size to determine whether the code runs on a Beaglebone
     or on a Beaglebone Black. """
-    meminfo = open('/proc/meminfo', 'r')
-    mem_total = meminfo.readline()
-    meminfo.close()
+    with open('/proc/meminfo', 'r') as meminfo:
+        mem_total = meminfo.readline()
     return "510716 kB" in mem_total
 
 
 def is_button_pressed(gpio_pin):
     """ Read the input button: returns True if the button is pressed, False if not. """
-    fh_inp = open('/sys/class/gpio/gpio%d/value' % gpio_pin, 'r')
-    line = fh_inp.read()
-    fh_inp.close()
+    with open('/sys/class/gpio/gpio{0}/value'.format(gpio_pin), 'r') as fh_inp:
+        line = fh_inp.read()
     return int(line) == 0
 
 
@@ -107,6 +105,7 @@ class StatusObject(dbus.service.Object):
 
         self._serial_activity = {4: False, 5: False}
         self._enabled_leds = {}
+        self._previous_gpio = {}
         self._last_code = 0
 
         self._authorized_mode = False
@@ -115,6 +114,8 @@ class StatusObject(dbus.service.Object):
 
         self._led_thread = None
         self._button_thread = None
+
+        self._is_bbb = is_beagle_bone_black()
 
         self.clear_leds()
 
@@ -180,10 +181,9 @@ class StatusObject(dbus.service.Object):
             new_code = self._get_i2c_code()
             if new_code != self._last_code:
                 self._last_code = new_code
-                i2c = open(self._i2c_device, 'r+', 1)
-                fcntl.ioctl(i2c, IOCTL_I2C_SLAVE, self._i2c_address)
-                i2c.write(chr(new_code))
-                i2c.close()
+                with open(self._i2c_device, 'r+', 1) as i2c:
+                    fcntl.ioctl(i2c, IOCTL_I2C_SLAVE, self._i2c_address)
+                    i2c.write(chr(new_code))
         except Exception as exception:
             LOGGER.log('Error while writing to i2c: {0}'.format(exception))
 
@@ -194,15 +194,15 @@ class StatusObject(dbus.service.Object):
                 self.serial()
             except Exception as exception:
                 LOGGER.log('Error while driving leds: {0}'.format(exception))
-            time.sleep(0.1)
+            time.sleep(0.25)
 
-    @staticmethod
-    def set_gpio(gpio, on):
+    def set_gpio(self, gpio, on):
         """ Sets GPIO on/off """
         try:
-            fh_s = open('/sys/class/gpio/gpio{0}/value'.format(gpio), 'w')
-            fh_s.write('1' if on else '0')
-            fh_s.close()
+            if self._previous_gpio.get(gpio) != on:
+                with open('/sys/class/gpio/gpio{0}/value'.format(gpio), 'w') as fh_s:
+                    fh_s.write('1' if on else '0')
+                self._previous_gpio[gpio] = on
         except IOError:
             pass  # The GPIO doesn't exist or is read only
 
@@ -211,43 +211,48 @@ class StatusObject(dbus.service.Object):
         This function registers itself with the gobject creating a loop that runs every 100 ms.
         """
         for uart in [4, 5]:
-            self.set_led('uart' + str(uart), self._serial_activity[uart])
+            uart_name = 'uart{0}'.format(uart)
+            if self._serial_activity[uart]:
+                self.toggle_led(uart_name)
+            else:
+                self.set_led(uart_name, False)
             self._serial_activity[uart] = False
 
     def network(self):
         """ Function that set the LEDs on the ethernet port using the statistics from /proc/net.
         This function registers itself with the gobject creating a loop that runs every 100 ms.
         """
-        fh_up = open('/sys/class/net/eth0/carrier', 'r')
-        line = fh_up.read()
-        fh_up.close()
+        with open('/sys/class/net/eth0/carrier', 'r') as fh_up:
+            line = fh_up.read()
         self._network_enabled = int(line) == 1
 
-        fh_stat = open('/proc/net/dev', 'r')
-        for line in fh_stat.readlines():
-            if 'eth0' in line:
-                received, transmitted = 0, 0
-                parts = line.split()
-                if len(parts) == 17:
-                    received = parts[1]
-                    transmitted = parts[9]
-                elif len(parts) == 16:
-                    (_, received) = tuple(parts[0].split(':'))
-                    transmitted = parts[8]
-                new_bytes = received + transmitted
-                if self._network_bytes != new_bytes:
-                    self._network_bytes = new_bytes
-                    self._network_activity = not self._network_activity
-                else:
-                    self._network_activity = False
-        fh_stat.close()
+        with open('/proc/net/dev', 'r') as fh_stat:
+            for line in fh_stat.readlines():
+                if 'eth0' in line:
+                    received, transmitted = 0, 0
+                    parts = line.split()
+                    if len(parts) == 17:
+                        received = parts[1]
+                        transmitted = parts[9]
+                    elif len(parts) == 16:
+                        (_, received) = tuple(parts[0].split(':'))
+                        transmitted = parts[8]
+                    new_bytes = received + transmitted
+                    if self._network_bytes != new_bytes:
+                        self._network_bytes = new_bytes
+                        self._network_activity = True
+                    else:
+                        self._network_activity = False
 
-        if not is_beagle_bone_black():
-            StatusObject.set_gpio(ETH_LEFT_BB, self._network_enabled)
-            StatusObject.set_gpio(ETH_RIGHT_BB, self._network_activity)
+        if not self._is_bbb:
+            self.set_gpio(ETH_LEFT_BB, self._network_enabled)
+            self.set_gpio(ETH_RIGHT_BB, self._network_activity)
         else:
-            StatusObject.set_gpio(ETH_STATUS_BBB, not self._network_enabled)
-            self.set_led('alive', self._network_activity)
+            self.set_gpio(ETH_STATUS_BBB, not self._network_enabled)
+            if self._network_activity:
+                self.toggle_led('alive')
+            else:
+                self.set_led('alive', False)
 
     def _check_button(self):
         pressed_since = None
@@ -256,9 +261,9 @@ class StatusObject(dbus.service.Object):
                 if self._authorized_mode:
                     if time.time() > self._authorized_timeout:
                         self._authorized_mode = False
-                        StatusObject.set_gpio(HOME, True)
+                        self.set_gpio(HOME, True)
                     else:
-                        StatusObject.set_gpio(HOME, AUTH_LOOP[self._authorized_index])
+                        self.set_gpio(HOME, AUTH_LOOP[self._authorized_index])
                         self._authorized_index = (self._authorized_index + 1) % len(AUTH_LOOP)
                         # Still in authorized mode...
                 else:
@@ -273,7 +278,7 @@ class StatusObject(dbus.service.Object):
                         pressed_since = None
             except Exception as exception:
                 LOGGER.log('Error while checking button: {0}'.format(exception))
-            time.sleep(0.1)
+            time.sleep(0.5)
 
 
 def main():
@@ -297,7 +302,7 @@ def main():
         status = StatusObject(system_bus, '/com/openmotics/status', i2c_device, i2c_address, gpio_input)
         status.start()
 
-        StatusObject.set_gpio(POWER_BBB, True)
+        status.set_gpio(POWER_BBB, True)
 
         LOGGER.log("Running led service.")
         mainloop = gobject.MainLoop()
