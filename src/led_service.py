@@ -173,10 +173,6 @@ class StatusObject(dbus.service.Object):
     def _write_leds(self):
         """ Set the LEDs using the current status. """
         try:
-            # Some leds have dependencies (to make it more understandable for non-technical people)
-            if not self._network_enabled:
-                self._enabled_leds['vpn'] = False
-
             # Update leds
             new_code = self._get_i2c_code()
             if new_code != self._last_code:

@@ -76,6 +76,19 @@ class VpnController(object):
         """ Check if openvpn is running """
         return subprocess.call(VpnController.checkCmd, shell=True) == 0
 
+    @staticmethod
+    def vpn_connected():
+        """ Checks if the VPN tunnel is connected """
+        try:
+            route = subprocess.check_output('ip r | grep tun | grep via || true', shell=True).strip()
+            if not route:
+                return False
+            vpn_server = route.split(' ')[0]
+            return ping(vpn_server)
+        except Exception as ex:
+            LOGGER.log('Exception occured during vpn connectivity test: {0}'.format(ex))
+            return False
+
 
 class Cloud(object):
     """ Connects to the OpenMotics cloud to check if the vpn should be opened. """
@@ -109,8 +122,8 @@ class Cloud(object):
             self.__led_service.set_led('cloud', True)
 
             return data['open_vpn']
-        except Exception as exception:
-            LOGGER.log('Exception occured during check: {0}'.format(exception))
+        except Exception as ex:
+            LOGGER.log('Exception occured during check: {0}'.format(ex))
             self.__led_service.set_led('cloud', False)
 
             return True
@@ -137,8 +150,8 @@ class Gateway(object):
         try:
             request = requests.get("http://" + self.__host + "/" + uri, timeout=15.0)
             return json.loads(request.text)
-        except Exception as exception:
-            LOGGER.log('Exception during Gateway call: {0}'.format(exception))
+        except Exception as ex:
+            LOGGER.log('Exception during Gateway call: {0}'.format(ex))
             return None
 
     def get_enabled_outputs(self):
@@ -277,24 +290,25 @@ class DataCollector(object):
                 return self.__function()
             else:
                 return None
-        except Exception as exception:
-            LOGGER.log('Error while collecting data: {0}'.format(exception))
+        except Exception as ex:
+            LOGGER.log('Error while collecting data: {0}'.format(ex))
             traceback.print_exc()
             return None
 
 
-def ping(target):
+def ping(target, verbose=True):
     """ Check if the target can be pinged. Returns True if at least 1/4 pings was successful. """
     if target is None:
         return False
 
-    LOGGER.log("Testing ping to %s" % target)
+    if verbose is True:
+        LOGGER.log("Testing ping to {0}".format(target))
     try:
         # Ping returns status code 0 if at least 1 ping is successful
-        subprocess.check_output("ping -c 4 %s" % target, shell=True)
+        subprocess.check_output("ping -c 3 {0}".format(target), shell=True)
         return True
     except Exception as ex:
-        LOGGER.log("Error during ping: %s" % ex)
+        LOGGER.log("Error during ping: {0}".format(ex))
         return False
 
 
@@ -303,7 +317,7 @@ def get_gateway():
     try:
         return subprocess.check_output("ip r | grep '^default via' | awk '{ print $3; }'", shell=True)
     except Exception as ex:
-        LOGGER.log("Error during get_gateway: %s" % ex)
+        LOGGER.log("Error during get_gateway: {0}".format(ex))
         return None
 
 
@@ -318,15 +332,15 @@ def main():
     config_controller = ConfigurationController(constants.get_config_database_file(), config_lock)
 
     def set_vpn(_should_open):
-        is_open = VpnController.check_vpn()
-        if _should_open and not is_open:
+        is_running = VpnController.check_vpn()
+        if _should_open and not is_running:
             LOGGER.log(str(datetime.now()) + ": opening vpn")
             VpnController.start_vpn()
-        elif not _should_open and is_open:
+        elif not _should_open and is_running:
             LOGGER.log(str(datetime.now()) + ": closing vpn")
             VpnController.stop_vpn()
-        is_open = VpnController.check_vpn()
-        led_service.set_led('vpn', is_open)
+        is_running = VpnController.check_vpn()
+        led_service.set_led('vpn', is_running and VpnController.vpn_connected())
 
     # Get the configuration
     config = ConfigParser()
@@ -388,7 +402,7 @@ def main():
                 previous_sleep_time = sleep_time
             time.sleep(sleep_time)
         except Exception as ex:
-            LOGGER.log("Error during vpn check loop: %s" % ex)
+            LOGGER.log("Error during vpn check loop: {0}".format(ex))
 
 
 if __name__ == '__main__':
