@@ -62,6 +62,7 @@ class LedService(object):
             return system_bus.get_object('com.openmotics.status', '/com/openmotics/status')
         except Exception as ex:
             sys.stderr.write("Could not initialize dbus to led_service: {0}\n".format(ex))
+            sys.stderr.flush()
             return None
 
     @check_for_errors(None)

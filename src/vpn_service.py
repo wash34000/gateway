@@ -18,6 +18,7 @@ if required. On each check the vpn_service sends some status information about t
 thermostats to the cloud, to keep the status information in the cloud in sync.
 """
 
+import sys
 import requests
 import time
 import subprocess
@@ -37,6 +38,13 @@ except ImportError:
 REBOOT_TIMEOUT = 900
 
 
+class LOGGER(object):
+    @staticmethod
+    def log(line):
+        sys.stdout.write('{0}\n'.format(line))
+        sys.stdout.flush()
+
+
 def reboot_gateway():
     """ Reboot the gateway. """
     subprocess.call('sync && reboot', shell=True)
@@ -46,9 +54,9 @@ class VpnController(object):
     """ Contains methods to check the vpn status, start and stop the vpn. """
 
     vpnService = "openvpn.service"
-    startCmd = "systemctl start " + vpnService
-    stopCmd = "systemctl stop " + vpnService
-    checkCmd = "systemctl is-active " + vpnService
+    startCmd = "systemctl start " + vpnService + " > /dev/null"
+    stopCmd = "systemctl stop " + vpnService + " > /dev/null"
+    checkCmd = "systemctl is-active " + vpnService + " > /dev/null"
 
     def __init__(self):
         pass
@@ -67,6 +75,19 @@ class VpnController(object):
     def check_vpn():
         """ Check if openvpn is running """
         return subprocess.call(VpnController.checkCmd, shell=True) == 0
+
+    @staticmethod
+    def vpn_connected():
+        """ Checks if the VPN tunnel is connected """
+        try:
+            route = subprocess.check_output('ip r | grep tun | grep via || true', shell=True).strip()
+            if not route:
+                return False
+            vpn_server = route.split(' ')[0]
+            return ping(vpn_server)
+        except Exception as ex:
+            LOGGER.log('Exception occured during vpn connectivity test: {0}'.format(ex))
+            return False
 
 
 class Cloud(object):
@@ -97,15 +118,13 @@ class Cloud(object):
                 for setting, value in data['configuration'].iteritems():
                     self.__config.set_setting(setting, value)
 
-            self.__led_service.set_led('cloud', True)
-            self.__led_service.toggle_led('alive')
             self.__last_connect = time.time()
+            self.__led_service.set_led('cloud', True)
 
             return data['open_vpn']
-        except Exception as exception:
-            print "Exception occured during check: ", exception
+        except Exception as ex:
+            LOGGER.log('Exception occured during check: {0}'.format(ex))
             self.__led_service.set_led('cloud', False)
-            self.__led_service.set_led('alive', False)
 
             return True
 
@@ -131,8 +150,8 @@ class Gateway(object):
         try:
             request = requests.get("http://" + self.__host + "/" + uri, timeout=15.0)
             return json.loads(request.text)
-        except Exception as exception:
-            print "Exception during Gateway call: ", exception
+        except Exception as ex:
+            LOGGER.log('Exception during Gateway call: {0}'.format(ex))
             return None
 
     def get_enabled_outputs(self):
@@ -271,24 +290,25 @@ class DataCollector(object):
                 return self.__function()
             else:
                 return None
-        except Exception as exception:
-            print "Exception while collecting data: ", exception
+        except Exception as ex:
+            LOGGER.log('Error while collecting data: {0}'.format(ex))
             traceback.print_exc()
             return None
 
 
-def ping(target):
+def ping(target, verbose=True):
     """ Check if the target can be pinged. Returns True if at least 1/4 pings was successful. """
     if target is None:
         return False
 
-    print("Testing ping to %s" % target)
+    if verbose is True:
+        LOGGER.log("Testing ping to {0}".format(target))
     try:
         # Ping returns status code 0 if at least 1 ping is successful
-        subprocess.check_output("ping -c 4 %s" % target, shell=True)
+        subprocess.check_output("ping -c 3 {0}".format(target), shell=True)
         return True
     except Exception as ex:
-        print("Error during ping: %s" % ex)
+        LOGGER.log("Error during ping: {0}".format(ex))
         return False
 
 
@@ -297,7 +317,7 @@ def get_gateway():
     try:
         return subprocess.check_output("ip r | grep '^default via' | awk '{ print $3; }'", shell=True)
     except Exception as ex:
-        print("Error during get_gateway: %s" % ex)
+        LOGGER.log("Error during get_gateway: {0}".format(ex))
         return None
 
 
@@ -312,14 +332,15 @@ def main():
     config_controller = ConfigurationController(constants.get_config_database_file(), config_lock)
 
     def set_vpn(_should_open):
-        is_open = VpnController.check_vpn()
-        if _should_open and not is_open:
-            print str(datetime.now()) + ": opening vpn"
+        is_running = VpnController.check_vpn()
+        if _should_open and not is_running:
+            LOGGER.log(str(datetime.now()) + ": opening vpn")
             VpnController.start_vpn()
-        elif not _should_open and is_open:
-            print str(datetime.now()) + ": closing vpn"
+        elif not _should_open and is_running:
+            LOGGER.log(str(datetime.now()) + ": closing vpn")
             VpnController.stop_vpn()
-        led_service.set_led('vpn', _should_open)
+        is_running = VpnController.check_vpn()
+        led_service.set_led('vpn', is_running and VpnController.vpn_connected())
 
     # Get the configuration
     config = ConfigParser()
@@ -339,42 +360,51 @@ def main():
 
     iterations = 0
 
+    previous_sleep_time = 0
     while True:
-        # Check whether connection to the Cloud is enabled/disabled
-        cloud_enabled = config_controller.get_setting('cloud_enabled')
-        if cloud_enabled is False:
-            set_vpn(False)
-            time.sleep(30)
-            continue
+        try:
+            # Check whether connection to the Cloud is enabled/disabled
+            cloud_enabled = config_controller.get_setting('cloud_enabled')
+            if cloud_enabled is False:
+                set_vpn(False)
+                led_service.set_led('cloud', False)
+                led_service.set_led('vpn', False)
+                time.sleep(30)
+                continue
 
-        vpn_data = {}
+            vpn_data = {}
 
-        # Collect data to be send to the Cloud
-        for collector_name in collectors:
-            collector = collectors[collector_name]
-            data = collector.collect()
-            if data is not None:
-                vpn_data[collector_name] = data
+            # Collect data to be send to the Cloud
+            for collector_name in collectors:
+                collector = collectors[collector_name]
+                data = collector.collect()
+                if data is not None:
+                    vpn_data[collector_name] = data
 
-        # Send data to the cloud and see if the VPN should be opened
-        should_open = cloud.should_open_vpn(vpn_data)
+            # Send data to the cloud and see if the VPN should be opened
+            should_open = cloud.should_open_vpn(vpn_data)
 
-        if iterations > 20 and cloud.get_last_connect() < time.time() - REBOOT_TIMEOUT:
-            # The cloud is not responding for a while.
-            if not ping('cloud.openmotics.com') and not ping('8.8.8.8') and not ping(get_gateway()):
-                # Perhaps the BeagleBone network stack is hanging, reboot the gateway
-                # to reset the BeagleBone.
-                reboot_gateway()
-        iterations += 1
+            if iterations > 20 and cloud.get_last_connect() < time.time() - REBOOT_TIMEOUT:
+                # The cloud is not responding for a while.
+                if not ping('cloud.openmotics.com') and not ping('8.8.8.8') and not ping(get_gateway()):
+                    # Perhaps the BeagleBone network stack is hanging, reboot the gateway
+                    # to reset the BeagleBone.
+                    reboot_gateway()
+            iterations += 1
 
-        # Open or close the VPN
-        set_vpn(should_open)
+            # Open or close the VPN
+            set_vpn(should_open)
 
-        # Getting some cleep
-        print "Sleeping for %ds" % cloud.get_sleep_time()
-        time.sleep(cloud.get_sleep_time())
+            # Getting some cleep
+            sleep_time = cloud.get_sleep_time()
+            if previous_sleep_time != sleep_time:
+                LOGGER.log('Sleep time set to {0}s'.format(sleep_time))
+                previous_sleep_time = sleep_time
+            time.sleep(sleep_time)
+        except Exception as ex:
+            LOGGER.log("Error during vpn check loop: {0}".format(ex))
 
 
 if __name__ == '__main__':
-    print "\nStarting VPN service\n"
+    LOGGER.log("Starting VPN service")
     main()

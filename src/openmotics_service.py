@@ -86,7 +86,7 @@ def led_driver(led_service, master_communicator, power_communicator):
 
         master = (master_communicator.get_bytes_read(), master_communicator.get_bytes_written())
         power = (power_communicator.get_bytes_read(), power_communicator.get_bytes_written())
-        time.sleep(0.100)
+        time.sleep(0.1)
 
 
 def main():
@@ -158,7 +158,7 @@ def main():
     def _on_output(*args, **kwargs):
         metrics_collector.on_output(*args, **kwargs)
         gateway_api.on_outputs(*args, **kwargs)
-    
+
     def _on_input(*args, **kwargs):
         metrics_collector.on_input(*args, **kwargs)
         gateway_api.on_inputs(*args, **kwargs)
