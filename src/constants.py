@@ -68,7 +68,6 @@ def get_update_file():
     """ Get the filename of the tgz file that contains the update script and data. """
     return "/opt/openmotics/update/update.tgz"
 
-
 def get_update_output_file():
     """ Get the filename for the output of the update command. """
     return "/opt/openmotics/etc/last_update.out"
@@ -92,3 +91,13 @@ def get_timezone_file():
 def get_self_test_cmd():
     """ Get the path of the bash script that executes the self test. """
     return "/opt/openmotics/bin/self_test.sh"
+
+
+def get_plugin_dir():
+    """ Get the directory where plugin data is stored. """
+    return "/opt/openmotics/python/plugins/"
+
+
+def get_plugin_configfiles():
+    """ Get the directory where plugin data is stored. """
+    return "/opt/openmotics/etc/pi_*"
