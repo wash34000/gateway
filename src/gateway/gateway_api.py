@@ -198,6 +198,9 @@ class GatewayApi(object):
             if write:
                 self.__master_communicator.do_command(master_api.activate_eeprom(), {'eep': 0})
 
+            LOGGER.info("Turn master leds ON - disable low power mode")
+            self.set_master_status_leds(True)
+
         except CommunicationTimedOutException:
             LOGGER.error("Got CommunicationTimedOutException during gateway_api initialization.")
 
