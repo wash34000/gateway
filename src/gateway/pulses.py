@@ -45,8 +45,9 @@ class PulseCounterController(object):
         self._cursor = self._connection.cursor()
         self._check_tables()
 
-        self.__master_communicator = master_communicator
-        self.__eeprom_controller = eeprom_controller
+        self._master_communicator = master_communicator
+        self._eeprom_controller = eeprom_controller
+        self._counts = {}
 
     def _execute(self, *args, **kwargs):
         return self._cursor.execute(*args, **kwargs)
@@ -55,72 +56,71 @@ class PulseCounterController(object):
         """
         Creates the table.
         """
-        self._execute("CREATE TABLE IF NOT EXISTS pulse_counters " 
-                      "(id INTEGER PRIMARY KEY, name TEXT, room INTEGER, status INTEGER);")
+        self._execute('CREATE TABLE IF NOT EXISTS pulse_counters ' 
+                      '(id INTEGER PRIMARY KEY, name TEXT, room INTEGER, persistent INTEGER);')
 
     def set_pulse_counter_amount(self, amount):
         if amount < MASTER_PULSE_COUNTERS:
-            raise ValueError("amount should be %d or more" % MASTER_PULSE_COUNTERS)
+            raise ValueError('Amount should be {0} or more'.format(MASTER_PULSE_COUNTERS))
 
         # Create new pulse counters if required
         for i in xrange(24, amount):
-            self._execute('INSERT INTO pulse_counters (id, name, room, status) ' 
+            self._execute('INSERT INTO pulse_counters (id, name, room, persistent) ' 
                           'SELECT ?, "", 255, 0 ' 
                           'WHERE NOT EXISTS (SELECT 1 FROM pulse_counters WHERE id = ?);', (i, i))
 
         # Delete pulse counters with a higher id
-        self._execute("DELETE FROM pulse_counters WHERE id >= ?;", (amount,))
+        self._execute('DELETE FROM pulse_counters WHERE id >= ?;', (amount,))
 
     def get_pulse_counter_amount(self):
-        for row in self._execute("SELECT max(id) FROM pulse_counters;"):
+        for row in self._execute('SELECT max(id) FROM pulse_counters;'):
             max_id = row[0]
             return max_id + 1 if max_id is not None else 24
 
     def _check_id(self, pulse_counter_id, check_not_physical):
         if check_not_physical and pulse_counter_id < MASTER_PULSE_COUNTERS:
-            raise ValueError("cannot set pulse counter status for %d (should be > %d)" % (pulse_counter_id, MASTER_PULSE_COUNTERS-1))
+            raise ValueError('Cannot set pulse counter status for {0} (should be > {1})'.format(pulse_counter_id, MASTER_PULSE_COUNTERS - 1))
 
         if pulse_counter_id >= self.get_pulse_counter_amount():
-            raise ValueError("could not find pulse counter %d" % (pulse_counter_id, ))
+            raise ValueError('Could not find pulse counter {0}'.format(pulse_counter_id))
 
     def set_pulse_counter_status(self, pulse_counter_id, value):
         self._check_id(pulse_counter_id, True)
-        self._execute("UPDATE pulse_counters SET status = ? WHERE id = ?;", (value, pulse_counter_id))
+        self._counts[pulse_counter_id] = value
 
     def get_pulse_counter_status(self):
-        pulse_counter_status = self.__get_master_pulse_counter_status()
+        pulse_counter_status = self._get_master_pulse_counter_status()
 
-        for row in self._execute("SELECT id, status FROM pulse_counters ORDER BY id ASC;"):
-            pulse_counter_status.append(row[1])
+        for row in self._execute('SELECT id FROM pulse_counters ORDER BY id ASC;'):
+            pulse_counter_status.append(self._counts[row[0]])
 
         return pulse_counter_status
 
-    def __get_master_pulse_counter_status(self):
-        out_dict = self.__master_communicator.do_command(master_api.pulse_list())
-        return [out_dict['pv0'], out_dict['pv1'], out_dict['pv2'], out_dict['pv3'],
-                out_dict['pv4'], out_dict['pv5'], out_dict['pv6'], out_dict['pv7'],
-                out_dict['pv8'], out_dict['pv9'], out_dict['pv10'], out_dict['pv11'],
-                out_dict['pv12'], out_dict['pv13'], out_dict['pv14'], out_dict['pv15'],
-                out_dict['pv16'], out_dict['pv17'], out_dict['pv18'], out_dict['pv19'],
-                out_dict['pv20'], out_dict['pv21'], out_dict['pv22'], out_dict['pv23']]
+    def _get_master_pulse_counter_status(self):
+        out_dict = self._master_communicator.do_command(master_api.pulse_list())
+        return [out_dict['pv{0}'.format(i)] for i in xrange(0, MASTER_PULSE_COUNTERS)]
 
     @staticmethod
     def _row_to_config(row):
-        return {"id": row[0], "name": str(row[1]), "input": -1, "room": row[2]}
+        return {'id': row[0], 'name': str(row[1]), 'input': -1, 'room': row[2], 'persistent': row[3] >= 1}
 
     def get_configuration(self, pulse_counter_id, fields=None):
         self._check_id(pulse_counter_id, False)
 
         if pulse_counter_id < MASTER_PULSE_COUNTERS:
-            return self.__eeprom_controller.read(PulseCounterConfiguration, pulse_counter_id, fields).serialize()
+            return dict(
+                self._eeprom_controller.read(PulseCounterConfiguration, pulse_counter_id, fields).serialize(),
+                persistent=False
+            )
         else:
-            for row in self._execute("SELECT id, name, room FROM pulse_counters WHERE id = ?;", (pulse_counter_id,)):
+            for row in self._execute('SELECT id, name, room, persistent FROM pulse_counters WHERE id = ?;', (pulse_counter_id,)):
                 return PulseCounterController._row_to_config(row)
 
     def get_configurations(self, fields=None):
-        configs = [o.serialize() for o in self.__eeprom_controller.read_all(PulseCounterConfiguration, fields)]
+        configs = [dict(o.serialize(), persistent=False)
+                   for o in self._eeprom_controller.read_all(PulseCounterConfiguration, fields)]
 
-        for row in self._execute("SELECT id, name, room FROM pulse_counters ORDER BY id ASC;"):
+        for row in self._execute('SELECT id, name, room, persistent FROM pulse_counters ORDER BY id ASC;'):
             configs.append(PulseCounterController._row_to_config(row))
 
         return configs
@@ -129,14 +129,26 @@ class PulseCounterController(object):
         self._check_id(config['id'], False)
 
         if config['id'] < MASTER_PULSE_COUNTERS:
-            self.__eeprom_controller.write(PulseCounterConfiguration.deserialize(config))
+            if 'persistent' in config:
+                del config['persistent']
+            self._eeprom_controller.write(PulseCounterConfiguration.deserialize(config))
         else:
             if config['input'] != -1:
-                raise ValueError('virtual pulse counter %d can only have input -1' % config['id'])
+                raise ValueError('Virtual pulse counter {0} can only have input -1'.format(config['id']))
             else:
-                self._execute("UPDATE pulse_counters SET name = ?, room = ? WHERE id = ?;",
-                              (config['name'], config['room'], config['id']))
+                persistent = ''
+                values = (config['name'], config['room'], config['id'])
+                if 'persistent' in config:
+                    persistent = ', persistent = ?'
+                    values = (config['name'], config['room'], 1 if config['persistent'] else 0, config['id'])
+                self._execute('UPDATE pulse_counters SET name = ?, room = ?{0} WHERE id = ?;'.format(persistent), values)
 
     def set_configurations(self, config):
         for item in config:
             self.set_configuration(item)
+
+    def get_persistence(self):
+        configs = [True for _ in xrange(0, MASTER_PULSE_COUNTERS)]
+        for row in self._execute('SELECT persistent FROM pulse_counters ORDER BY id ASC;'):
+            configs.append(row[0] >= 1)
+        return configs
