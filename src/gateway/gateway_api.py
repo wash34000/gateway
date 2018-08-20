@@ -1320,7 +1320,8 @@ class GatewayApi(object):
                          constants.get_metrics_database_file()]
 
             for filename in filenames:
-                if os.path.exists(filename): os.remove(filename)
+                if os.path.exists(filename):
+                    os.remove(filename)
 
             # Delete plugins
             plugin_dir = constants.get_plugin_dir()
@@ -1329,7 +1330,8 @@ class GatewayApi(object):
                 shutil.rmtree(plugin_dir + plugin)
 
             config_files = constants.get_plugin_configfiles()
-            for config_file in glob.glob(config_files): os.remove(config_file)
+            for config_file in glob.glob(config_files):
+                os.remove(config_file)
 
             # reset the master
             self.master_reset()
