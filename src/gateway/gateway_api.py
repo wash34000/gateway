@@ -1324,12 +1324,12 @@ class GatewayApi(object):
 
             # Delete plugins
             plugin_dir = constants.get_plugin_dir()
-            plugins = [ name for name in os.listdir(plugin_dir) if os.path.isdir(os.path.join(plugin_dir, name)) ]
+            plugins = [name for name in os.listdir(plugin_dir) if os.path.isdir(os.path.join(plugin_dir, name))]
             for plugin in plugins:
                 shutil.rmtree(plugin_dir + plugin)
 
             config_files = constants.get_plugin_configfiles()
-            for file in glob.glob(config_files): os.remove(file)
+            for config_file in glob.glob(config_files): os.remove(config_file)
 
             # reset the master
             self.master_reset()

@@ -68,6 +68,7 @@ def get_update_file():
     """ Get the filename of the tgz file that contains the update script and data. """
     return "/opt/openmotics/update/update.tgz"
 
+
 def get_update_output_file():
     """ Get the filename for the output of the update command. """
     return "/opt/openmotics/etc/last_update.out"
