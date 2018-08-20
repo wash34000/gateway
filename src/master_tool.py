@@ -58,8 +58,9 @@ def main():
 
     if args.port:
         print port
+
     elif args.hardreset:
-        print "Performing hard reset"
+        print 'Performing hard reset...'
 
         gpio_dir = open('/sys/class/gpio/gpio44/direction', 'w')
         gpio_dir.write('out')
@@ -74,39 +75,50 @@ def main():
         power(False)
         time.sleep(5)
         power(True)
+        print 'Done performing hard reset'
 
-        print "Done"
     elif args.sync or args.version or args.reset or args.wipe:
         master_serial = Serial(port, 115200)
         master_communicator = MasterCommunicator(master_serial)
         master_communicator.start()
 
         if args.sync:
+            print 'Sync...'
             try:
                 master_communicator.do_command(master_api.status())
-            except CommunicationTimedOutException:
-                print "Failed"
-                sys.exit(1)
-            else:
-                print "Done"
+                print 'Done sync'
                 sys.exit(0)
+            except CommunicationTimedOutException:
+                print 'Failed sync'
+                sys.exit(1)
+
         elif args.version:
             status = master_communicator.do_command(master_api.status())
-            print "%d.%d.%d H%d" % (status['f1'], status['f2'], status['f3'], status['h'])
+            print '{0}.{1}.{2} H{3}'.format(status['f1'], status['f2'], status['f3'], status['h'])
+
         elif args.reset:
-            master_communicator.do_command(master_api.reset())
-            print "Reset !"
+            print 'Resetting...'
+            try:
+                master_communicator.do_command(master_api.reset())
+                print 'Done resetting'
+                sys.exit(0)
+            except CommunicationTimedOutException:
+                print 'Failed resetting'
+                sys.exit(1)
+
         elif args.wipe:
             (num_banks, bank_size, write_size) = (256, 256, 10)
-            print "Wiping the master"
+            print 'Wiping the master...'
             for bank in range(0, num_banks):
-                print " Wiping bank %d" % bank
+                print '-  Wiping bank {0}'.format(bank)
                 for addr in range(0, bank_size, write_size):
-                    master_communicator.do_command(master_api.write_eeprom(),
-                        {'bank': bank, 'address': addr, 'data': '\xff' * write_size})
+                    master_communicator.do_command(
+                        master_api.write_eeprom(),
+                        {'bank': bank, 'address': addr, 'data': '\xff' * write_size}
+                    )
 
-            master_communicator.do_command(master_api.activate_eeprom(), {'eep' : 0})
-            print "Done wiping the master"
+            master_communicator.do_command(master_api.activate_eeprom(), {'eep': 0})
+            print 'Done wiping the master'
 
     else:
         parser.print_help()
