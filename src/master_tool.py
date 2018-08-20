@@ -75,7 +75,7 @@ def main():
         power(False)
         time.sleep(5)
         power(True)
-        print 'Done'
+        print 'Done performing hard reset'
 
     elif args.sync or args.version or args.reset or args.wipe:
         master_serial = Serial(port, 115200)
@@ -86,10 +86,10 @@ def main():
             print 'Sync...'
             try:
                 master_communicator.do_command(master_api.status())
-                print 'Done'
+                print 'Done sync'
                 sys.exit(0)
             except CommunicationTimedOutException:
-                print 'Failed'
+                print 'Failed sync'
                 sys.exit(1)
 
         elif args.version:
@@ -100,10 +100,10 @@ def main():
             print 'Resetting...'
             try:
                 master_communicator.do_command(master_api.reset())
-                print 'Done'
+                print 'Done resetting'
                 sys.exit(0)
             except CommunicationTimedOutException:
-                print 'Failed'
+                print 'Failed resetting'
                 sys.exit(1)
 
         elif args.wipe:
@@ -118,7 +118,7 @@ def main():
                     )
 
             master_communicator.do_command(master_api.activate_eeprom(), {'eep': 0})
-            print 'Done'
+            print 'Done wiping the master'
 
     else:
         parser.print_help()
