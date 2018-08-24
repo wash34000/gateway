@@ -1243,7 +1243,8 @@ class GatewayApi(object):
                                      'scheduled.db': constants.get_scheduling_database_file(),
                                      'power.db': constants.get_power_database_file(),
                                      'eeprom_extensions.db': constants.get_eeprom_extension_database_file(),
-                                     'metrics.db': constants.get_metrics_database_file()}.iteritems():
+                                     'metrics.db': constants.get_metrics_database_file(),
+                                     'pulse.db': constants.get_pulse_counter_database_file()}.iteritems():
                 target = "{0}/{1}".format(tmp_dir, filename)
                 backup_sqlite_db(source, target)
 
@@ -1287,7 +1288,8 @@ class GatewayApi(object):
                                      'scheduled.db': constants.get_scheduling_database_file(),
                                      'power.db': constants.get_power_database_file(),
                                      'eeprom_extensions.db': constants.get_eeprom_extension_database_file(),
-                                     'metrics.db': constants.get_metrics_database_file()}.iteritems():
+                                     'metrics.db': constants.get_metrics_database_file(),
+                                     'pulse.db': constants.get_pulse_counter_database_file()}.iteritems():
                 source = "{0}/{1}".format(tmp_dir, filename)
                 if os.path.exists(source):
                     shutil.copyfile(source, target)
@@ -1317,7 +1319,8 @@ class GatewayApi(object):
                          constants.get_scheduling_database_file(),
                          constants.get_power_database_file(),
                          constants.get_eeprom_extension_database_file(),
-                         constants.get_metrics_database_file()]
+                         constants.get_metrics_database_file(),
+                         constants.get_pulse_counter_database_file()]
 
             for filename in filenames:
                 if os.path.exists(filename):
