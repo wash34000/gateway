@@ -30,10 +30,12 @@ class MetricsCollector(object):
     The Metrics Collector collects OpenMotics metrics and makes them available.
     """
 
-    def __init__(self, gateway_api):
+    def __init__(self, gateway_api, pulse_controller):
         """
         :param gateway_api: Gateway API
         :type gateway_api: gateway.gateway_api.GatewayApi
+        :param pulse_controller: Pulse Controller
+        :type pulse_controller: gateway.pulses.PulseCounterController
         """
         self._start = time.time()
         self._last_service_uptime = 0
@@ -61,6 +63,7 @@ class MetricsCollector(object):
                                         'end': 0} for metric_type in self._min_intervals}
 
         self._gateway_api = gateway_api
+        self._pulse_controller = pulse_controller
         self._metrics_queue = deque()
 
     def start(self):
@@ -122,7 +125,7 @@ class MetricsCollector(object):
                 if metric_type in metric_types:
                     self._plugin_intervals[metric_type].append(interval_info['interval'])
                     self._update_intervals(metric_type)
-        
+
     @staticmethod
     def _log(message, level='exception'):
         getattr(LOGGER, level)(message)
@@ -471,7 +474,7 @@ class MetricsCollector(object):
                         counters_data[counter_id]['count'] = counters[counter_id]
                 for counter_id in counters_data:
                     counter = counters_data[counter_id]
-                    if counter['name'] != '':
+                    if counter['name'] != '' and counter['count'] is not None:
                         self._enqueue_metrics(metric_type=metric_type,
                                               values={'value': int(counter['count'])},
                                               tags={'name': counter['name'],
@@ -697,7 +700,7 @@ class MetricsCollector(object):
         >                                    "type": "counter",
         >                                    "unit": "kWh"}]}
         """
-        _ = self  # Easier as non-static method
+        pulse_persistence = self._pulse_controller.get_persistence()
         return [
             # system
             {'type': 'system',
@@ -831,7 +834,11 @@ class MetricsCollector(object):
              'metrics': [{'name': 'value',
                           'description': 'Number of received pulses',
                           'type': 'counter',
-                          'policies': ['persistent', 'buffered'],
+                          'policies': [{'policy': 'persist',
+                                        'key': 'id',
+                                        'matches': ['P{0}'.format(i) for i in xrange(0, len(pulse_persistence))
+                                                    if not pulse_persistence[i]]},
+                                       'buffer'],
                           'unit': ''}]},
             # energy
             {'type': 'energy',
@@ -855,17 +862,17 @@ class MetricsCollector(object):
                          {'name': 'counter',
                           'description': 'Total energy consumed',
                           'type': 'counter',
-                          'policies': ['persistent', 'buffered'],
+                          'policies': ['persist', 'buffer'],
                           'unit': 'Wh'},
                          {'name': 'counter_day',
                           'description': 'Total energy consumed during daytime',
                           'type': 'counter',
-                          'policies': ['persistent', 'buffered'],
+                          'policies': ['persist', 'buffer'],
                           'unit': 'Wh'},
                          {'name': 'counter_night',
                           'description': 'Total energy consumed during nighttime',
                           'type': 'counter',
-                          'policies': ['persistent', 'buffered'],
+                          'policies': ['persist', 'buffer'],
                           'unit': 'Wh'}]},
             # energy_analytics
             {'type': 'energy_analytics',

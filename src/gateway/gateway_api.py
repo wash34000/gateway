@@ -34,17 +34,14 @@ from master.inputs import InputStatus
 from master.thermostats import ThermostatStatus
 from master.shutters import ShutterStatus
 from master.master_communicator import BackgroundConsumer
-from master.eeprom_controller import EepromController, EepromFile
-from master.eeprom_extension import EepromExtension
 from master.eeprom_models import OutputConfiguration, InputConfiguration, ThermostatConfiguration, \
     SensorConfiguration, PumpGroupConfiguration, GroupActionConfiguration, \
-    ScheduledActionConfiguration, PulseCounterConfiguration, StartupActionConfiguration, \
+    ScheduledActionConfiguration, StartupActionConfiguration, \
     ShutterConfiguration, ShutterGroupConfiguration, DimmerConfiguration, \
     GlobalThermostatConfiguration, CoolingConfiguration, CoolingPumpGroupConfiguration, \
     GlobalRTD10Configuration, RTD10HeatingConfiguration, RTD10CoolingConfiguration, \
     CanLedConfiguration, RoomConfiguration, ThermostatSetpointConfiguration
 import power.power_api as power_api
-from pulses import PulseCounterController
 
 LOGGER = logging.getLogger("openmotics")
 
@@ -65,7 +62,7 @@ def check_basic_action(ret_dict):
 class GatewayApi(object):
     """ The GatewayApi combines master_api functions into high level functions. """
 
-    def __init__(self, master_communicator, power_communicator, power_controller):
+    def __init__(self, master_communicator, power_communicator, power_controller, eeprom_controller, pulse_controller):
         """
         :param master_communicator: Master communicator
         :type master_communicator: master.master_communicator.MasterCommunicator
@@ -73,19 +70,16 @@ class GatewayApi(object):
         :type power_communicator: power.power_communicator.PowerCommunicator
         :param power_controller: Power controller
         :type power_controller: power.power_controller.PowerController
+        :param eeprom_controller: EEPROM controller
+        :type eeprom_controller: master.eeprom_controller.EepromController
+        :param pulse_controller: Pulse controller
+        :type pulse_controller: gateway.pulses.PulseCounterController
         """
         self.__master_communicator = master_communicator
-        self.__eeprom_controller = EepromController(
-            EepromFile(self.__master_communicator),
-            EepromExtension(constants.get_eeprom_extension_database_file())
-        )
+        self.__eeprom_controller = eeprom_controller
         self.__power_communicator = power_communicator
         self.__power_controller = power_controller
-        self.__pulse_controller = PulseCounterController(
-            constants.get_pulse_counter_database_file(),
-            self.__master_communicator,
-            self.__eeprom_controller
-        )
+        self.__pulse_controller = pulse_controller
         self.__plugin_controller = None
 
         self.__last_maintenance_send_time = 0

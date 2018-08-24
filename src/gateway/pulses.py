@@ -71,6 +71,7 @@ class PulseCounterController(object):
 
         # Delete pulse counters with a higher id
         self._execute('DELETE FROM pulse_counters WHERE id >= ?;', (amount,))
+        return amount
 
     def get_pulse_counter_amount(self):
         for row in self._execute('SELECT max(id) FROM pulse_counters;'):
@@ -87,12 +88,13 @@ class PulseCounterController(object):
     def set_pulse_counter_status(self, pulse_counter_id, value):
         self._check_id(pulse_counter_id, True)
         self._counts[pulse_counter_id] = value
+        return value
 
     def get_pulse_counter_status(self):
         pulse_counter_status = self._get_master_pulse_counter_status()
 
         for row in self._execute('SELECT id FROM pulse_counters ORDER BY id ASC;'):
-            pulse_counter_status.append(self._counts[row[0]])
+            pulse_counter_status.append(self._counts.get(row[0]))
 
         return pulse_counter_status
 
@@ -148,7 +150,7 @@ class PulseCounterController(object):
             self.set_configuration(item)
 
     def get_persistence(self):
-        configs = [True for _ in xrange(0, MASTER_PULSE_COUNTERS)]
+        configs = [False for _ in xrange(0, MASTER_PULSE_COUNTERS)]
         for row in self._execute('SELECT persistent FROM pulse_counters ORDER BY id ASC;'):
             configs.append(row[0] >= 1)
         return configs
