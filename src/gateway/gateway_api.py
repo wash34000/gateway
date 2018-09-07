@@ -103,7 +103,7 @@ class GatewayApi(object):
         self.__init_shutter_status()
         self.__master_communicator.register_consumer(
                 BackgroundConsumer(master_api.shutter_status(), 0,
-                                   self.__shutter_status.handle_shutter_update)
+                                   self.__on_shutter_update)
         )
 
         self.__extend_method("set_shutter_configuration", self.__init_shutter_status)
@@ -291,6 +291,12 @@ class GatewayApi(object):
                                                                 {'module_nr': i})['status'])
 
         self.__shutter_status.init(configs, status)
+
+    def __on_shutter_update(self, update):
+        self.__shutter_status.handle_shutter_update(update)
+
+        if self.__plugin_controller is not None:
+            self.__plugin_controller.process_shutter_status(self.__shutter_status.get_status())
 
     def __event_triggered(self, ev_output):
         """ Handle an event triggered by the master. """

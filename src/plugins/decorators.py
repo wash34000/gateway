@@ -80,6 +80,19 @@ def output_status(method):
     return method
 
 
+def shutter_status(method):
+    """
+    Decorator to indicate that the method should receive shutter status messages.
+    The receiving method should accept one parameter, the list of shutter states.
+    Each time an shutter status is changed, the method will be called.
+
+    Important !This method should not block, as this will result in an unresponsive system.
+    Please use a separate thread to perform complex actions on shutten status messages.
+    """
+    method.shutter_status = True
+    return method
+
+
 def receive_events(method):
     """
     Decorator to indicate that the method should receive event messages.
