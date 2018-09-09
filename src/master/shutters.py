@@ -15,11 +15,10 @@
 """
 The shutters module contains classes to track the current state of the shutters on
 the master.
-
-@author: fryckbos
 """
 
 import time
+
 
 class ShutterStatus(object):
     """ Tracks the current state of the shutters. """
@@ -38,21 +37,22 @@ class ShutterStatus(object):
         :type shutter_states: List of shutter states (1 element per shutter module).
         """
         if len(shutter_configs) != len(shutter_states):
-            raise ValueException("The size of the configs (%d) and states (%d) do not match " %
-                                 len(shutter_configs), len(shutter_states))
+            raise ValueError('The size of the configs ({0}) and states ({1}) do not match '.format(
+                len(shutter_configs), len(shutter_states)
+            ))
 
         self.__configs = shutter_configs
 
         self.__timestamped_states = []
         for i in range(len(shutter_configs)):
-            states = self.__create_states(shutter_configs[i], shutter_states[i])
-            self.__timestamped_states.append(zip([ time.time() for _ in states], states))
+            states = ShutterStatus._create_states(shutter_configs[i], shutter_states[i])
+            self.__timestamped_states.append(zip([time.time() for _ in states], states))
 
-
-    def __create_states(self, module_config, module_state):
+    @staticmethod
+    def _create_states(module_config, module_state):
         """ Create a list containing the state of one module, for example:
          ['going_up', 'going_down', 'stopped', 'stopped'].
-         
+
          :param module_config: List of all shutter configurations for the module.
          :param module_state: byte containing 1 bit per outputs for the module.
          :returns: List of strings.
@@ -79,16 +79,16 @@ class ShutterStatus(object):
         now = time.time()
         module = update['module_nr']
 
-        current_state = self.__create_states(self.__configs[module], update['status'])
+        current_state = ShutterStatus._create_states(self.__configs[module], update['status'])
         t_state = self.__timestamped_states[module]
 
         for i in range(4):
             if current_state[i] == t_state[i][1]:
-                pass # Nothing changed.
+                pass  # Nothing changed.
             else:
                 if current_state[i] == 'stopped':
                     if t_state[i][1] == 'going_up':
-                        roll_time = 0.95 * self.__configs[module][i]['timer_up'] # 5% time slack.
+                        roll_time = 0.95 * self.__configs[module][i]['timer_up']  # 5% time slack.
                         full_run = (t_state[i][0] + roll_time <= now)
 
                         if full_run:
@@ -97,7 +97,7 @@ class ShutterStatus(object):
                             t_state[i] = (now, 'stopped')
 
                     elif t_state[i][1] == 'going_down':
-                        roll_time = 0.95 * self.__configs[module][i]['timer_down'] # 5% time slack.
+                        roll_time = 0.95 * self.__configs[module][i]['timer_down']  # 5% time slack.
                         full_run = (t_state[i][0] + roll_time <= now)
 
                         if full_run:
@@ -106,7 +106,7 @@ class ShutterStatus(object):
                             t_state[i] = (now, 'stopped')
 
                     else:
-                        pass # Was already stopped, nothing changed. 
+                        pass  # Was already stopped, nothing changed.
 
                 else:
                     # The new state is going_up or going_down, the old state was stopped, up or down.
@@ -118,6 +118,6 @@ class ShutterStatus(object):
         status = []
 
         for states in self.__timestamped_states:
-            status.extend([ state[1] for state in states ])
+            status.extend([state[1] for state in states])
 
         return status
