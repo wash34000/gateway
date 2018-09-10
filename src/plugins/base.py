@@ -153,6 +153,7 @@ class PluginController(object):
 
         self.__input_status_receivers = []
         self.__output_status_receivers = []
+        self.__shutter_status_receivers = []
         self.__event_receivers = []
         self.__metric_collectors = []
         self.__metric_receivers = []
@@ -164,6 +165,7 @@ class PluginController(object):
 
         self.__receiver_mapping = {'input_status': self.__input_status_receivers,
                                    'output_status': self.__output_status_receivers,
+                                   'shutter_status': self.__shutter_status_receivers,
                                    'receive_events': self.__event_receivers,
                                    'metric_data': self.__metric_collectors,
                                    'metric_receive': self.__metric_receivers}
@@ -508,6 +510,15 @@ else:
                 osr[1](output_status_inst)
             except Exception as exception:
                 self.log(osr[0], "Exception while processing output status", exception,
+                         traceback.format_exc())
+
+    def process_shutter_status(self, shutter_status_inst):
+        """ Should be called when the shutter status changes, notifies all plugins. """
+        for ssr in self.__shutter_status_receivers:
+            try:
+                ssr[1](shutter_status_inst)
+            except Exception as exception:
+                self.log(ssr[0], "Exception while processing shutter status", exception,
                          traceback.format_exc())
 
     def process_event(self, code):
