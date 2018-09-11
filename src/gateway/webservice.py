@@ -489,9 +489,10 @@ class WebInterface(object):
         Returns all available features this Gateway supports. This allows to make flexible clients
         """
         return {'features': [
-            'metrics',     # Advanced metrics (including metrics over websockets)
-            'dirty_flag',  # A dirty flag that can be used to trigger syncs on power & master
-            'scheduling'   # Gateway backed scheduling
+            'metrics',       # Advanced metrics (including metrics over websockets)
+            'dirty_flag',    # A dirty flag that can be used to trigger syncs on power & master
+            'scheduling',    # Gateway backed scheduling
+            'factory_reset', # The gateway can be complete reset to factory standard
         ]}
 
     @openmotics_api(auth=True, check=types(type=int, id=int))
@@ -1964,7 +1965,7 @@ class WebInterface(object):
         config = ConfigParser.ConfigParser()
         config.read(constants.get_config_file())
         return {'version': str(config.get('OpenMotics', 'version')),
-                'gateway': '2.5.4'}
+                'gateway': '2.6.0'}
 
     @openmotics_api(auth=True, plugin_exposed=False)
     def update(self, version, md5, update_data):
@@ -2197,6 +2198,11 @@ class WebInterface(object):
     @openmotics_api(auth=True, plugin_exposed=False)
     def cleanup_eeprom(self):
         self._gateway_api.cleanup_eeprom()
+        return {}
+
+    @openmotics_api(auth=True, plugin_exposed=False)
+    def factory_reset(self):
+        self._gateway_api.factory_reset()
         return {}
 
     @cherrypy.expose

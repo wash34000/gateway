@@ -60,7 +60,7 @@ def input_status(method):
     The receiving method should accept one parameter, a tuple of (input, output).
     Each time an input is pressed, the method will be called.
 
-    Important !This method should not block, as this will result in an unresponsive system.
+    Important! This method should not block, as this will result in an unresponsive system.
     Please use a separate thread to perform complex actions on input status messages.
     """
     method.input_status = True
@@ -73,10 +73,23 @@ def output_status(method):
     The receiving method should accept one parameter, a list of tuples (output, dimmer value).
     Each time an output status is changed, the method will be called.
 
-    Important !This method should not block, as this will result in an unresponsive system.
+    Important! This method should not block, as this will result in an unresponsive system.
     Please use a separate thread to perform complex actions on output status messages.
     """
     method.output_status = True
+    return method
+
+
+def shutter_status(method):
+    """
+    Decorator to indicate that the method should receive shutter status messages.
+    The receiving method should accept one parameter, the list of shutter states.
+    Each time an shutter status is changed, the method will be called.
+
+    Important! This method should not block, as this will result in an unresponsive system.
+    Please use a separate thread to perform complex actions on shutten status messages.
+    """
+    method.shutter_status = True
     return method
 
 
@@ -86,7 +99,7 @@ def receive_events(method):
     The receiving method should accept one parameter: the event code.
     Each time an event is triggered, the method will be called.
 
-    Important !This method should not block, as this will result in an unresponsive system.
+    Important! This method should not block, as this will result in an unresponsive system.
     Please use a separate thread to perform complex actions on event messages.
     """
     method.receive_events = True

@@ -103,7 +103,7 @@ class GatewayApi(object):
         self.__init_shutter_status()
         self.__master_communicator.register_consumer(
                 BackgroundConsumer(master_api.shutter_status(), 0,
-                                   self.__shutter_status.handle_shutter_update)
+                                   self.__on_shutter_update)
         )
 
         self.__extend_method("set_shutter_configuration", self.__init_shutter_status)
@@ -291,6 +291,12 @@ class GatewayApi(object):
                                                                 {'module_nr': i})['status'])
 
         self.__shutter_status.init(configs, status)
+
+    def __on_shutter_update(self, update):
+        self.__shutter_status.handle_shutter_update(update)
+
+        if self.__plugin_controller is not None:
+            self.__plugin_controller.process_shutter_status(self.__shutter_status.get_status())
 
     def __event_triggered(self, ev_output):
         """ Handle an event triggered by the master. """
@@ -1212,8 +1218,8 @@ class GatewayApi(object):
     def get_full_backup(self):
         """ Get a backup (tar) of the master eeprom and the sqlite databases.
 
-        :returns: Tar containing 4 files: master.eep, config.db, scheduled.db, power.db and
-        eeprom_extensions.db as a string of bytes.
+        :returns: Tar containing multiple files: master.eep, config.db, scheduled.db, power.db,
+        eeprom_extensions.db, metrics.db  as a string of bytes.
         """
         import shutil
         import tempfile
@@ -1242,7 +1248,8 @@ class GatewayApi(object):
             for filename, source in {'config.db': constants.get_config_database_file(),
                                      'scheduled.db': constants.get_scheduling_database_file(),
                                      'power.db': constants.get_power_database_file(),
-                                     'eeprom_extensions.db': constants.get_eeprom_extension_database_file()}.iteritems():
+                                     'eeprom_extensions.db': constants.get_eeprom_extension_database_file(),
+                                     'metrics.db': constants.get_metrics_database_file()}.iteritems():
                 target = "{0}/{1}".format(tmp_dir, filename)
                 backup_sqlite_db(source, target)
 
@@ -1260,8 +1267,8 @@ class GatewayApi(object):
         """ Restore a full backup containing the master eeprom and the sqlite databases.
 
         :param data: The eeprom backup to restore.
-        :type data: tar containing 4 files: master.eep, config.db, scheduled.db, power.db and\
-        eeprom_extensions.db as a string of bytes.
+        :type data: tar containing 4 files: master.eep, config.db, scheduled.db, power.db,\
+        eeprom_extensions.db and metrics.db as a string of bytes.
         :returns: dict with 'output' key.
         """
         import shutil
@@ -1285,16 +1292,59 @@ class GatewayApi(object):
                                      'users.db': constants.get_config_database_file(),
                                      'scheduled.db': constants.get_scheduling_database_file(),
                                      'power.db': constants.get_power_database_file(),
-                                     'eeprom_extensions.db': constants.get_eeprom_extension_database_file()}.iteritems():
+                                     'eeprom_extensions.db': constants.get_eeprom_extension_database_file(),
+                                     'metrics.db': constants.get_metrics_database_file()}.iteritems():
                 source = "{0}/{1}".format(tmp_dir, filename)
                 if os.path.exists(source):
-                    shutil.copyfile(source, constants.get_config_database_file())
+                    shutil.copyfile(source, target)
 
             return {'output': 'Restore complete'}
 
         finally:
             shutil.rmtree(tmp_dir)
 
+            # Restart the Cherrypy server after 1 second. Lets the current request terminate.
+            threading.Timer(1, lambda: os._exit(0)).start()
+
+    def factory_reset(self):
+        """ Perform a factory reset deleting all sql lite databases and wiping the master eeprom
+
+        :returns: dict with 'output' key.
+        """
+        import glob
+        import shutil
+        try:
+            # Wipe master EEPROM
+            data = chr(255) * (256 * 256)
+            self.master_restore(data)
+
+            # Delete sql lite databases
+            filenames = [constants.get_config_database_file(),
+                         constants.get_scheduling_database_file(),
+                         constants.get_power_database_file(),
+                         constants.get_eeprom_extension_database_file(),
+                         constants.get_metrics_database_file()]
+
+            for filename in filenames:
+                if os.path.exists(filename):
+                    os.remove(filename)
+
+            # Delete plugins
+            plugin_dir = constants.get_plugin_dir()
+            plugins = [name for name in os.listdir(plugin_dir) if os.path.isdir(os.path.join(plugin_dir, name))]
+            for plugin in plugins:
+                shutil.rmtree(plugin_dir + plugin)
+
+            config_files = constants.get_plugin_configfiles()
+            for config_file in glob.glob(config_files):
+                os.remove(config_file)
+
+            # reset the master
+            self.master_reset()
+
+            return {'output': 'Factory reset complete'}
+
+        finally:
             # Restart the Cherrypy server after 1 second. Lets the current request terminate.
             threading.Timer(1, lambda: os._exit(0)).start()
 
