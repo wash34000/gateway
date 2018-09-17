@@ -1492,12 +1492,13 @@ class GatewayApi(object):
         :param config: The output_configuration to set
         :type config: output_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'floor' (Byte), 'name' (String[16]), 'room' (Byte), 'timer' (Word), 'type' (Byte)
         """
-        output_nr, timer = config['id'], config['timer']
+        output_nr, timer = config['id'], config.get('timer')
         self.__eeprom_controller.write(OutputConfiguration.deserialize(config))
-        self.__master_communicator.do_command(
-            master_api.write_timer(),
-            {'id': output_nr, 'timer': timer}
-        )
+        if timer is not None:
+            self.__master_communicator.do_command(
+                master_api.write_timer(),
+                {'id': output_nr, 'timer': timer}
+            )
 
     def set_output_configurations(self, config):
         """
@@ -1506,13 +1507,14 @@ class GatewayApi(object):
         :param config: The list of output_configurations to set
         :type config: list of output_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'floor' (Byte), 'name' (String[16]), 'room' (Byte), 'timer' (Word), 'type' (Byte)
         """
-        timers = dict((o['id'], o['timer']) for o in config)
+        timers = dict((o['id'], o.get('timer')) for o in config)
         self.__eeprom_controller.write_batch([OutputConfiguration.deserialize(o) for o in config])
         for output_nr, timer in timers.iteritems():
-            self.__master_communicator.do_command(
-                master_api.write_timer(),
-                {'id': output_nr, 'timer': timer}
-            )
+            if timer is not None:
+                self.__master_communicator.do_command(
+                    master_api.write_timer(),
+                    {'id': output_nr, 'timer': timer}
+                )
 
     def get_shutter_configuration(self, shutter_id, fields=None):
         """
