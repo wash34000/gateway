@@ -479,6 +479,13 @@ def indicate():
                              [Field.str("resp", 2), Field.padding(11), Field.lit("\r\n")])
 
 
+def write_timer():
+    """ Writes a timer setting to an Output, and immediately activates the timer value (even when an Output is already on). """
+    return MasterCommandSpec("WT",
+                             [Field.byte("id"), Field.int("timer"), Field.padding(10)],
+                             [Field.byte("id"), Field.int("timer"), Field.padding(10), Field.lit("\r\n")])
+
+
 # Below are the asynchronous messages, sent by the master to the gateway
 
 def output_list():
@@ -496,8 +503,7 @@ def input_list():
 
 
 def module_initialize():
-    """ The message sent by the master whenever a module is initialized in module discovery mode.
-    """
+    """ The message sent by the master whenever a module is initialized in module discovery mode. """
     return MasterCommandSpec("MI",
                              [],
                              [Field.str('id', 4), Field.str('instr', 1), Field.byte('module_nr'), Field.byte('data'),
@@ -505,8 +511,7 @@ def module_initialize():
 
 
 def event_triggered():
-    """ The message sent by the master to trigger an event. This event is triggered by basic
-    action 60. """
+    """ The message sent by the master to trigger an event. This event is triggered by basic action 60. """
     return MasterCommandSpec("EV",
                              [],
                              [Field.byte('code'), Field.padding(12), Field.lit('\r\n')])
