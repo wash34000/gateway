@@ -45,20 +45,20 @@ from master.eeprom_models import OutputConfiguration, InputConfiguration, Thermo
     CanLedConfiguration, RoomConfiguration, ThermostatSetpointConfiguration
 import power.power_api as power_api
 
-LOGGER = logging.getLogger("openmotics")
+LOGGER = logging.getLogger('openmotics')
 
 
 def convert_nan(number):
     """ Convert nan to 0. """
     if math.isnan(number):
-        LOGGER.warning("Got an unexpected NaN")
+        LOGGER.warning('Got an unexpected NaN')
     return 0.0 if math.isnan(number) else number
 
 
 def check_basic_action(ret_dict):
     """ Checks if the response is 'OK', throws a ValueError otherwise. """
     if ret_dict['resp'] != 'OK':
-        raise ValueError("Basic action did not return OK.")
+        raise ValueError('Basic action did not return OK.')
 
 
 class GatewayApi(object):
@@ -106,8 +106,8 @@ class GatewayApi(object):
                                    self.__on_shutter_update)
         )
 
-        self.__extend_method("set_shutter_configuration", self.__init_shutter_status)
-        self.__extend_method("set_shutter_configurations", self.__init_shutter_status)
+        self.__extend_method('set_shutter_configuration', self.__init_shutter_status)
+        self.__extend_method('set_shutter_configurations', self.__init_shutter_status)
 
         self.__init_master()
         self.__load_thermostat_setpoints()
@@ -136,67 +136,67 @@ class GatewayApi(object):
         messages, enables multi-tenant thermostats. """
         try:
             eeprom_data = self.__master_communicator.do_command(master_api.eeprom_list(),
-                                                                {"bank": 0})['data']
+                                                                {'bank': 0})['data']
 
             write = False
 
             if eeprom_data[11] != chr(255):
-                LOGGER.info("Disabling async RO messages.")
+                LOGGER.info('Disabling async RO messages.')
                 self.__master_communicator.do_command(
                     master_api.write_eeprom(),
-                    {"bank": 0, "address": 11, "data": chr(255)}
+                    {'bank': 0, 'address': 11, 'data': chr(255)}
                 )
                 write = True
 
             if eeprom_data[18] != chr(0):
-                LOGGER.info("Enabling async OL messages.")
+                LOGGER.info('Enabling async OL messages.')
                 self.__master_communicator.do_command(
                     master_api.write_eeprom(),
-                    {"bank": 0, "address": 18, "data": chr(0)}
+                    {'bank': 0, 'address': 18, 'data': chr(0)}
                 )
                 write = True
 
             if eeprom_data[20] != chr(0):
-                LOGGER.info("Enabling async IL messages.")
+                LOGGER.info('Enabling async IL messages.')
                 self.__master_communicator.do_command(
                     master_api.write_eeprom(),
-                    {"bank": 0, "address": 20, "data": chr(0)}
+                    {'bank': 0, 'address': 20, 'data': chr(0)}
                 )
                 write = True
 
             if eeprom_data[28] != chr(0):
-                LOGGER.info("Enabling async SO messages.")
+                LOGGER.info('Enabling async SO messages.')
                 self.__master_communicator.do_command(
                     master_api.write_eeprom(),
-                    {"bank": 0, "address": 28, "data": chr(0)}
+                    {'bank': 0, 'address': 28, 'data': chr(0)}
                 )
                 write = True
 
             thermostat_mode = ord(eeprom_data[14])
             if thermostat_mode & 64 == 0:
-                LOGGER.info("Enabling multi-tenant thermostats.")
+                LOGGER.info('Enabling multi-tenant thermostats.')
                 self.__master_communicator.do_command(
                     master_api.write_eeprom(),
-                    {"bank": 0, "address": 14, "data": chr(thermostat_mode | 64)}
+                    {'bank': 0, 'address': 14, 'data': chr(thermostat_mode | 64)}
                 )
                 write = True
 
             if eeprom_data[59] != chr(32):
-                LOGGER.info("Enabling 32 thermostats.")
+                LOGGER.info('Enabling 32 thermostats.')
                 self.__master_communicator.do_command(
                     master_api.write_eeprom(),
-                    {"bank": 0, "address": 59, "data": chr(32)}
+                    {'bank': 0, 'address': 59, 'data': chr(32)}
                 )
                 write = True
 
             if write:
                 self.__master_communicator.do_command(master_api.activate_eeprom(), {'eep': 0})
 
-            LOGGER.info("Turn master leds ON - disable low power mode")
+            LOGGER.info('Turn master leds ON - disable low power mode')
             self.set_master_status_leds(True)
 
         except CommunicationTimedOutException:
-            LOGGER.error("Got CommunicationTimedOutException during gateway_api initialization.")
+            LOGGER.error('Got CommunicationTimedOutException during gateway_api initialization.')
 
     def __load_thermostat_setpoints(self):
         """ Load the thermostat setpoints from the EepromController into the master. """
@@ -233,7 +233,7 @@ class GatewayApi(object):
                     self.sync_master_time(abs(expected_time.hour - master_time.hour) > 2)
 
         except Exception:
-            LOGGER.error("Got error while setting the time on the master.")
+            LOGGER.error('Got error while setting the time on the master.')
             traceback.print_exc()
         finally:
             Timer(120, self.__run_master_timer).start()
@@ -261,16 +261,17 @@ class GatewayApi(object):
                 LOGGER.info('Could not (re)set thermostats: {0}'.format(ex))
 
     def set_timezone(self, timezone):
-        timezone_file_path = "/usr/share/zoneinfo/" + timezone
+        _ = self  # Not static for consistency
+        timezone_file_path = '/usr/share/zoneinfo/' + timezone
         if not os.path.isfile(timezone_file_path):
-            raise RuntimeError("Could not find timezone '" + timezone + "'")
+            raise RuntimeError('Could not find timezone \'' + timezone + '\'')
         if os.path.exists(constants.get_timezone_file()):
             os.remove(constants.get_timezone_file())
         os.symlink(timezone_file_path, constants.get_timezone_file())
 
     def get_timezone(self):
         path = os.path.realpath(constants.get_timezone_file())
-        if not path.startswith("/usr/share/zoneinfo/"):
+        if not path.startswith('/usr/share/zoneinfo/'):
             # Reset timezone to default setting
             self.set_timezone('UTC')
             return 'UTC'
@@ -313,7 +314,7 @@ class GatewayApi(object):
         try:
             self.set_master_status_leds(True)
         except Exception as exception:
-            msg = "Exception while setting status leds before maintenance mode:" + str(exception)
+            msg = 'Exception while setting status leds before maintenance mode:' + str(exception)
             LOGGER.warning(msg)
 
         self.__eeprom_controller.invalidate_cache()  # Eeprom can be changed in maintenance mode.
@@ -325,7 +326,7 @@ class GatewayApi(object):
             if self.__master_communicator.in_maintenance_mode():
                 current_time = pytime.time()
                 if self.__last_maintenance_send_time + timeout < current_time:
-                    LOGGER.info("Stopping maintenance mode because of timeout.")
+                    LOGGER.info('Stopping maintenance mode because of timeout.')
                     self.stop_maintenance_mode()
                 else:
                     wait_time = self.__last_maintenance_send_time + timeout - current_time
@@ -370,7 +371,7 @@ class GatewayApi(object):
         try:
             self.set_master_status_leds(False)
         except Exception as exception:
-            msg = "Exception while setting status leds after maintenance mode:" + str(exception)
+            msg = 'Exception while setting status leds after maintenance mode:' + str(exception)
             LOGGER.warning(msg)
 
     def get_status(self):
@@ -383,7 +384,7 @@ class GatewayApi(object):
         return {'time': '%02d:%02d' % (out_dict['hours'], out_dict['minutes']),
                 'date': '%02d/%02d/%d' % (out_dict['day'], out_dict['month'], out_dict['year']),
                 'mode': out_dict['mode'],
-                'version': "%d.%d.%d" % (out_dict['f1'], out_dict['f2'], out_dict['f3']),
+                'version': '%d.%d.%d' % (out_dict['f1'], out_dict['f2'], out_dict['f3']),
                 'hw_version': out_dict['h']}
 
     def reset_master(self):
@@ -592,7 +593,7 @@ class GatewayApi(object):
         """
         if not is_on:
             if dimmer is not None or timer is not None:
-                raise ValueError("Cannot set timer and dimmer when setting output to off")
+                raise ValueError('Cannot set timer and dimmer when setting output to off')
             else:
                 self.set_output_status(output_id, False)
         else:
@@ -616,17 +617,17 @@ class GatewayApi(object):
         :returns: empty dict.
         """
         if output_id < 0 or output_id > 240:
-            raise ValueError("id not in [0, 240]: %d" % output_id)
+            raise ValueError('id not in [0, 240]: %d' % output_id)
 
         if is_on:
             self.__master_communicator.do_command(
                 master_api.basic_action(),
-                {"action_type": master_api.BA_LIGHT_ON, "action_number": output_id}
+                {'action_type': master_api.BA_LIGHT_ON, 'action_number': output_id}
             )
         else:
             self.__master_communicator.do_command(
                 master_api.basic_action(),
-                {"action_type": master_api.BA_LIGHT_OFF, "action_number": output_id}
+                {'action_type': master_api.BA_LIGHT_OFF, 'action_number': output_id}
             )
 
         return dict()
@@ -641,10 +642,10 @@ class GatewayApi(object):
         :returns: empty dict.
         """
         if output_id < 0 or output_id > 240:
-            raise ValueError("id not in [0, 240]: %d" % output_id)
+            raise ValueError('id not in [0, 240]: %d' % output_id)
 
         if dimmer < 0 or dimmer > 100:
-            raise ValueError("Dimmer value not in [0, 100]: %d" % dimmer)
+            raise ValueError('Dimmer value not in [0, 100]: %d' % dimmer)
 
         dimmer = int(dimmer) / 10 * 10
 
@@ -657,7 +658,7 @@ class GatewayApi(object):
 
         self.__master_communicator.do_command(
             master_api.basic_action(),
-            {"action_type": dimmer_action, "action_number": output_id}
+            {'action_type': dimmer_action, 'action_number': output_id}
         )
 
         return dict()
@@ -672,16 +673,16 @@ class GatewayApi(object):
         :returns: empty dict.
         """
         if output_id < 0 or output_id > 240:
-            raise ValueError("id not in [0, 240]: %d" % output_id)
+            raise ValueError('id not in [0, 240]: %d' % output_id)
 
         if timer not in [150, 450, 900, 1500, 2220, 3120]:
-            raise ValueError("Timer value not in [150, 450, 900, 1500, 2220, 3120]: %d" % timer)
+            raise ValueError('Timer value not in [150, 450, 900, 1500, 2220, 3120]: %d' % timer)
 
         timer_action = master_api.__dict__['BA_LIGHT_ON_TIMER_' + str(timer) + '_OVERRULE']
 
         self.__master_communicator.do_command(
             master_api.basic_action(),
-            {"action_type": timer_action, "action_number": output_id}
+            {'action_type': timer_action, 'action_number': output_id}
         )
 
         return dict()
@@ -693,7 +694,7 @@ class GatewayApi(object):
         """
         self.__master_communicator.do_command(
             master_api.basic_action(),
-            {"action_type": master_api.BA_ALL_LIGHTS_OFF, "action_number": 0}
+            {'action_type': master_api.BA_ALL_LIGHTS_OFF, 'action_number': 0}
         )
 
         return dict()
@@ -705,7 +706,7 @@ class GatewayApi(object):
         """
         self.__master_communicator.do_command(
             master_api.basic_action(),
-            {"action_type": master_api.BA_LIGHTS_OFF_FLOOR, "action_number": floor}
+            {'action_type': master_api.BA_LIGHTS_OFF_FLOOR, 'action_number': floor}
         )
 
         return dict()
@@ -717,7 +718,7 @@ class GatewayApi(object):
         """
         self.__master_communicator.do_command(
             master_api.basic_action(),
-            {"action_type": master_api.BA_LIGHTS_ON_FLOOR, "action_number": floor}
+            {'action_type': master_api.BA_LIGHTS_ON_FLOOR, 'action_number': floor}
         )
 
         return dict()
@@ -740,11 +741,11 @@ class GatewayApi(object):
         :returns:'status': 'OK'.
         """
         if shutter_id < 0 or shutter_id > 120:
-            raise ValueError("id not in [0, 120]: %d" % shutter_id)
+            raise ValueError('id not in [0, 120]: %d' % shutter_id)
 
         self.__master_communicator.do_command(
             master_api.basic_action(),
-            {"action_type": master_api.BA_SHUTTER_DOWN, "action_number": shutter_id}
+            {'action_type': master_api.BA_SHUTTER_DOWN, 'action_number': shutter_id}
         )
 
         return {'status': 'OK'}
@@ -758,11 +759,11 @@ class GatewayApi(object):
         :returns:'status': 'OK'.
         """
         if shutter_id < 0 or shutter_id > 120:
-            raise ValueError("id not in [0, 120]: %d" % shutter_id)
+            raise ValueError('id not in [0, 120]: %d' % shutter_id)
 
         self.__master_communicator.do_command(
             master_api.basic_action(),
-            {"action_type": master_api.BA_SHUTTER_UP, "action_number": shutter_id}
+            {'action_type': master_api.BA_SHUTTER_UP, 'action_number': shutter_id}
         )
 
         return {'status': 'OK'}
@@ -775,11 +776,11 @@ class GatewayApi(object):
         :returns:'status': 'OK'.
         """
         if shutter_id < 0 or shutter_id > 120:
-            raise ValueError("id not in [0, 120]: %d" % shutter_id)
+            raise ValueError('id not in [0, 120]: %d' % shutter_id)
 
         self.__master_communicator.do_command(
             master_api.basic_action(),
-            {"action_type": master_api.BA_SHUTTER_STOP, "action_number": shutter_id}
+            {'action_type': master_api.BA_SHUTTER_STOP, 'action_number': shutter_id}
         )
 
         return {'status': 'OK'}
@@ -793,11 +794,11 @@ class GatewayApi(object):
         :returns:'status': 'OK'.
         """
         if group_id < 0 or group_id > 30:
-            raise ValueError("id not in [0, 30]: %d" % group_id)
+            raise ValueError('id not in [0, 30]: %d' % group_id)
 
         self.__master_communicator.do_command(
             master_api.basic_action(),
-            {"action_type": master_api.BA_SHUTTER_GROUP_DOWN, "action_number": group_id}
+            {'action_type': master_api.BA_SHUTTER_GROUP_DOWN, 'action_number': group_id}
         )
 
         return {'status': 'OK'}
@@ -811,11 +812,11 @@ class GatewayApi(object):
         :returns:'status': 'OK'.
         """
         if group_id < 0 or group_id > 30:
-            raise ValueError("id not in [0, 30]: %d" % group_id)
+            raise ValueError('id not in [0, 30]: %d' % group_id)
 
         self.__master_communicator.do_command(
             master_api.basic_action(),
-            {"action_type": master_api.BA_SHUTTER_GROUP_UP, "action_number": id}
+            {'action_type': master_api.BA_SHUTTER_GROUP_UP, 'action_number': id}
         )
 
         return {'status': 'OK'}
@@ -828,11 +829,11 @@ class GatewayApi(object):
         :returns:'status': 'OK'.
         """
         if group_id < 0 or group_id > 30:
-            raise ValueError("id not in [0, 30]: %d" % group_id)
+            raise ValueError('id not in [0, 30]: %d' % group_id)
 
         self.__master_communicator.do_command(
             master_api.basic_action(),
-            {"action_type": master_api.BA_SHUTTER_GROUP_STOP, "action_number": group_id}
+            {'action_type': master_api.BA_SHUTTER_GROUP_STOP, 'action_number': group_id}
         )
 
         return {'status': 'OK'}
@@ -938,7 +939,7 @@ class GatewayApi(object):
                 thermostat['name'] = cached_thermostats[thermostat_id]['name']
                 thermostat['sensor_nr'] = cached_thermostats[thermostat_id]['sensor_nr']
 
-                thermostat['airco'] = aircos["ASB%d" % thermostat_id]
+                thermostat['airco'] = aircos['ASB%d' % thermostat_id]
 
                 thermostats.append(thermostat)
 
@@ -952,7 +953,7 @@ class GatewayApi(object):
     def __check_thermostat(thermostat):
         """ :raises ValueError if thermostat not in range [0, 32]. """
         if thermostat not in range(0, 32):
-            raise ValueError("Thermostat not in [0,32]: %d" % thermostat)
+            raise ValueError('Thermostat not in [0,32]: %d' % thermostat)
 
     def set_current_setpoint(self, thermostat, temperature):
         """ Set the current setpoint of a thermostat.
@@ -987,6 +988,7 @@ class GatewayApi(object):
         :type setpoint: int | None
         :returns: dict with 'status'
         """
+        _ = thermostat_on  # Still accept `thermostat_on` for backwards compatibility
 
         # Figure out whether the system should be on or off
         set_on = False
@@ -1051,10 +1053,10 @@ class GatewayApi(object):
         :returns: dict with 'status'
         """
         if thermostat_id < 0 or thermostat_id > 31:
-            raise ValueError("Thermostat_id not in [0, 31]: %d" % thermostat_id)
+            raise ValueError('Thermostat_id not in [0, 31]: %d' % thermostat_id)
 
         if setpoint < 0 or setpoint > 5:
-            raise ValueError("Setpoint not in [0, 5]: %d" % setpoint)
+            raise ValueError('Setpoint not in [0, 5]: %d' % setpoint)
 
         if automatic:
             check_basic_action(self.__master_communicator.do_basic_action(
@@ -1095,7 +1097,7 @@ class GatewayApi(object):
         :returns: dict with 'status'.
         """
         if thermostat_id < 0 or thermostat_id > 31:
-            raise ValueError("thermostat_id not in [0, 31]: %d" % thermostat_id)
+            raise ValueError('thermostat_id not in [0, 31]: %d' % thermostat_id)
 
         modifier = 0 if airco_on else 100
 
@@ -1160,7 +1162,7 @@ class GatewayApi(object):
         :returns: dict with 'status'.
         """
         if 0 > sensor_id > 31:
-            raise ValueError("sensor_id not in [0, 31]: %d" % sensor_id)
+            raise ValueError('sensor_id not in [0, 31]: %d' % sensor_id)
 
         self.__master_communicator.do_command(master_api.set_virtual_sensor(),
                                               {'sensor': sensor_id,
@@ -1182,15 +1184,15 @@ class GatewayApi(object):
         :type action_number: Integer [0, 254]
         """
         if action_type < 0 or action_type > 254:
-            raise ValueError("action_type not in [0, 254]: %d" % action_type)
+            raise ValueError('action_type not in [0, 254]: %d' % action_type)
 
         if action_number < 0 or action_number > 254:
-            raise ValueError("action_number not in [0, 254]: %d" % action_number)
+            raise ValueError('action_number not in [0, 254]: %d' % action_number)
 
         self.__master_communicator.do_command(
             master_api.basic_action(),
-            {"action_type": action_type,
-             "action_number": action_number}
+            {'action_type': action_type,
+             'action_number': action_number}
         )
 
         return dict()
@@ -1203,12 +1205,12 @@ class GatewayApi(object):
         :returns: empty dict.
         """
         if group_action_id < 0 or group_action_id > 159:
-            raise ValueError("group_action_id not in [0, 160]: %d" % group_action_id)
+            raise ValueError('group_action_id not in [0, 160]: %d' % group_action_id)
 
         self.__master_communicator.do_command(
             master_api.basic_action(),
-            {"action_type": master_api.BA_GROUP_ACTION,
-             "action_number": group_action_id}
+            {'action_type': master_api.BA_GROUP_ACTION,
+             'action_number': group_action_id}
         )
 
         return dict()
@@ -1242,7 +1244,7 @@ class GatewayApi(object):
 
         tmp_dir = tempfile.mkdtemp()
         try:
-            with open("%s/master.eep" % tmp_dir, "w") as eeprom_file:
+            with open('%s/master.eep' % tmp_dir, 'w') as eeprom_file:
                 eeprom_file.write(self.get_master_backup())
 
             for filename, source in {'config.db': constants.get_config_database_file(),
@@ -1250,14 +1252,14 @@ class GatewayApi(object):
                                      'power.db': constants.get_power_database_file(),
                                      'eeprom_extensions.db': constants.get_eeprom_extension_database_file(),
                                      'metrics.db': constants.get_metrics_database_file()}.iteritems():
-                target = "{0}/{1}".format(tmp_dir, filename)
+                target = '{0}/{1}'.format(tmp_dir, filename)
                 backup_sqlite_db(source, target)
 
-            retcode = subprocess.call("cd %s; tar cf backup.tar *" % tmp_dir, shell=True)
+            retcode = subprocess.call('cd %s; tar cf backup.tar *' % tmp_dir, shell=True)
             if retcode != 0:
-                raise Exception("The backup tar could not be created.")
+                raise Exception('The backup tar could not be created.')
 
-            with open("%s/backup.tar" % tmp_dir, "r") as backup_file:
+            with open('%s/backup.tar' % tmp_dir, 'r') as backup_file:
                 return backup_file.read()
 
         finally:
@@ -1277,14 +1279,14 @@ class GatewayApi(object):
 
         tmp_dir = tempfile.mkdtemp()
         try:
-            with open("%s/backup.tar" % tmp_dir, "wb") as backup_file:
+            with open('%s/backup.tar' % tmp_dir, 'wb') as backup_file:
                 backup_file.write(data)
 
-            retcode = subprocess.call("cd %s; tar xf backup.tar" % tmp_dir, shell=True)
+            retcode = subprocess.call('cd %s; tar xf backup.tar' % tmp_dir, shell=True)
             if retcode != 0:
-                raise Exception("The backup tar could not be extracted.")
+                raise Exception('The backup tar could not be extracted.')
 
-            with open("%s/master.eep" % tmp_dir, "r") as eeprom_file:
+            with open('%s/master.eep' % tmp_dir, 'r') as eeprom_file:
                 eeprom_content = eeprom_file.read()
                 self.master_restore(eeprom_content)
 
@@ -1294,7 +1296,7 @@ class GatewayApi(object):
                                      'power.db': constants.get_power_database_file(),
                                      'eeprom_extensions.db': constants.get_eeprom_extension_database_file(),
                                      'metrics.db': constants.get_metrics_database_file()}.iteritems():
-                source = "{0}/{1}".format(tmp_dir, filename)
+                source = '{0}/{1}'.format(tmp_dir, filename)
                 if os.path.exists(source):
                     shutil.copyfile(source, target)
 
@@ -1378,7 +1380,7 @@ class GatewayApi(object):
                 orig = read[addr:addr + write_size]
                 new = data[bank * bank_size + addr: bank * bank_size + addr + len(orig)]
                 if new != orig:
-                    ret.append("B" + str(bank) + "A" + str(addr))
+                    ret.append('B' + str(bank) + 'A' + str(addr))
 
                     self.__master_communicator.do_command(
                         master_api.write_eeprom(),
@@ -1386,7 +1388,7 @@ class GatewayApi(object):
                     )
 
         self.__master_communicator.do_command(master_api.activate_eeprom(), {'eep': 0})
-        ret.append("Activated eeprom")
+        ret.append('Activated eeprom')
 
         return {'output': ret}
 
@@ -1407,7 +1409,7 @@ class GatewayApi(object):
         :returns: dict with 'errors' key, it contains list of tuples (module, nr_errors).
         """
         error_list = self.__master_communicator.do_command(master_api.error_list())
-        return error_list["errors"]
+        return error_list['errors']
 
     def master_last_success(self):
         """ Get the number of seconds since the last successful communication with the master.
@@ -1440,7 +1442,7 @@ class GatewayApi(object):
         on = 1 if status is True else 0
         self.__master_communicator.do_command(
             master_api.basic_action(),
-            {"action_type": master_api.BA_STATUS_LEDS, "action_number": on}
+            {'action_type': master_api.BA_STATUS_LEDS, 'action_number': on}
         )
         return dict()
 
@@ -1490,7 +1492,12 @@ class GatewayApi(object):
         :param config: The output_configuration to set
         :type config: output_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'floor' (Byte), 'name' (String[16]), 'room' (Byte), 'timer' (Word), 'type' (Byte)
         """
+        output_nr, timer = config['id'], config['timer']
         self.__eeprom_controller.write(OutputConfiguration.deserialize(config))
+        self.__master_communicator.do_command(
+            master_api.write_timer(),
+            {'id': output_nr, 'timer': timer}
+        )
 
     def set_output_configurations(self, config):
         """
@@ -1499,7 +1506,13 @@ class GatewayApi(object):
         :param config: The list of output_configurations to set
         :type config: list of output_configuration dict: contains 'id' (Id), 'can_led_1_function' (Enum), 'can_led_1_id' (Byte), 'can_led_2_function' (Enum), 'can_led_2_id' (Byte), 'can_led_3_function' (Enum), 'can_led_3_id' (Byte), 'can_led_4_function' (Enum), 'can_led_4_id' (Byte), 'floor' (Byte), 'name' (String[16]), 'room' (Byte), 'timer' (Word), 'type' (Byte)
         """
+        timers = dict((o['id'], o['timer']) for o in config)
         self.__eeprom_controller.write_batch([OutputConfiguration.deserialize(o) for o in config])
+        for output_nr, timer in timers.iteritems():
+            self.__master_communicator.do_command(
+                master_api.write_timer(),
+                {'id': output_nr, 'timer': timer}
+            )
 
     def get_shutter_configuration(self, shutter_id, fields=None):
         """
@@ -1592,7 +1605,7 @@ class GatewayApi(object):
         :returns: input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'module_type' (String[1]), 'name' (String[8]), 'room' (Byte), 'can' (String[1])
         """
         o = self.__eeprom_controller.read(InputConfiguration, input_id, fields)
-        if o.module_type not in ['i', 'I']:  # Only return "real" inputs
+        if o.module_type not in ['i', 'I']:  # Only return 'real' inputs
             raise TypeError('The given id is not an input')
         return o.serialize()
 
@@ -1605,7 +1618,7 @@ class GatewayApi(object):
         :returns: list of input_configuration dict: contains 'id' (Id), 'action' (Byte), 'basic_actions' (Actions[15]), 'invert' (Byte), 'module_type' (String[1]), 'name' (String[8]), 'room' (Byte), 'can' (String[1])
         """
         return [o.serialize() for o in self.__eeprom_controller.read_all(InputConfiguration, fields)
-                if o.module_type in ['i', 'I']]  # Only return "real" inputs
+                if o.module_type in ['i', 'I']]  # Only return 'real' inputs
 
     def set_input_configuration(self, config):
         """
@@ -2205,7 +2218,7 @@ class GatewayApi(object):
 
         def translate_address(_module):
             """ Translate the address from an integer to the external address format (eg. E1). """
-            _module['address'] = "E" + str(_module['address'])
+            _module['address'] = 'E' + str(_module['address'])
             return _module
 
         return [translate_address(mod) for mod in modules]
@@ -2294,7 +2307,7 @@ class GatewayApi(object):
                     freq = self.__power_communicator.do_command(addr,
                                                                 power_api.get_frequency(version))
                 else:
-                    raise ValueError("Unknown power api version")
+                    raise ValueError('Unknown power api version')
 
                 current = self.__power_communicator.do_command(addr,
                                                                power_api.get_current(version))
@@ -2308,7 +2321,7 @@ class GatewayApi(object):
 
                 output[str(module_id)] = out
             except Exception as ex:
-                LOGGER.exception("Got Exception for power module %s: %s", module_id, ex)
+                LOGGER.exception('Got Exception for power module %s: %s', module_id, ex)
 
         return output
 
@@ -2336,7 +2349,7 @@ class GatewayApi(object):
 
                 output[str(module_id)] = out
             except Exception as ex:
-                LOGGER.exception("Got Exception for power module %s: %s", module_id, ex)
+                LOGGER.exception('Got Exception for power module %s: %s', module_id, ex)
 
         return output
 
