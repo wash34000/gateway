@@ -92,7 +92,7 @@ def get_module_addresses(master_communicator, type):
 
     :param master_communicator: used to read the addresses from the master eeprom.
     :type master_communicator: MasterCommunicator
-    :param type: the type of the module (o, d, i, t)
+    :param type: the type of the module (o, r, d, i, t, c)
     :param type: chr
     :returns: A list containing the addresses of the modules (strings of length 4).
     """
@@ -119,7 +119,7 @@ def pretty_address(address):
 
     :param address: address string
     :type address: string
-    :returns: string with format 'M.x.y.z' where M is in {o, d, i, t} and x,y,z are integers.
+    :returns: string with format 'M.x.y.z' where M is in {o, r, d, i, t, c} and x,y,z are integers.
     """
     return "%s.%d.%d.%d" % (address[0], ord(address[1]), ord(address[2]), ord(address[3]))
 
@@ -262,7 +262,7 @@ def bootload(master_communicator, address, ihex, crc, blocks, logger):
 def bootload_modules(type, filename, verbose, logger):
     """ Bootload all modules of the given type with the firmware in the given filename.
 
-    :param type: Type of the modules (o, d, i, t, c)
+    :param type: Type of the modules (o, r, d, i, t, c)
     :type type: chr
     :param filename: The filename for the hex file to load
     :type filename: string
@@ -302,8 +302,8 @@ def main():
     parser = argparse.ArgumentParser(description='Tool to bootload the slave modules '
                                                  '(output, dimmer, input and temperature).')
 
-    parser.add_argument('-t', '--type', dest='type', choices=['o', 'd', 'i', 't', 'c'],
-                        required=True, help='the type of module to bootload (choices: o, d, i, t, c)')
+    parser.add_argument('-t', '--type', dest='type', choices=['o', 'r', 'd', 'i', 't', 'c'],
+                        required=True, help='the type of module to bootload (choices: o, r, d, i, t, c)')
     parser.add_argument('-f', '--file', dest='file', required=True,
                         help='the filename of the hex file to bootload')
 
