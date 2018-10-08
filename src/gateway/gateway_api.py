@@ -26,6 +26,10 @@ import math
 import sqlite3
 import constants
 import logging
+import glob
+import shutil
+import subprocess
+import tempfile
 from threading import Timer
 from serial_utils import CommunicationTimedOutException
 import master.master_api as master_api
@@ -1218,14 +1222,13 @@ class GatewayApi(object):
     # Backup and restore functions
 
     def get_full_backup(self):
-        """ Get a backup (tar) of the master eeprom and the sqlite databases.
+        """
+        Get a backup (tar) of the master eeprom, the sqlite databases and the plugins
 
         :returns: Tar containing multiple files: master.eep, config.db, scheduled.db, power.db,
-        eeprom_extensions.db, metrics.db  as a string of bytes.
+        eeprom_extensions.db, metrics.db and plugins as a string of bytes.
         """
-        import shutil
-        import tempfile
-        import subprocess
+        _ = self  # Not static for consistency
 
         def backup_sqlite_db(input_db_path, backup_db_path):
             """ Backup an sqlite db provided the path to the db to backup and the backup db. """
@@ -1243,8 +1246,11 @@ class GatewayApi(object):
             connection.rollback()
 
         tmp_dir = tempfile.mkdtemp()
+        tmp_sqlite_dir = '{0}/sqlite'.format(tmp_dir)
+        os.mkdir(tmp_sqlite_dir)
+
         try:
-            with open('%s/master.eep' % tmp_dir, 'w') as eeprom_file:
+            with open('{0}/master.eep'.format(tmp_sqlite_dir), 'w') as eeprom_file:
                 eeprom_file.write(self.get_master_backup())
 
             for filename, source in {'config.db': constants.get_config_database_file(),
@@ -1252,41 +1258,64 @@ class GatewayApi(object):
                                      'power.db': constants.get_power_database_file(),
                                      'eeprom_extensions.db': constants.get_eeprom_extension_database_file(),
                                      'metrics.db': constants.get_metrics_database_file()}.iteritems():
-                target = '{0}/{1}'.format(tmp_dir, filename)
+                target = '{0}/{1}'.format(tmp_sqlite_dir, filename)
                 backup_sqlite_db(source, target)
 
-            retcode = subprocess.call('cd %s; tar cf backup.tar *' % tmp_dir, shell=True)
+            # Backup plugins
+            tmp_plugin_dir = '{0}/{1}'.format(tmp_dir, 'plugins')
+            tmp_plugin_content_dir = '{0}/{1}'.format(tmp_plugin_dir, 'content')
+            tmp_plugin_config_dir = '{0}/{1}'.format(tmp_plugin_dir, 'config')
+            os.mkdir(tmp_plugin_dir)
+            os.mkdir(tmp_plugin_content_dir)
+            os.mkdir(tmp_plugin_config_dir)
+
+            plugin_dir = constants.get_plugin_dir()
+            plugins = [name for name in os.listdir(plugin_dir) if os.path.isdir(os.path.join(plugin_dir, name))]
+            for plugin in plugins:
+                shutil.copytree(plugin_dir + plugin, '{0}/{1}/'.format(tmp_plugin_content_dir, plugin))
+
+            config_files = constants.get_plugin_configfiles()
+            for config_file in glob.glob(config_files):
+                shutil.copy(config_file, '{0}/'.format(tmp_plugin_config_dir))
+
+            retcode = subprocess.call('cd {0}; tar cf backup.tar *'.format(tmp_dir), shell=True)
             if retcode != 0:
                 raise Exception('The backup tar could not be created.')
 
-            with open('%s/backup.tar' % tmp_dir, 'r') as backup_file:
+            with open('{0}/backup.tar'.format(tmp_dir), 'r') as backup_file:
                 return backup_file.read()
 
         finally:
             shutil.rmtree(tmp_dir)
 
     def restore_full_backup(self, data):
-        """ Restore a full backup containing the master eeprom and the sqlite databases.
+        """
+        Restore a full backup containing the master eeprom and the sqlite databases.
 
-        :param data: The eeprom backup to restore.
-        :type data: tar containing 4 files: master.eep, config.db, scheduled.db, power.db,\
-        eeprom_extensions.db and metrics.db as a string of bytes.
+        :param data: The backup to restore.
+        :type data: Tar containing multiple files: master.eep, config.db, scheduled.db, power.db,
+        eeprom_extensions.db, metrics.db and plugins as a string of bytes.
         :returns: dict with 'output' key.
         """
+        import glob
         import shutil
         import tempfile
         import subprocess
 
         tmp_dir = tempfile.mkdtemp()
+        tmp_sqlite_dir = '{0}/sqlite'.format(tmp_dir)
         try:
-            with open('%s/backup.tar' % tmp_dir, 'wb') as backup_file:
+            with open('{0}/backup.tar'.format(tmp_dir), 'wb') as backup_file:
                 backup_file.write(data)
 
-            retcode = subprocess.call('cd %s; tar xf backup.tar' % tmp_dir, shell=True)
+            retcode = subprocess.call('cd {0}; tar xf backup.tar'.format(tmp_dir), shell=True)
             if retcode != 0:
                 raise Exception('The backup tar could not be extracted.')
 
-            with open('%s/master.eep' % tmp_dir, 'r') as eeprom_file:
+            # Check if the sqlite db's are in a folder or not for backwards compatibility
+            src_dir = tmp_sqlite_dir if os.path.isdir(tmp_sqlite_dir) else tmp_dir
+
+            with open('{0}/master.eep'.format(src_dir), 'r') as eeprom_file:
                 eeprom_content = eeprom_file.read()
                 self.master_restore(eeprom_content)
 
@@ -1296,15 +1325,32 @@ class GatewayApi(object):
                                      'power.db': constants.get_power_database_file(),
                                      'eeprom_extensions.db': constants.get_eeprom_extension_database_file(),
                                      'metrics.db': constants.get_metrics_database_file()}.iteritems():
-                source = '{0}/{1}'.format(tmp_dir, filename)
+                source = '{0}/{1}'.format(src_dir, filename)
                 if os.path.exists(source):
                     shutil.copyfile(source, target)
+
+            # Restore the plugins if there are any
+            backup_plugin_dir = '{0}/plugins'.format(tmp_dir)
+            backup_plugin_content_dir = '{0}/content'.format(backup_plugin_dir)
+            backup_plugin_config_files = '{0}/config/pi_*'.format(backup_plugin_dir)
+
+            if os.path.isdir(backup_plugin_dir):
+                plugin_dir = constants.get_plugin_dir()
+                plugins = [name for name in os.listdir(backup_plugin_content_dir) if os.path.isdir(os.path.join(backup_plugin_content_dir, name))]
+                for plugin in plugins:
+                    dest_dir = '{0}{1}'.format(plugin_dir, plugin)
+                    if os.path.isdir(dest_dir):
+                        shutil.rmtree(dest_dir)
+                    shutil.copytree('{0}/{1}/'.format(backup_plugin_content_dir, plugin), '{0}{1}'.format(plugin_dir, plugin))
+
+                config_files = constants.get_plugin_config_dir()
+                for config_file in glob.glob(backup_plugin_config_files):
+                    shutil.copy(config_file, '{0}/'.format(config_files))
 
             return {'output': 'Restore complete'}
 
         finally:
             shutil.rmtree(tmp_dir)
-
             # Restart the Cherrypy server after 1 second. Lets the current request terminate.
             threading.Timer(1, lambda: os._exit(0)).start()
 
@@ -2323,7 +2369,7 @@ class GatewayApi(object):
 
                 output[str(module_id)] = out
             except Exception as ex:
-                LOGGER.exception('Got Exception for power module %s: %s', module_id, ex)
+                LOGGER.exception('Got Exception for power module {0}: {1}'.format(module_id, ex))
 
         return output
 
@@ -2351,7 +2397,7 @@ class GatewayApi(object):
 
                 output[str(module_id)] = out
             except Exception as ex:
-                LOGGER.exception('Got Exception for power module %s: %s', module_id, ex)
+                LOGGER.exception('Got Exception for power module {0}: {1}'.format(module_id, ex))
 
         return output
 
