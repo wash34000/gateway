@@ -1216,10 +1216,10 @@ class GatewayApi(object):
     # Backup and restore functions
 
     def get_full_backup(self):
-        """ Get a backup (tar) of the master eeprom,the sqlite databases and the plugins
+        """ Get a backup (tar) of the master eeprom, the sqlite databases and the plugins
 
         :returns: Tar containing multiple files: master.eep, config.db, scheduled.db, power.db,
-        eeprom_extensions.db, metrics.db and plugings as a string of bytes.
+        eeprom_extensions.db, metrics.db and plugins as a string of bytes.
         """
         import glob
         import shutil
@@ -1242,11 +1242,11 @@ class GatewayApi(object):
             connection.rollback()
 
         tmp_dir = tempfile.mkdtemp()
-        tmp_sqlite_dir = "{0}/{1}".format(tmp_dir, 'sqlite')
+        tmp_sqlite_dir = "{0}/sqlite".format(tmp_dir)
         os.mkdir(tmp_sqlite_dir)
 
         try:
-            with open("%s/master.eep" % tmp_sqlite_dir, "w") as eeprom_file:
+            with open("{0}/master.eep".format(tmp_sqlite_dir), "w") as eeprom_file:
                 eeprom_file.write(self.get_master_backup())
 
             for filename, source in {'config.db': constants.get_config_database_file(),
@@ -1289,7 +1289,7 @@ class GatewayApi(object):
 
         :param data: The backup to restore.
         :type data: Tar containing multiple files: master.eep, config.db, scheduled.db, power.db,
-        eeprom_extensions.db, metrics.db and plugings as a string of bytes.
+        eeprom_extensions.db, metrics.db and plugins as a string of bytes.
         :returns: dict with 'output' key.
         """
         import glob
@@ -1308,10 +1308,7 @@ class GatewayApi(object):
                 raise Exception("The backup tar could not be extracted.")
 
             # Check if the sqlite db's are in a folder or not for backwards compatibility
-            if os.path.isdir(tmp_sqlite_dir):
-                src_dir = tmp_sqlite_dir
-            else:
-                src_dir = tmp_dir
+            src_dir = tmp_sqlite_dir if os.path.isdir(tmp_sqlite_dir) else tmp_dir
 
             with open("%s/master.eep" % src_dir, "r") as eeprom_file:
                 eeprom_content = eeprom_file.read()
@@ -1327,7 +1324,7 @@ class GatewayApi(object):
                 if os.path.exists(source):
                     shutil.copyfile(source, target)
 
-            #Restore the plugins if there are any
+            # Restore the plugins if there are any
             backup_plugin_dir = "{0}/plugins".format(tmp_dir)
             backup_plugin_content_dir = "{0}/content".format(backup_plugin_dir)
             backup_plugin_config_files = "{0}/config/pi_*".format(backup_plugin_dir)
@@ -1348,8 +1345,7 @@ class GatewayApi(object):
             return {'output': 'Restore complete'}
 
         finally:
-            # shutil.rmtree(tmp_dir)
-
+            shutil.rmtree(tmp_dir)
             # Restart the Cherrypy server after 1 second. Lets the current request terminate.
             threading.Timer(1, lambda: os._exit(0)).start()
 
