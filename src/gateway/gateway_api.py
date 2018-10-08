@@ -1248,11 +1248,7 @@ class GatewayApi(object):
         os.mkdir(tmp_sqlite_dir)
 
         try:
-<<<<<<< HEAD
             with open("{0}/master.eep".format(tmp_sqlite_dir), "w") as eeprom_file:
-=======
-            with open('%s/master.eep' % tmp_dir, 'w') as eeprom_file:
->>>>>>> develop
                 eeprom_file.write(self.get_master_backup())
 
             for filename, source in {'config.db': constants.get_config_database_file(),
@@ -1260,7 +1256,6 @@ class GatewayApi(object):
                                      'power.db': constants.get_power_database_file(),
                                      'eeprom_extensions.db': constants.get_eeprom_extension_database_file(),
                                      'metrics.db': constants.get_metrics_database_file()}.iteritems():
-<<<<<<< HEAD
                 target = "{0}/{1}".format(tmp_sqlite_dir, filename)
                 backup_sqlite_db(source, target)
 
@@ -1282,12 +1277,6 @@ class GatewayApi(object):
                 shutil.copy(config_file, "{0}/".format(tmp_plugin_config_dir))
 
             retcode = subprocess.call("cd %s; tar cf backup.tar *" % tmp_dir, shell=True)
-=======
-                target = '{0}/{1}'.format(tmp_dir, filename)
-                backup_sqlite_db(source, target)
-
-            retcode = subprocess.call('cd %s; tar cf backup.tar *' % tmp_dir, shell=True)
->>>>>>> develop
             if retcode != 0:
                 raise Exception('The backup tar could not be created.')
 
