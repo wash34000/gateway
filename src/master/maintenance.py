@@ -25,7 +25,7 @@ import threading
 import traceback
 import socket
 import select
-from OpenSSL import SSL
+import ssl
 
 from master_communicator import InMaintenanceModeException
 
@@ -43,9 +43,8 @@ class MaintenanceService(object):
         :param certificate_filename: the filename of the certificate for the SSL connection.
         """
         self.__gateway_api = gateway_api
-        self.__context = SSL.Context(SSL.SSLv23_METHOD)
-        self.__context.use_privatekey_file(privatekey_filename)
-        self.__context.use_certificate_file(certificate_filename)
+        self._privatekey_filename = privatekey_filename
+        self._certificate_filename = certificate_filename
 
     def start_in_thread(self, port, connection_timeout=60):
         """ Start the maintenance service in a new thread. The maintenance service only accepts
@@ -68,7 +67,12 @@ class MaintenanceService(object):
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock.settimeout(connection_timeout)
-        sock = SSL.Connection(self.__context, sock)
+        sock = ssl.wrap_socket(sock,
+                               keyfile=self._privatekey_filename,
+                               certfile=self._certificate_filename,
+                               ssl_version=ssl.PROTOCOL_SSLv23,
+                               do_handshake_on_connect=False,
+                               suppress_ragged_eofs=False)
         sock.bind(('', port))
         sock.listen(1)
 
@@ -140,12 +144,12 @@ class SerialRedirector(object):
             try:
                 try:
                     data = self.__connection.recv(1024)
-                except SSL.SysCallError as exception:
+                except ssl.SSLSyscallError as exception:
                     if exception[0] == 11: ## temporarily unavailable
                         continue
                     else:
                         raise
-                except SSL.WantReadError:
+                except ssl.SSLWantReadError:
                     select.select([self.__connection], [], [], 1.0)
                 else:
                     if not data:

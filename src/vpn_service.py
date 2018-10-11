@@ -26,10 +26,13 @@ import os
 import traceback
 import constants
 import threading
+
 from ConfigParser import ConfigParser
 from datetime import datetime
 from bus.led_service import LedService
 from gateway.config import ConfigurationController
+from hardware_utils import system
+
 try:
     import json
 except ImportError:
@@ -53,7 +56,8 @@ def reboot_gateway():
 class VpnController(object):
     """ Contains methods to check the vpn status, start and stop the vpn. """
 
-    vpnService = "openvpn.service"
+    os = system.get_os()
+    vpnService = "openvpn.service" if os['ID'] == 'angstrom' else "openvpn-client@omcloud"
     startCmd = "systemctl start " + vpnService + " > /dev/null"
     stopCmd = "systemctl stop " + vpnService + " > /dev/null"
     checkCmd = "systemctl is-active " + vpnService + " > /dev/null"
@@ -256,11 +260,7 @@ class Gateway(object):
     def get_local_ip_address(self):
         """ Get the local ip address. """
         _ = self  # Needs to be an instance method
-        try:
-            lines = subprocess.check_output("ifconfig eth0", shell=True)
-            return lines.split("\n")[1].strip().split(" ")[1].split(":")[1]
-        except Exception:
-            return None
+        return system.get_ip_address()
 
 
 class DataCollector(object):

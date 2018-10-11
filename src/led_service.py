@@ -28,25 +28,14 @@ import time
 
 from threading import Thread
 from ConfigParser import ConfigParser
+from platform_utils import hardware
 
 import constants
 
-I2C_DEVICE_BB = '/dev/i2c-2'  # Beaglebone
-I2C_DEVICE_BBB = '/dev/i2c-1'  # Beaglebone black
-
-GPIO_INPUT_BUTTON_GW = 38   # Pin for the input button on the separate gateway module (deprecated)
-GPIO_INPUT_BUTTON_GW_M = 26  # Pin for the input button on the gateway/master module (current)
 
 IOCTL_I2C_SLAVE = 0x0703
 CODES = {'uart4': 64, 'uart5': 128, 'vpn': 16, 'stat1': 0, 'stat2': 0, 'alive': 1, 'cloud': 4}
 AUTH_CODE = 1 + 4 + 16 + 64 + 128
-
-HOME = 75
-
-ETH_LEFT_BB = 60
-ETH_RIGHT_BB = 49
-ETH_STATUS_BBB = 48
-POWER_BBB = 60
 
 AUTH_LOOP = [True, False, True, False, False, False, False, False]
 
@@ -56,16 +45,6 @@ class LOGGER(object):
     def log(line):
         sys.stdout.write('{0}\n'.format(line))
         sys.stdout.flush()
-
-
-def is_beagle_bone_black():
-    """
-    Use the total memory size to determine whether the code runs on a Beaglebone
-    or on a Beaglebone Black.
-    """
-    with open('/proc/meminfo', 'r') as meminfo:
-        mem_total = meminfo.readline()
-    return "510716 kB" in mem_total
 
 
 def is_button_pressed(gpio_pin):
@@ -122,7 +101,8 @@ class StatusObject(dbus.service.Object):
 
         self._check_states_thread = None
 
-        self._is_bbb = is_beagle_bone_black()
+        self._is_bbb = hardware.is_beagle_bone_black()
+        self._gpios = hardware.get_gpios()
 
         self.clear_leds()
 
@@ -234,10 +214,10 @@ class StatusObject(dbus.service.Object):
         try:
             # Calculate network led/gpio states
             if not self._is_bbb:
-                self.set_gpio(ETH_LEFT_BB, self._network_enabled)
-                self.set_gpio(ETH_RIGHT_BB, self._network_activity)
+                self.set_gpio(self._gpios["ETH_LEFT_BB"], self._network_enabled)
+                self.set_gpio(self._gpios["ETH_RIGHT_BB"], self._network_activity)
             else:
-                self.set_gpio(ETH_STATUS_BBB, not self._network_enabled)
+                self.set_gpio(self._gpios["ETH_STATUS_BBB"], not self._network_enabled)
                 if self._network_activity:
                     self.toggle_led('alive')
                 else:
@@ -263,9 +243,9 @@ class StatusObject(dbus.service.Object):
             if self._authorized_mode:
                 if time.time() > self._authorized_timeout:
                     self._authorized_mode = False
-                    self.set_gpio(HOME, True)
+                    self.set_gpio(self._gpios["HOME"], True)
                 else:
-                    self.set_gpio(HOME, AUTH_LOOP[self._authorized_index])
+                    self.set_gpio(self._gpios["HOME"], AUTH_LOOP[self._authorized_index])
                     self._authorized_index = (self._authorized_index + 1) % len(AUTH_LOOP)
                     # Still in authorized mode...
             else:
@@ -298,15 +278,19 @@ def main():
         _ = dbus.service.BusName("com.openmotics.status", system_bus)  # Initializes the bus
         # The above `_ = dbus...` need to be there, or the bus won't be initialized
 
-        i2c_device = I2C_DEVICE_BBB if is_beagle_bone_black() else I2C_DEVICE_BB
+        i2c_device = hardware.get_i2c_device()
         i2c_address = int(config.get('OpenMotics', 'leds_i2c_address'), 16)
 
-        gpio_input = detect_button(GPIO_INPUT_BUTTON_GW, GPIO_INPUT_BUTTON_GW_M)
+        # @todo Check with team what are the situations on the field?
+        # Issue is that Black shouldn't export gpio38 to userspace as it's used  for MMC !
+        #gpio_input = detect_button(gpios["GPIO_INPUT_BUTTON_GW"], gpios["GPIO_INPUT_BUTTON_GW_M"])
+        gpios = hardware.get_gpios()
+        gpio_input = gpios["GPIO_INPUT_BUTTON_GW_M"] if hardware.is_beagle_bone_black() else gpios["GPIO_INPUT_BUTTON_GW"]
 
         status = StatusObject(system_bus, '/com/openmotics/status', i2c_device, i2c_address, gpio_input)
         status.start()
 
-        status.set_gpio(POWER_BBB, True)
+        status.set_gpio(gpios["POWER_BBB"], True)
 
         LOGGER.log("Running led service.")
         mainloop = gobject.MainLoop()

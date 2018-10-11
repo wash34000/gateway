@@ -27,6 +27,7 @@ import logging
 import cherrypy
 import constants
 import msgpack
+import ssl
 from decorator import decorator
 from cherrypy.lib.static import serve_file
 from ws4py.websocket import WebSocket
@@ -2253,7 +2254,8 @@ class WebService(object):
             self._https_server.socket_port = 443
             self._https_server._socket_host = '0.0.0.0'
             self._https_server.socket_timeout = 60
-            self._https_server.ssl_module = 'pyopenssl'
+            self._https_server.ssl_module = 'builtin'
+            self._https_server.ssl_context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
             self._https_server.ssl_certificate = constants.get_ssl_certificate_file()
             self._https_server.ssl_private_key = constants.get_ssl_private_key_file()
             self._https_server.subscribe()
