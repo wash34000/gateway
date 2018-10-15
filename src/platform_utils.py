@@ -160,7 +160,7 @@ class System(object):
         https_server.ssl_private_key = private_key_filename
 
     @staticmethod
-    def _get_syscall_exception():
+    def get_syscall_exception():
         os = System._get_os()
         if os['ID'] == 'angstrom':
             from OpenSSL import SSL
@@ -169,13 +169,10 @@ class System(object):
         return ssl.SSLSyscallError
 
     @staticmethod
-    def _get_wantread_exception():
+    def get_wantread_exception():
         os = System._get_os()
         if os['ID'] == 'angstrom':
             from OpenSSL import SSL
             return SSL.WantReadError
         import ssl
         return ssl.SSLWantReadError
-
-    SysCallError = _get_syscall_exception.__func__()
-    WantReadError = _get_wantread_exception.__func__()

@@ -146,12 +146,12 @@ class SerialRedirector(object):
             try:
                 try:
                     data = self.__connection.recv(1024)
-                except System.SysCallError as exception:
+                except System.get_syscall_exception() as exception:
                     if exception[0] == 11:  # temporarily unavailable
                         continue
                     else:
                         raise
-                except System.WantReadError:
+                except System.get_wantread_exception():
                     select.select([self.__connection], [], [], 1.0)
                 else:
                     if not data:
