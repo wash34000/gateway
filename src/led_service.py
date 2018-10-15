@@ -177,7 +177,7 @@ class StatusObject(dbus.service.Object):
         """ This drives different leds (status, alive and serial) """
         try:
             # Calculate network led/gpio states
-            self.set_led(Hardware.Led.STATUS, self._network_enabled)
+            self.set_led(Hardware.Led.STATUS, not self._network_enabled)
             if self._network_activity:
                 self.toggle_led(Hardware.Led.ALIVE)
             else:
