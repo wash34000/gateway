@@ -25,19 +25,13 @@ import dbus.service
 import dbus.mainloop.glib
 import fcntl
 import time
-
 from threading import Thread
 from ConfigParser import ConfigParser
-from platform_utils import hardware
 
+from platform_utils import Hardware
 import constants
 
-
-IOCTL_I2C_SLAVE = 0x0703
-CODES = {'uart4': 64, 'uart5': 128, 'vpn': 16, 'stat1': 0, 'stat2': 0, 'alive': 1, 'cloud': 4}
-AUTH_CODE = 1 + 4 + 16 + 64 + 128
-
-AUTH_LOOP = [True, False, True, False, False, False, False, False]
+AUTH_MODE_LEDS = [Hardware.Led.ALIVE, Hardware.Led.CLOUD, Hardware.Led.VPN, Hardware.Led.COMM_1, Hardware.Led.COMM_2]
 
 
 class LOGGER(object):
@@ -45,31 +39,6 @@ class LOGGER(object):
     def log(line):
         sys.stdout.write('{0}\n'.format(line))
         sys.stdout.flush()
-
-
-def is_button_pressed(gpio_pin):
-    """ Read the input button: returns True if the button is pressed, False if not. """
-    with open('/sys/class/gpio/gpio{0}/value'.format(gpio_pin), 'r') as fh_inp:
-        line = fh_inp.read()
-    return int(line) == 0
-
-
-def detect_button(gpio_1, gpio_2):
-    """
-    Detect which gpio pin is connected the input button. If the button is not connected, the
-    pin will look as if the button is pressed. So if there is one input that is not pressed, it
-    must be connected to the button. If both pins look pressed, it defaults to the first given
-    gpio.
-    """
-    first_pressed = is_button_pressed(gpio_1)
-    second_pressed = is_button_pressed(gpio_2)
-
-    if not first_pressed:
-        return gpio_1
-    elif not second_pressed:
-        return gpio_2
-    else:
-        return gpio_1
 
 
 class StatusObject(dbus.service.Object):
@@ -91,33 +60,25 @@ class StatusObject(dbus.service.Object):
 
         self._serial_activity = {4: False, 5: False}
         self._enabled_leds = {}
-        self._enabled_gpio = {}
-        self._previous_gpio = {}
-        self._last_code = 0
+        self._previous_leds = {}
+        self._last_i2c_led_code = 0
 
         self._authorized_mode = False
         self._authorized_timeout = 0
-        self._authorized_index = 0
 
         self._check_states_thread = None
 
-        self._is_bbb = hardware.is_beagle_bone_black()
-        self._gpios = hardware.get_gpios()
-
-        self.clear_leds()
+        self._gpio_led_config = Hardware.get_gpio_led_config()
+        self._i2c_led_config = Hardware.get_i2c_led_config()
+        for led in self._gpio_led_config.keys() + self._i2c_led_config.keys():
+            self._enabled_leds[led] = False
+            self._write_leds()
 
     def start(self):
         """ Start the leds and buttons thread. """
         self._check_states_thread = Thread(target=self._check_states)
         self._check_states_thread.daemon = True
         self._check_states_thread.start()
-
-    @dbus.service.method("com.openmotics.status", in_signature='', out_signature='')
-    def clear_leds(self):
-        """ Turn all LEDs off. """
-        for led in CODES:
-            self._enabled_leds[led] = False
-        self._write_leds()
 
     @dbus.service.method("com.openmotics.status", in_signature='sb', out_signature='')
     def set_led(self, led_name, enable):
@@ -127,7 +88,7 @@ class StatusObject(dbus.service.Object):
     @dbus.service.method("com.openmotics.status", in_signature='s', out_signature='')
     def toggle_led(self, led_name):
         """ Toggle the state of a LED. """
-        self._enabled_leds[led_name] = not self._enabled_leds[led_name]
+        self._enabled_leds[led_name] = not self._enabled_leds.get(led_name, False)
 
     @dbus.service.method("com.openmotics.status", in_signature='i', out_signature='')
     def serial_activity(self, port):
@@ -142,39 +103,42 @@ class StatusObject(dbus.service.Object):
         """
         return self._authorized_mode
 
-    def set_gpio(self, gpio, on):
-        """ Sets GPIO on/off """
-        self._enabled_gpio[gpio] = on
+    @staticmethod
+    def _is_button_pressed(gpio_pin):
+        """ Read the input button: returns True if the button is pressed, False if not. """
+        with open('/sys/class/gpio/gpio{0}/value'.format(gpio_pin), 'r') as fh_inp:
+            line = fh_inp.read()
+        return int(line) == 0
 
     def _write_leds(self):
         """ Set the LEDs using the current status. """
         try:
             # Get i2c code
             code = 0
-            for led in CODES:
-                if self._enabled_leds[led] is True:
-                    code |= CODES[led]
+            for led in self._i2c_led_config.keys():
+                if self._enabled_leds.get(led, False) is True:
+                    code |= self._i2c_led_config[led]
             if self._authorized_mode:
                 # Light all leds in authorized mode
-                code |= AUTH_CODE
+                for led in AUTH_MODE_LEDS:
+                    code |= self._i2c_led_config.get(led, 0)
             code = (~ code) & 255
 
             # Push code if needed
-            if code != self._last_code:
-                self._last_code = code
+            if code != self._last_i2c_led_code:
+                self._last_i2c_led_code = code
                 with open(self._i2c_device, 'r+', 1) as i2c:
-                    fcntl.ioctl(i2c, IOCTL_I2C_SLAVE, self._i2c_address)
+                    fcntl.ioctl(i2c, Hardware.IOCTL_I2C_SLAVE, self._i2c_address)
                     i2c.write(chr(code))
         except Exception as exception:
             LOGGER.log('Error while writing to i2c: {0}'.format(exception))
 
-    def _write_gpio(self):
-        """ Sets the GPIO using the current status. """
-        for gpio in self._enabled_gpio:
-            on = self._enabled_gpio[gpio]
-            if self._previous_gpio.get(gpio) != on:
-                self._previous_gpio[gpio] = on
+        for led in self._gpio_led_config.keys():
+            on = self._enabled_leds.get(led, False)
+            if self._previous_leds.get(led) != on:
+                self._previous_leds[led] = on
                 try:
+                    gpio = self._gpio_led_config[led]
                     with open('/sys/class/gpio/gpio{0}/value'.format(gpio), 'w') as fh_s:
                         fh_s.write('1' if on else '0')
                 except IOError:
@@ -213,26 +177,22 @@ class StatusObject(dbus.service.Object):
         """ This drives different leds (status, alive and serial) """
         try:
             # Calculate network led/gpio states
-            if not self._is_bbb:
-                self.set_gpio(self._gpios["ETH_LEFT_BB"], self._network_enabled)
-                self.set_gpio(self._gpios["ETH_RIGHT_BB"], self._network_activity)
+            self.set_led(Hardware.Led.STATUS, self._network_enabled)
+            if self._network_activity:
+                self.toggle_led(Hardware.Led.ALIVE)
             else:
-                self.set_gpio(self._gpios["ETH_STATUS_BBB"], not self._network_enabled)
-                if self._network_activity:
-                    self.toggle_led('alive')
-                else:
-                    self.set_led('alive', False)
+                self.set_led(Hardware.Led.ALIVE, False)
             # Calculate serial led states
+            comm_map = {4: Hardware.Led.COMM_1,
+                        5: Hardware.Led.COMM_2}
             for uart in [4, 5]:
-                uart_name = 'uart{0}'.format(uart)
                 if self._serial_activity[uart]:
-                    self.toggle_led(uart_name)
+                    self.toggle_led(comm_map[uart])
                 else:
-                    self.set_led(uart_name, False)
+                    self.set_led(comm_map[uart], False)
                 self._serial_activity[uart] = False
-            # Update all leds & gpio
+            # Update all leds
             self._write_leds()
-            self._write_gpio()
         except Exception as exception:
             LOGGER.log('Error while driving leds: {0}'.format(exception))
         gobject.timeout_add(250, self.drive_leds)
@@ -243,13 +203,8 @@ class StatusObject(dbus.service.Object):
             if self._authorized_mode:
                 if time.time() > self._authorized_timeout:
                     self._authorized_mode = False
-                    self.set_gpio(self._gpios["HOME"], True)
-                else:
-                    self.set_gpio(self._gpios["HOME"], AUTH_LOOP[self._authorized_index])
-                    self._authorized_index = (self._authorized_index + 1) % len(AUTH_LOOP)
-                    # Still in authorized mode...
             else:
-                if is_button_pressed(self._input_button):
+                if StatusObject._is_button_pressed(self._input_button):
                     if self._input_button_pressed_since is None:
                         self._input_button_pressed_since = time.time()
                     if time.time() > self._input_button_pressed_since + 5:
@@ -278,19 +233,13 @@ def main():
         _ = dbus.service.BusName("com.openmotics.status", system_bus)  # Initializes the bus
         # The above `_ = dbus...` need to be there, or the bus won't be initialized
 
-        i2c_device = hardware.get_i2c_device()
+        i2c_device = Hardware.get_i2c_device()
         i2c_address = int(config.get('OpenMotics', 'leds_i2c_address'), 16)
 
-        # @todo Check with team what are the situations on the field?
-        # Issue is that Black shouldn't export gpio38 to userspace as it's used  for MMC !
-        #gpio_input = detect_button(gpios["GPIO_INPUT_BUTTON_GW"], gpios["GPIO_INPUT_BUTTON_GW_M"])
-        gpios = hardware.get_gpios()
-        gpio_input = gpios["GPIO_INPUT_BUTTON_GW_M"] if hardware.is_beagle_bone_black() else gpios["GPIO_INPUT_BUTTON_GW"]
-
-        status = StatusObject(system_bus, '/com/openmotics/status', i2c_device, i2c_address, gpio_input)
+        status = StatusObject(system_bus, '/com/openmotics/status', i2c_device, i2c_address, Hardware.get_gpio_input())
         status.start()
 
-        status.set_gpio(gpios["POWER_BBB"], True)
+        status.set_led(Hardware.Led.POWER, True)
 
         LOGGER.log("Running led service.")
         mainloop = gobject.MainLoop()
