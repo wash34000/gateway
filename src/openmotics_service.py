@@ -108,7 +108,6 @@ def main():
     led_service = LedService()
 
     controller_serial = Serial(controller_serial_port, 115200)
-    passthrough_serial = Serial(passthrough_serial_port, 115200)
     power_serial = RS485(Serial(power_serial_port, 115200, timeout=None))
 
     master_communicator = MasterCommunicator(controller_serial)
@@ -126,8 +125,10 @@ def main():
     maintenance_service = MaintenanceService(gateway_api, constants.get_ssl_private_key_file(),
                                              constants.get_ssl_certificate_file())
 
-    passthrough_service = PassthroughService(master_communicator, passthrough_serial)
-    passthrough_service.start()
+    if passthrough_serial_port:
+        passthrough_serial = Serial(passthrough_serial_port, 115200)
+        passthrough_service = PassthroughService(master_communicator, passthrough_serial)
+        passthrough_service.start()
 
     web_interface = WebInterface(user_controller, gateway_api, maintenance_service, led_service.in_authorized_mode,
                                  config_controller, scheduling_controller)
