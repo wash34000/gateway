@@ -16,18 +16,6 @@
 The hardware_utils module contains various classes helping with Hardware and System abstraction
 """
 import subprocess
-from enum import Enum
-
-
-class BoardType(Enum):
-    """
-    Board type Enum
-    Make sure UNKNOWN is listed as last one
-    """
-    BB = 'TI_AM335x_BeagleBone'
-    BBB = 'TI_AM335x_BeagleBone_Black'
-    BBGW = 'TI_AM335x_BeagleBone_Green_Wireless'
-    U = 'UNKNOWN'
 
 
 class Hardware(object):
