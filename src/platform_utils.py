@@ -33,26 +33,31 @@ class Hardware(object):
         COMM_2 = 'COMM_2'
 
     class BoardType(object):
-        BB = 'TI_AM335x_BeagleBone'
-        BBB = 'TI_AM335x_BeagleBone_Black'
-        BBGW = 'TI_AM335x_BeagleBone_Green_Wireless'
+        BB = 'BB'
+        BBB = 'BBB'
+        BBGW = 'BBGW'
 
     BoardTypes = [BoardType.BB, BoardType.BBB, BoardType.BBGW]
     IOCTL_I2C_SLAVE = 0x0703
 
     @staticmethod
     def get_board_type():
-        board_type = None
         try:
             with open('/proc/device-tree/model', 'r') as mfh:
                 board_type = mfh.read().strip('\x00').replace(' ', '_')
+                if board_type in ['TI_AM335x_BeagleBone', 'TI_AM335x_BeagleBone_Black']:
+                    return Hardware.BoardType.BBB
+                if board_type in ['TI_AM335x_BeagleBone_Green_Wireless']:
+                    return Hardware.BoardType.BBGW
         except IOError:
-            with open('/proc/meminfo', 'r') as memfh:
-                mem_total = memfh.readline()
-                if '254228 kB' in mem_total:
-                    return Hardware.BoardType.BB
-        if board_type in Hardware.BoardTypes:
-            return board_type
+            pass
+        with open('/proc/meminfo', 'r') as memfh:
+            mem_total = memfh.readline()
+            if '254228 kB' in mem_total:
+                return Hardware.BoardType.BB
+            if '510716 kB' in mem_total:
+                return Hardware.BoardType.BBB
+        return None  # Unknown
 
     @staticmethod
     def get_i2c_device():
