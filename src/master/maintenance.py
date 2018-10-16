@@ -14,41 +14,41 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """
 The maintenance module contains the MaintenanceService class.
-
-@author: fryckbos
 """
 
 import logging
-LOGGER = logging.getLogger("openmotics")
+LOGGER = logging.getLogger('openmotics')
 
 import threading
 import traceback
 import socket
 import select
-from OpenSSL import SSL
-
+from platform_utils import System
 from master_communicator import InMaintenanceModeException
 
+
 class MaintenanceService(object):
-    """ The maintenance service accepts tcp connections. If a connection is accepted it
+    """
+    The maintenance service accepts tcp connections. If a connection is accepted it
     grabs the serial port, sets the gateway mode to CLI and forwards input and output
     over the tcp connection.
     """
 
     def __init__(self, gateway_api, privatekey_filename, certificate_filename):
-        """ Construct a MaintenanceServer.
+        """
+        Construct a MaintenanceServer.
 
         :param gateway_api: the communication with the master.
         :param privatekey_filename: the filename of the private key for the SSL connection.
         :param certificate_filename: the filename of the certificate for the SSL connection.
         """
         self.__gateway_api = gateway_api
-        self.__context = SSL.Context(SSL.SSLv23_METHOD)
-        self.__context.use_privatekey_file(privatekey_filename)
-        self.__context.use_certificate_file(certificate_filename)
+        self._privatekey_filename = privatekey_filename
+        self._certificate_filename = certificate_filename
 
     def start_in_thread(self, port, connection_timeout=60):
-        """ Start the maintenance service in a new thread. The maintenance service only accepts
+        """
+        Start the maintenance service in a new thread. The maintenance service only accepts
         one connection. If this connection is not established within the connection_timeout, the
         server socket is closed.
 
@@ -56,58 +56,63 @@ class MaintenanceService(object):
         :param connection_timeout: timeout for the server socket.
         """
         thread = threading.Thread(target=self.start, args=(port, connection_timeout))
-        thread.setName("Maintenance thread")
+        thread.setName('Maintenance thread')
         thread.daemon = True
         thread.start()
 
     def start(self, port, connection_timeout):
-        """ Run the maintenance service, accepts a connection. Starts a serial
+        """
+        Run the maintenance service, accepts a connection. Starts a serial
         redirector when a connection is accepted.
         """
-        LOGGER.info("Starting maintenance socket on port " + str(port))
+        LOGGER.info('Starting maintenance socket on port ' + str(port))
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock.settimeout(connection_timeout)
-        sock = SSL.Connection(self.__context, sock)
+        sock = System.get_ssl_socket(sock,
+                                     private_key_filename=self._privatekey_filename,
+                                     certificate_filename=self._certificate_filename)
         sock.bind(('', port))
         sock.listen(1)
 
         try:
-            LOGGER.info("Waiting for maintenance connection.")
+            LOGGER.info('Waiting for maintenance connection.')
             connection, addr = sock.accept()
             self.handle_connection(connection, str(addr))
-            LOGGER.info("Maintenance session ended, closing maintenance socket")
+            LOGGER.info('Maintenance session ended, closing maintenance socket')
             sock.close()
         except socket.timeout:
-            LOGGER.info("Maintenance socket timed out, closing.")
+            LOGGER.info('Maintenance socket timed out, closing.')
             sock.close()
         except Exception:
-            LOGGER.error("Error in maintenance service: %s\n", traceback.format_exc())
+            LOGGER.error('Error in maintenance service: %s\n', traceback.format_exc())
             sock.close()
 
     def handle_connection(self, connection, addr):
-        """ Handles one incoming connection.
         """
-        LOGGER.info("Maintenance connection from %s\n", addr)
+        Handles one incoming connection.
+        """
+        LOGGER.info('Maintenance connection from %s\n', addr)
         connection.settimeout(1)
         try:
-            connection.sendall("Starting maintenance mode, "
-                               "waiting for other actions to complete ...\n")
+            connection.sendall('Starting maintenance mode, '
+                               'waiting for other actions to complete ...\n')
             self.__gateway_api.start_maintenance_mode()
-            LOGGER.info("Maintenance connection got lock\n")
+            LOGGER.info('Maintenance connection got lock\n')
 
             serial_redirector = SerialRedirector(self.__gateway_api, connection)
             serial_redirector.run()
         except InMaintenanceModeException:
-            connection.sendall("Maintenance mode already started. Closing connection.")
+            connection.sendall('Maintenance mode already started. Closing connection.')
         finally:
-            LOGGER.info("Maintenance connection closed")
+            LOGGER.info('Maintenance connection closed')
             self.__gateway_api.stop_maintenance_mode()
             connection.close()
 
 
 class SerialRedirector(object):
-    """ Takes an acquired serial connection and a socket an redirects
+    """
+    Takes an acquired serial connection and a socket an redirects
     the serial traffic over the socket.
     """
 
@@ -118,11 +123,12 @@ class SerialRedirector(object):
         self.__stopped = False
 
     def run(self):
-        """ Run the serial redirector, spins off a reader thread and uses
+        """
+        Run the serial redirector, spins off a reader thread and uses
         the current thread for writing
         """
         self.__reader_thread = threading.Thread(target=self.reader)
-        self.__reader_thread.setName("Maintenance reader thread")
+        self.__reader_thread.setName('Maintenance reader thread')
         self.__reader_thread.start()
         self.writer()
 
@@ -140,27 +146,26 @@ class SerialRedirector(object):
             try:
                 try:
                     data = self.__connection.recv(1024)
-                except SSL.SysCallError as exception:
-                    if exception[0] == 11: ## temporarily unavailable
+                except System.get_syscall_exception() as exception:
+                    if exception[0] == 11:  # temporarily unavailable
                         continue
                     else:
                         raise
-                except SSL.WantReadError:
+                except System.get_wantread_exception():
                     select.select([self.__connection], [], [], 1.0)
                 else:
                     if not data:
-                        LOGGER.info("Stopping maintenance mode due to no data.")
-                    if data.startswith("exit"):
-                        LOGGER.info("Stopping maintenance mode due to exit.")
+                        LOGGER.info('Stopping maintenance mode due to no data.')
+                    if data.startswith('exit'):
+                        LOGGER.info('Stopping maintenance mode due to exit.')
                         break
                     self.__gateway_api.send_maintenance_data(data)
             except:
-                LOGGER.error("Exception in maintenance mode: %s\n", traceback.format_exc())
+                LOGGER.error('Exception in maintenance mode: %s\n', traceback.format_exc())
                 break
 
         self.__stopped = True
         self.__reader_thread.join()
-
 
     def reader(self):
         """ Reads from the serial port and writes to the socket. """
@@ -170,7 +175,7 @@ class SerialRedirector(object):
                 if data:
                     self.__connection.sendall(data)
             except:
-                LOGGER.error("Exception in maintenance mode: %s\n", traceback.format_exc())
+                LOGGER.error('Exception in maintenance mode: %s\n', traceback.format_exc())
                 break
 
         self.__stopped = True

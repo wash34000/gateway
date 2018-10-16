@@ -45,8 +45,6 @@ def check_for_errors(default_ret):
 class LedService(object):
     """ Communicates with the leds service using dbus. """
 
-    LEDS = ['uart4', 'uart5', 'vpn', 'stat1', 'stat2', 'alive', 'cloud']
-
     def __init__(self):
         self.bus = LedService.get_bus()
 

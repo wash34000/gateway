@@ -32,6 +32,8 @@ from cherrypy.lib.static import serve_file
 from ws4py.websocket import WebSocket
 from ws4py.server.cherrypyserver import WebSocketPlugin, WebSocketTool
 from master.master_communicator import InMaintenanceModeException
+from platform_utils import System
+
 try:
     import json
 except ImportError:
@@ -2253,9 +2255,9 @@ class WebService(object):
             self._https_server.socket_port = 443
             self._https_server._socket_host = '0.0.0.0'
             self._https_server.socket_timeout = 60
-            self._https_server.ssl_module = 'pyopenssl'
-            self._https_server.ssl_certificate = constants.get_ssl_certificate_file()
-            self._https_server.ssl_private_key = constants.get_ssl_private_key_file()
+            System.setup_cherrypy_ssl(self._https_server,
+                                      private_key_filename=constants.get_ssl_private_key_file(),
+                                      certificate_filename=constants.get_ssl_certificate_file())
             self._https_server.subscribe()
 
             self._http_server = cherrypy._cpserver.Server()

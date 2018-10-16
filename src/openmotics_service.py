@@ -176,9 +176,7 @@ def main():
     metrics_collector.start()
     web_service.start()
 
-    led_service.set_led('stat2', True)
-    led_thread = threading.Thread(target=led_driver, args=(led_service,
-                                                           master_communicator, power_communicator))
+    led_thread = threading.Thread(target=led_driver, args=(led_service, master_communicator, power_communicator))
     led_thread.setName("Serial led driver thread")
     led_thread.daemon = True
     led_thread.start()
@@ -187,7 +185,6 @@ def main():
         """ This function is called on SIGTERM. """
         _ = signum, frame
         sys.stderr.write("Shutting down")
-        led_service.set_led('stat2', False)
         web_service.stop()
         metrics_collector.stop()
         metrics_controller.stop()
