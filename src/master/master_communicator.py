@@ -121,8 +121,8 @@ class MasterCommunicator(object):
         self.__read_thread.start()
         self.__watchdog_thread.start()
 
-    def set_passthrough_enabled(self, enabled):
-        self.__passthrough_enabled = enabled
+    def enable_passthrough(self):
+        self.__passthrough_enabled = True
 
     def get_bytes_written(self):
         """ Get the number of bytes written to the Master. """
@@ -244,6 +244,10 @@ class MasterCommunicator(object):
         self.__passthrough_mode = False
         self.__command_lock.release()
 
+    def __push_passthrough_data(self, data):
+        if self.__passthrough_enabled:
+            self.__passthrough_queue.put(data)
+
     def send_passthrough_data(self, data):
         """ Send raw data on the serial port.
 
@@ -352,8 +356,8 @@ class MasterCommunicator(object):
             """ Callback for when consumer is done. ReadState does not access parent directly. """
             if isinstance(consumer, Consumer):
                 self.__consumers.remove(consumer)
-            elif isinstance(consumer, BackgroundConsumer) and consumer.send_to_passthrough and self.__passthrough_enabled:
-                self.__passthrough_queue.put(consumer.last_cmd_data)
+            elif isinstance(consumer, BackgroundConsumer) and consumer.send_to_passthrough:
+                self.__push_passthrough_data(consumer.last_cmd_data)
 
         class ReadState(object):
             """" The read state keeps track of the current consumer and the partial result
@@ -446,8 +450,7 @@ class MasterCommunicator(object):
 
                     if len(leftovers) > 0:
                         if not self.__maintenance_mode:
-                            if self.__passthrough_enabled:
-                                self.__passthrough_queue.put(leftovers)
+                            self.__push_passthrough_data(leftovers)
                         else:
                             self.__maintenance_queue.put(leftovers)
 

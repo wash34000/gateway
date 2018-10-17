@@ -119,13 +119,10 @@ def main():
 
     scheduling_controller = SchedulingController(constants.get_scheduling_database_file(), config_lock, gateway_api)
 
-    passthrough_service = None
     if passthrough_serial_port:
         passthrough_serial = Serial(passthrough_serial_port, 115200)
         passthrough_service = PassthroughService(master_communicator, passthrough_serial)
         passthrough_service.start()
-
-    master_communicator.set_passthrough_enabled(passthrough_service is not None)
 
     maintenance_service = MaintenanceService(gateway_api, constants.get_ssl_private_key_file(),
                                              constants.get_ssl_certificate_file())

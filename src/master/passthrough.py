@@ -40,6 +40,8 @@ class PassthroughService(object):
         self.__reader_thread = None
         self.__writer_thread = None
 
+        self.__master_communicator.enable_passthrough()
+
     def start(self):
         """ Start the Passthrough service, this launches the two threads. """
         self.__reader_thread = threading.Thread(target=self.__reader)
