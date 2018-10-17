@@ -40,6 +40,7 @@ class PassthroughServiceTest(unittest.TestCase):
                         sin("more data"), sout("more response")])
 
         master_communicator = MasterCommunicator(master_mock, init_master=False)
+        master_communicator.enable_passthrough()
         master_communicator.start()
 
         passthrough = PassthroughService(master_communicator, passthrough_mock)
