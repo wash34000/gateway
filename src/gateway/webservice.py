@@ -20,6 +20,7 @@ import random
 import ConfigParser
 import subprocess
 import os
+import re
 import sys
 import time
 import requests
@@ -95,6 +96,11 @@ def params_parser(params, param_types):
                 params[key] = str(value).lower() not in ['false', '0', '0.0', 'no']
             elif param_types[key] == 'json':
                 params[key] = json.loads(value)
+            elif isinstance(param_types[key], re._pattern_type):
+                value = str(value)
+                if param_types[key].match(value) is None:
+                    raise ValueError()
+                params[key] = value
             else:
                 params[key] = param_types[key](value)
 
@@ -462,17 +468,6 @@ class WebInterface(object):
         return self._gateway_api.module_discover_status()
 
     @openmotics_api(auth=True)
-    def get_module_log(self):
-        """
-        Get the log messages from the module discovery mode. This returns the current log
-        messages and clear the log messages.
-
-        :returns: 'log': list of tuples (log_level, message).
-        :rtype: dict
-        """
-        return self._gateway_api.get_module_log()
-
-    @openmotics_api(auth=True)
     def get_modules(self):
         """
         Get a list of all modules attached and registered with the master.
@@ -491,10 +486,10 @@ class WebInterface(object):
         Returns all available features this Gateway supports. This allows to make flexible clients
         """
         return {'features': [
-            'metrics',       # Advanced metrics (including metrics over websockets)
-            'dirty_flag',    # A dirty flag that can be used to trigger syncs on power & master
-            'scheduling',    # Gateway backed scheduling
-            'factory_reset', # The gateway can be complete reset to factory standard
+            'metrics',        # Advanced metrics (including metrics over websockets)
+            'dirty_flag',     # A dirty flag that can be used to trigger syncs on power & master
+            'scheduling',     # Gateway backed scheduling
+            'factory_reset',  # The gateway can be complete reset to factory standard
         ]}
 
     @openmotics_api(auth=True, check=types(type=int, id=int))
@@ -2205,6 +2200,11 @@ class WebInterface(object):
     @openmotics_api(auth=True, plugin_exposed=False)
     def factory_reset(self):
         self._gateway_api.factory_reset()
+        return {}
+
+    @openmotics_api(auth=True, check=types(address=re.compile('^[0-9]{3}\.[0-9]{3}\.[0-9]{3}\.[0-9]{3}$')), plugin_exposed=False)
+    def module_factory_reset(self, address):
+        self._gateway_api.module_factory_reset(address)
         return {}
 
     @cherrypy.expose

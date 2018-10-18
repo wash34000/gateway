@@ -486,6 +486,13 @@ def write_timer():
                              [Field.byte("id"), Field.int("timer"), Field.padding(10), Field.lit("\r\n")])
 
 
+def factory_reset_module():
+    """ Erase external eeprom of a slave module and perform factory reset - only makes sense for modules own eeprom data """
+    return MasterCommandSpec("FX",
+                             [Field.str('addr', 4), Field.byte('instr'), Field.crc(), Field.padding(5)],
+                             [Field.str('addr', 4), Field.byte('error_code'), Field.crc(), Field.padding(5), Field.lit('\r\n')])
+
+
 # Below are the asynchronous messages, sent by the master to the gateway
 
 def output_list():

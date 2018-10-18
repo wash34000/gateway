@@ -409,11 +409,11 @@ class MasterCommunicator(object):
             num_bytes = self.__serial.inWaiting()
             if num_bytes > 0:
                 data += self.__serial.read(num_bytes)
-            if data != None and len(data) > 0:
+            if data is not None and len(data) > 0:
                 self.__serial_bytes_read += (1 + num_bytes)
 
                 if self.__verbose:
-                    print "%.3f read from serial: %s" % (time.time(), printable(data))
+                    LOGGER.info('Reading from Master serial: {0}'.format(printable(data)))
 
                 if read_state.should_resume():
                     data = read_state.consume(data)

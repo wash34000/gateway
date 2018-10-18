@@ -300,12 +300,12 @@ class FieldType(object):
         """
         if self.python_type == int and self.length == 1:
             if field_value < 0 or field_value > 255:
-                raise ValueError('Int does not fit in byte: %d' % field_value)
+                raise ValueError('Int does not fit in byte: {0}'.format(field_value))
             else:
                 return chr(field_value)
         elif self.python_type == int and self.length == 2:
             if field_value < 0 or field_value > 65535:
-                raise ValueError('Int does not fit in 2 bytes: %d' % field_value)
+                raise ValueError('Int does not fit in 2 bytes: {0}'.format(field_value))
             else:
                 return str(chr(field_value / 256)) + str(chr(field_value % 256))
         elif self.python_type == str:

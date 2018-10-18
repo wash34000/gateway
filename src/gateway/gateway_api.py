@@ -459,7 +459,6 @@ class GatewayApi(object):
 
         ret = self.__master_communicator.do_command(master_api.module_discover_stop())
 
-        self.__module_log = []
         self.__eeprom_controller.invalidate_cache()
         self.__eeprom_controller.dirty = True
 
@@ -471,15 +470,6 @@ class GatewayApi(object):
         :returns dict with 'running': True|False
         """
         return {'running': self.__discover_mode_timer is not None}
-
-    def get_module_log(self):
-        """ Get the log messages from the module discovery mode. This returns the current log
-        messages and clear the log messages.
-
-        :returns: dict with 'log' (list of tuples (log_level, message)).
-        """
-        (module_log, self.__module_log) = (self.__module_log, [])
-        return {'log': module_log}
 
     def get_modules(self):
         """ Get a list of all modules attached and registered with the master.
@@ -1395,6 +1385,14 @@ class GatewayApi(object):
         finally:
             # Restart the Cherrypy server after 1 second. Lets the current request terminate.
             threading.Timer(1, lambda: os._exit(0)).start()
+
+    def module_factory_reset(self, address):
+        """ Executes a factory reset on a given module. Address in form of: ddd.ddd.ddd.ddd """
+        address_bytes = ''.join(chr(int(part)) for part in address.split('.'))
+        self.__master_communicator.do_command(
+            master_api.factory_reset_module(),
+            {'addr': address_bytes, 'instr': 0}
+        )
 
     def get_master_backup(self):
         """ Get a backup of the eeprom of the master.
