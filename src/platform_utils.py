@@ -165,19 +165,30 @@ class System(object):
         https_server.ssl_private_key = private_key_filename
 
     @staticmethod
-    def get_syscall_exception():
+    def handle_socket_exception(connection, exception, logger):
         os = System._get_os()
         if os['ID'] == 'angstrom':
+            import select
             from OpenSSL import SSL
-            return SSL.SysCallError
-        import ssl
-        return ssl.SSLSyscallError
-
-    @staticmethod
-    def get_wantread_exception():
-        os = System._get_os()
-        if os['ID'] == 'angstrom':
-            from OpenSSL import SSL
-            return SSL.WantReadError
-        import ssl
-        return ssl.SSLWantReadError
+            if isinstance(exception, SSL.SysCallError):
+                if exception[0] == 11:  # Temporarily unavailable
+                    # This should be ok, just wait for more data to arrive
+                    return True  # continue
+                if exception[0] == -1:  # Unexpected EOF
+                    logger.info('Got (unexpected) EOF, aborting due to lost connection')
+                    return False  # break
+            elif isinstance(exception, SSL.WantReadError):
+                # This should be ok, just wait for more data to arrive
+                select.select([connection], [], [], 1.0)
+                return True  # continue
+        else:
+            import select
+            import ssl
+            if isinstance(exception, ssl.SSLEOFError):
+                logger.info('Got SSLEOFError, aborting due to lost connection')
+                return False  # break
+            elif isinstance(exception, ssl.SSLError):
+                if 'The read operation timed out' in str(exception):
+                    # Got read timeout, just wait for data to arrive
+                    return True  # continue
+        raise exception
