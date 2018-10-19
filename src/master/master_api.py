@@ -486,6 +486,15 @@ def write_timer():
                              [Field.byte("id"), Field.int("timer"), Field.padding(10), Field.lit("\r\n")])
 
 
+def get_module_version():
+    """ Get the version of the module. """
+    return MasterCommandSpec("FV",
+                             [Field.str('addr', 4), Field.crc(), Field.padding(6)],
+                             [Field.str('addr', 4), Field.byte("error_code"), Field.byte("hw_version"),
+                              Field.byte("f1"), Field.byte("f2"), Field.byte("f3"), Field.byte("status"),
+                              Field.crc(), Field.lit("\r\n")])
+
+
 # Below are the asynchronous messages, sent by the master to the gateway
 
 def output_list():

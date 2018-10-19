@@ -47,13 +47,15 @@ class MasterCommandSpec(object):
         self.input_fields = input_fields
         self.output_fields = output_fields
 
-    def create_input(self, cid, fields=None):
+    def create_input(self, cid, fields=None, extended_crc=False):
         """ Create an input command for the master using this spec and the provided fields.
 
         :param cid: communication id
         :type cid: byte
         :param fields: dictionary with values for the fields
         :type fields: dict
+        :param extended_crc: Indicates whether the action should be included in the CRC
+        :type extended_crc: bool
         :rtype: string
         """
         if fields is None:
@@ -63,7 +65,11 @@ class MasterCommandSpec(object):
         encoded_fields = ""
         for field in self.input_fields:
             if Field.is_crc(field):
-                encoded_fields += self.__calc_crc(encoded_fields)
+                if extended_crc:
+                    crc = self.__calc_crc(self.action + encoded_fields)
+                else:
+                    crc = self.__calc_crc(encoded_fields)
+                encoded_fields += crc
             else:
                 encoded_fields += field.encode(fields.get(field.name))
 

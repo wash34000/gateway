@@ -486,15 +486,24 @@ class WebInterface(object):
         return self._gateway_api.get_modules()
 
     @openmotics_api(auth=True)
+    def get_modules_information(self):
+        """
+        Gets an overview of all modules and information
+        :return: Dict containing information per address
+        """
+        return {'modules': self._gateway_api.get_modules_information()}
+
+    @openmotics_api(auth=True)
     def get_features(self):
         """
         Returns all available features this Gateway supports. This allows to make flexible clients
         """
         return {'features': [
-            'metrics',       # Advanced metrics (including metrics over websockets)
-            'dirty_flag',    # A dirty flag that can be used to trigger syncs on power & master
-            'scheduling',    # Gateway backed scheduling
-            'factory_reset', # The gateway can be complete reset to factory standard
+            'metrics',              # Advanced metrics (including metrics over websockets)
+            'dirty_flag',           # A dirty flag that can be used to trigger syncs on power & master
+            'scheduling',           # Gateway backed scheduling
+            'factory_reset',        # The gateway can be complete reset to factory standard
+            'modules_information',  # Extended information about modules
         ]}
 
     @openmotics_api(auth=True, check=types(type=int, id=int))

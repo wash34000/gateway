@@ -72,6 +72,16 @@ class EepromController(object):
             return_data.append(entry)
         return return_data
 
+    def read_address(self, address):
+        """
+        Reads a given address (+length) from the eeprom
+        :param address: Address to read
+        :type address: master.eeprom_controller.EepromAddress
+        :returns: Eeprom data
+        :rtype: master.eeprom_controller.EepromData
+        """
+        return self._eeprom_file.read([address])[address]
+
     def read_all(self, eeprom_model, fields=None):
         """
         Create a list of instance of an EepromModel by reading all ids of that model from the

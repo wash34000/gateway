@@ -38,7 +38,7 @@ from master.inputs import InputStatus
 from master.thermostats import ThermostatStatus
 from master.shutters import ShutterStatus
 from master.master_communicator import BackgroundConsumer
-from master.eeprom_controller import EepromController, EepromFile
+from master.eeprom_controller import EepromController, EepromFile, EepromAddress
 from master.eeprom_extension import EepromExtension
 from master.eeprom_models import OutputConfiguration, InputConfiguration, ThermostatConfiguration, \
     SensorConfiguration, PumpGroupConfiguration, GroupActionConfiguration, \
@@ -525,6 +525,73 @@ class GatewayApi(object):
             inputs.append('C')  # First CAN enabled installations didn't had this in the eeprom yet
 
         return {'outputs': outputs, 'inputs': inputs, 'shutters': shutters, 'can_inputs': can_inputs}
+
+    def get_modules_information(self):
+        """ Gets module information """
+
+        def get_master_version(eeprom_address, _is_can=False):
+            _module_address = self.__eeprom_controller.read_address(eeprom_address)
+            formatted_address = '{0:03}.{1:03}.{2:03}.{3:03}'.format(ord(_module_address.bytes[0]),
+                                                                     ord(_module_address.bytes[1]),
+                                                                     ord(_module_address.bytes[2]),
+                                                                     ord(_module_address.bytes[3]))
+            try:
+                if _is_can or _module_address.bytes[0].lower() == _module_address.bytes[0]:
+                    return formatted_address, None, None
+                _module_version = self.__master_communicator.do_command(master_api.get_module_version(),
+                                                                        {'addr': _module_address.bytes},
+                                                                        extended_crc=True,
+                                                                        timeout=1)
+                _firmware_version = '{0}.{1}.{2}'.format(_module_version['f1'], _module_version['f2'], _module_version['f3'])
+                return formatted_address, _module_version['hw_version'], _firmware_version
+            except CommunicationTimedOutException:
+                return formatted_address, None, None
+
+        information = {'master': {}, 'energy': {}}
+
+        # Master slave modules
+        no_modules = self.__master_communicator.do_command(master_api.number_of_io_modules())
+        for i in range(no_modules['in']):
+            is_can = self.__eeprom_controller.read_address(EepromAddress(2 + i, 252, 1)).bytes == 'C'
+            version_info = get_master_version(EepromAddress(2 + i, 0, 4), is_can)
+            module_address, hardware_version, firmware_version = version_info
+            module_type = self.__eeprom_controller.read_address(EepromAddress(2 + i, 0, 1)).bytes
+            information['master'][module_address] = {'type': module_type,
+                                                     'hardware': hardware_version,
+                                                     'firmware': firmware_version,
+                                                     'address': module_address,
+                                                     'is_can': is_can}
+        for i in range(no_modules['out']):
+            version_info = get_master_version(EepromAddress(33 + i, 0, 4))
+            module_address, hardware_version, firmware_version = version_info
+            module_type = self.__eeprom_controller.read_address(EepromAddress(33 + i, 0, 1)).bytes
+            information['master'][module_address] = {'type': module_type,
+                                                     'hardware': hardware_version,
+                                                     'firmware': firmware_version,
+                                                     'address': module_address}
+        for i in range(no_modules['shutter']):
+            version_info = get_master_version(EepromAddress(33 + i, 173, 4))
+            module_address, hardware_version, firmware_version = version_info
+            module_type = self.__eeprom_controller.read_address(EepromAddress(33 + i, 173, 1)).bytes
+            information['master'][module_address] = {'type': module_type,
+                                                     'hardware': hardware_version,
+                                                     'firmware': firmware_version,
+                                                     'address': module_address}
+        # Just execute a call to make sure possible CommunicationTimedOutExceptions above don't trigger the watchdog
+        self.__master_communicator.do_command(master_api.number_of_io_modules())
+
+        # Energy/power modules
+        modules = self.__power_controller.get_power_modules().values()
+        for module in modules:
+            module_address = module['address']
+            raw_version = self.__power_communicator.do_command(module_address, power_api.get_version())[0]
+            version_info = raw_version.split('\x00', 1)[0].split('_')
+            firmware_version = '{0}.{1}.{2}'.format(version_info[1], version_info[2], version_info[3])
+            information['energy'][module_address] = {'type': 'P' if module['version'] == 8 else 'E',
+                                                     'firmware': firmware_version,
+                                                     'address': module_address}
+
+        return information
 
     def flash_leds(self, led_type, led_id):
         """ Flash the leds on the module for an output/input/sensor.
