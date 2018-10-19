@@ -42,8 +42,6 @@ class GatewayApi(object):
 
 
 class SchedulingControllerTest(unittest.TestCase):
-    FILE = "test.db"
-
     @classmethod
     def setUpClass(cls):
         fakesleep.monkey_patch()
@@ -53,18 +51,19 @@ class SchedulingControllerTest(unittest.TestCase):
         fakesleep.monkey_restore()
 
     def setUp(self):
+        self._db = "test.schedule.{0}.db".format(time.time())
         GatewayApi.RETURN_DATA = {}
-        if os.path.exists(SchedulingControllerTest.FILE):
-            os.remove(SchedulingControllerTest.FILE)
+        if os.path.exists(self._db):
+            os.remove(self._db)
 
     def tearDown(self):
         GatewayApi.RETURN_DATA = {}
-        if os.path.exists(SchedulingControllerTest.FILE):
-            os.remove(SchedulingControllerTest.FILE)
+        if os.path.exists(self._db):
+            os.remove(self._db)
 
     def _get_controller(self):
         gateway_api = GatewayApi()
-        controller = SchedulingController(SchedulingControllerTest.FILE, Lock(), gateway_api)
+        controller = SchedulingController(self._db, Lock(), gateway_api)
         controller.set_webinterface(WebInterface(None, gateway_api, None, None, None, controller))
         return controller
 

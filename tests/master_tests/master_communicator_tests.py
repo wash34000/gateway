@@ -103,6 +103,7 @@ class MasterCommunicatorTest(unittest.TestCase):
                          sout("hello"), sout(action.create_output(4, out_fields))])
 
         comm = MasterCommunicator(serial_mock, init_master=False)
+        comm.enable_passthrough()
         comm.start()
 
         self.assertEquals("OK", comm.do_command(action, in_fields)["resp"])
@@ -145,6 +146,7 @@ class MasterCommunicatorTest(unittest.TestCase):
         serial_mock = SerialMock([sin(pt_input), sout(pt_output)])
 
         comm = MasterCommunicator(serial_mock, init_master=False)
+        comm.enable_passthrough()
         comm.start()
 
         comm.send_passthrough_data(pt_input)
@@ -155,6 +157,7 @@ class MasterCommunicatorTest(unittest.TestCase):
         serial_mock = SerialMock([sout("passthrough"), sout(" my "), sout("data")])
 
         comm = MasterCommunicator(serial_mock, init_master=False)
+        comm.enable_passthrough()
         comm.start()
 
         self.assertEquals("passthrough", comm.get_passthrough_data())
@@ -197,6 +200,7 @@ class MasterCommunicatorTest(unittest.TestCase):
                         sin("exit\r\n"), sout("Passthrough again")])
 
         comm = MasterCommunicator(serial_mock, init_master=False)
+        comm.enable_passthrough()
         comm.start()
 
         def passthrough_thread():
@@ -227,6 +231,7 @@ class MasterCommunicatorTest(unittest.TestCase):
                         sout(action.create_output(1, out_fields))])
 
         comm = MasterCommunicator(serial_mock, init_master=False)
+        comm.enable_passthrough()
 
         got_output = {"phase" : 1}
 
@@ -251,6 +256,7 @@ class MasterCommunicatorTest(unittest.TestCase):
         """ Test the background consumer with passing the data to the passthrough. """
         serial_mock = SerialMock([ sout("OL\x00\x01"), sout("\x03\x0c\r\n") ])
         comm = MasterCommunicator(serial_mock, init_master=False)
+        comm.enable_passthrough()
 
         got_output = {"passed" : False}
 
@@ -277,6 +283,7 @@ class MasterCommunicatorTest(unittest.TestCase):
                          sout(action.create_output(1, out_fields))])
 
         comm = MasterCommunicator(serial_mock, init_master=False)
+        comm.enable_passthrough()
         comm.start()
 
         self.assertEquals("OK", comm.do_command(action, in_fields)["resp"])

@@ -108,26 +108,24 @@ def main():
     led_service = LedService()
 
     controller_serial = Serial(controller_serial_port, 115200)
-    passthrough_serial = Serial(passthrough_serial_port, 115200)
     power_serial = RS485(Serial(power_serial_port, 115200, timeout=None))
 
     master_communicator = MasterCommunicator(controller_serial)
-    master_communicator.start()
 
     power_controller = PowerController(constants.get_power_database_file())
-
     power_communicator = PowerCommunicator(power_serial, power_controller)
-    power_communicator.start()
 
     gateway_api = GatewayApi(master_communicator, power_communicator, power_controller)
 
     scheduling_controller = SchedulingController(constants.get_scheduling_database_file(), config_lock, gateway_api)
 
+    if passthrough_serial_port:
+        passthrough_serial = Serial(passthrough_serial_port, 115200)
+        passthrough_service = PassthroughService(master_communicator, passthrough_serial)
+        passthrough_service.start()
+
     maintenance_service = MaintenanceService(gateway_api, constants.get_ssl_private_key_file(),
                                              constants.get_ssl_certificate_file())
-
-    passthrough_service = PassthroughService(master_communicator, passthrough_serial)
-    passthrough_service.start()
 
     web_interface = WebInterface(user_controller, gateway_api, maintenance_service, led_service.in_authorized_mode,
                                  config_controller, scheduling_controller)
@@ -139,13 +137,12 @@ def main():
     web_interface.set_plugin_controller(plugin_controller)
     gateway_api.set_plugin_controller(plugin_controller)
 
+    # Metrics
     metrics_cache_controller = MetricsCacheController(constants.get_metrics_database_file(), threading.Lock())
     metrics_collector = MetricsCollector(gateway_api)
     metrics_controller = MetricsController(plugin_controller, metrics_collector, metrics_cache_controller, config_controller, gateway_uuid)
-
     metrics_collector.set_controllers(metrics_controller, plugin_controller)
     metrics_collector.set_plugin_intervals(plugin_controller.metric_intervals)
-
     metrics_controller.add_receiver(metrics_controller.receiver)
     metrics_controller.add_receiver(web_interface.distribute_metric)
 
@@ -170,15 +167,15 @@ def main():
         BackgroundConsumer(master_api.input_list(), 0, _on_input)
     )
 
+    master_communicator.start()
+    power_communicator.start()
     plugin_controller.start_plugins()
     metrics_controller.start()
     scheduling_controller.start()
     metrics_collector.start()
     web_service.start()
 
-    led_service.set_led('stat2', True)
-    led_thread = threading.Thread(target=led_driver, args=(led_service,
-                                                           master_communicator, power_communicator))
+    led_thread = threading.Thread(target=led_driver, args=(led_service, master_communicator, power_communicator))
     led_thread.setName("Serial led driver thread")
     led_thread.daemon = True
     led_thread.start()
@@ -187,7 +184,6 @@ def main():
         """ This function is called on SIGTERM. """
         _ = signum, frame
         sys.stderr.write("Shutting down")
-        led_service.set_led('stat2', False)
         web_service.stop()
         metrics_collector.stop()
         metrics_controller.stop()

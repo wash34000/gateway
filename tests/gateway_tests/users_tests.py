@@ -29,26 +29,24 @@ from gateway.users import UserController
 class UserControllerTest(unittest.TestCase):
     """ Tests for UserController. """
 
-    FILE = 'test.db'
-
     def setUp(self):  # pylint: disable=C0103
         """ Run before each test. """
-        if os.path.exists(UserControllerTest.FILE):
-            os.remove(UserControllerTest.FILE)
+        self._db = "test.user.{0}.db".format(time.time())
+        if os.path.exists(self._db):
+            os.remove(self._db)
 
     def tearDown(self):  # pylint: disable=C0103
         """ Run after each test. """
-        if os.path.exists(UserControllerTest.FILE):
-            os.remove(UserControllerTest.FILE)
+        if os.path.exists(self._db):
+            os.remove(self._db)
 
-    @staticmethod
-    def _get_controller():
+    def _get_controller(self):
         """ Get a UserController using FILE. """
-        return UserController(UserControllerTest.FILE, Lock(), {'username': 'om', 'password': 'pass'}, 10)
+        return UserController(self._db, Lock(), {'username': 'om', 'password': 'pass'}, 10)
 
     def test_empty(self):
         """ Test an empty database. """
-        user_controller = UserControllerTest._get_controller()
+        user_controller = self._get_controller()
         success, data = user_controller.login('fred', 'test')
         self.assertFalse(success)
         self.assertEquals(data, 'invalid_credentials')
@@ -63,7 +61,7 @@ class UserControllerTest(unittest.TestCase):
 
     def test_terms(self):
         """ Tests acceptance of the terms """
-        user_controller = UserControllerTest._get_controller()
+        user_controller = self._get_controller()
         success, data = user_controller.login('om', 'pass')
         self.assertFalse(success)
         self.assertEqual(data, 'terms_not_accepted')
@@ -76,7 +74,7 @@ class UserControllerTest(unittest.TestCase):
 
     def test_all(self):
         """ Test all methods of UserController. """
-        user_controller = UserControllerTest._get_controller()
+        user_controller = self._get_controller()
         user_controller.create_user('fred', 'test', 'admin', True)
 
         self.assertEquals(False, user_controller.login('fred', '123', accept_terms=True)[0])
@@ -92,7 +90,7 @@ class UserControllerTest(unittest.TestCase):
 
     def test_token_timeout(self):
         """ Test the timeout on the tokens. """
-        user_controller = UserController(UserControllerTest.FILE, Lock(), {'username': 'om', 'password': 'pass'}, 3)
+        user_controller = UserController(self._db, Lock(), {'username': 'om', 'password': 'pass'}, 3)
 
         token = user_controller.login('om', 'pass', accept_terms=True)[1]
         self.assertNotEquals(None, token)
@@ -108,18 +106,18 @@ class UserControllerTest(unittest.TestCase):
 
     def test_timeout(self):
         """ Test logout. """
-        user_controller = UserController(UserControllerTest.FILE, Lock(), {'username': 'om', 'password': 'pass'}, 3)
+        user_controller = UserController(self._db, Lock(), {'username': 'om', 'password': 'pass'}, 3)
 
         token = user_controller.login('om', 'pass', accept_terms=True)[1]
         self.assertNotEquals(None, token)
         self.assertTrue(user_controller.check_token(token))
 
         user_controller.logout(token)
-        self.assertFalse(user_controller.check_token(token))       
+        self.assertFalse(user_controller.check_token(token))
 
     def test_get_usernames(self):
         """ Test getting all usernames. """
-        user_controller = UserControllerTest._get_controller()
+        user_controller = self._get_controller()
         self.assertEquals(['om'], user_controller.get_usernames())
 
         user_controller.create_user('test', 'test', 'admin', True)
@@ -127,7 +125,7 @@ class UserControllerTest(unittest.TestCase):
 
     def test_remove_user(self):
         """ Test removing a user. """
-        user_controller = UserControllerTest._get_controller()
+        user_controller = self._get_controller()
         self.assertEquals(['om'], user_controller.get_usernames())
 
         user_controller.create_user('test', 'test', 'admin', True)
@@ -148,7 +146,7 @@ class UserControllerTest(unittest.TestCase):
 
     def test_case_insensitive(self):
         """ Test the case insensitivity of the username. """
-        user_controller = UserControllerTest._get_controller()
+        user_controller = self._get_controller()
 
         user_controller.create_user('TEST', 'test', 'admin', True)
 

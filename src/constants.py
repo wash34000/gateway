@@ -99,6 +99,11 @@ def get_plugin_dir():
     return "/opt/openmotics/python/plugins/"
 
 
+def get_plugin_config_dir():
+    """ Get the directory where plugin data is stored. """
+    return "/opt/openmotics/etc/"
+
+
 def get_plugin_configfiles():
     """ Get the directory where plugin data is stored. """
     return "/opt/openmotics/etc/pi_*"

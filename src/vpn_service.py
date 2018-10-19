@@ -26,10 +26,13 @@ import os
 import traceback
 import constants
 import threading
+
 from ConfigParser import ConfigParser
 from datetime import datetime
 from bus.led_service import LedService
 from gateway.config import ConfigurationController
+from platform_utils import System, Hardware
+
 try:
     import json
 except ImportError:
@@ -53,10 +56,10 @@ def reboot_gateway():
 class VpnController(object):
     """ Contains methods to check the vpn status, start and stop the vpn. """
 
-    vpnService = "openvpn.service"
-    startCmd = "systemctl start " + vpnService + " > /dev/null"
-    stopCmd = "systemctl stop " + vpnService + " > /dev/null"
-    checkCmd = "systemctl is-active " + vpnService + " > /dev/null"
+    vpn_service = System.get_vpn_service()
+    start_cmd = "systemctl start " + vpn_service + " > /dev/null"
+    stop_cmd = "systemctl stop " + vpn_service + " > /dev/null"
+    check_cmd = "systemctl is-active " + vpn_service + " > /dev/null"
 
     def __init__(self):
         pass
@@ -64,17 +67,17 @@ class VpnController(object):
     @staticmethod
     def start_vpn():
         """ Start openvpn """
-        return subprocess.call(VpnController.startCmd, shell=True) == 0
+        return subprocess.call(VpnController.start_cmd, shell=True) == 0
 
     @staticmethod
     def stop_vpn():
         """ Stop openvpn """
-        return subprocess.call(VpnController.stopCmd, shell=True) == 0
+        return subprocess.call(VpnController.stop_cmd, shell=True) == 0
 
     @staticmethod
     def check_vpn():
         """ Check if openvpn is running """
-        return subprocess.call(VpnController.checkCmd, shell=True) == 0
+        return subprocess.call(VpnController.check_cmd, shell=True) == 0
 
     @staticmethod
     def vpn_connected():
@@ -119,12 +122,12 @@ class Cloud(object):
                     self.__config.set_setting(setting, value)
 
             self.__last_connect = time.time()
-            self.__led_service.set_led('cloud', True)
+            self.__led_service.set_led(Hardware.Led.CLOUD, True)
 
             return data['open_vpn']
         except Exception as ex:
             LOGGER.log('Exception occured during check: {0}'.format(ex))
-            self.__led_service.set_led('cloud', False)
+            self.__led_service.set_led(Hardware.Led.CLOUD, False)
 
             return True
 
@@ -256,11 +259,7 @@ class Gateway(object):
     def get_local_ip_address(self):
         """ Get the local ip address. """
         _ = self  # Needs to be an instance method
-        try:
-            lines = subprocess.check_output("ifconfig eth0", shell=True)
-            return lines.split("\n")[1].strip().split(" ")[1].split(":")[1]
-        except Exception:
-            return None
+        return System.get_ip_address()
 
 
 class DataCollector(object):
@@ -340,7 +339,7 @@ def main():
             LOGGER.log(str(datetime.now()) + ": closing vpn")
             VpnController.stop_vpn()
         is_running = VpnController.check_vpn()
-        led_service.set_led('vpn', is_running and VpnController.vpn_connected())
+        led_service.set_led(Hardware.Led.VPN, is_running and VpnController.vpn_connected())
 
     # Get the configuration
     config = ConfigParser()
@@ -367,8 +366,8 @@ def main():
             cloud_enabled = config_controller.get_setting('cloud_enabled')
             if cloud_enabled is False:
                 set_vpn(False)
-                led_service.set_led('cloud', False)
-                led_service.set_led('vpn', False)
+                led_service.set_led(Hardware.Led.CLOUD, False)
+                led_service.set_led(Hardware.Led.VPN, False)
                 time.sleep(30)
                 continue
 
