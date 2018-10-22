@@ -357,9 +357,9 @@ class PluginController(object):
             # Check if the package contains a valid plugin
             checker = open("%s/check.py" % tmp_dir, "w")
             checker.write("""import sys
+sys.path.append('/opt/openmotics/python')
 from platform_utils import System
 System.import_eggs()
-sys.path.append('/opt/openmotics/python')
 
 from plugins.base import PluginController, PluginException
 
