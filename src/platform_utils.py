@@ -110,8 +110,8 @@ class System(object):
     @staticmethod
     def _get_operating_system():
         operating_system = {}
-        with open('/etc/os-release', 'r') as operating_systemfh:
-            lines = operating_systemfh.readlines()
+        with open('/etc/os-release', 'r') as osfh:
+            lines = osfh.readlines()
             for line in lines:
                 k, v = line.strip().split('=')
                 operating_system[k] = v
@@ -177,7 +177,7 @@ class System(object):
                     # This should be ok, just wait for more data to arrive
                     return True  # continue
                 if exception[0] == -1:  # Unexpected EOF
-                    logger.info('Got (unexpected) EOF, aborting due to loperating_systemt connection')
+                    logger.info('Got (unexpected) EOF, aborting due to lost connection')
                     return False  # break
             elif isinstance(exception, SSL.WantReadError):
                 # This should be ok, just wait for more data to arrive
@@ -187,7 +187,7 @@ class System(object):
             import select
             import ssl
             if isinstance(exception, ssl.SSLEOFError):
-                logger.info('Got SSLEOFError, aborting due to loperating_systemt connection')
+                logger.info('Got SSLEOFError, aborting due to lost connection')
                 return False  # break
             elif isinstance(exception, ssl.SSLError):
                 if 'The read operation timed out' in str(exception):
