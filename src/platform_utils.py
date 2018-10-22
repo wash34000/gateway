@@ -15,6 +15,8 @@
 """"
 The hardware_utils module contains various classes helping with Hardware and System abstraction
 """
+import os
+import sys
 import subprocess
 
 
@@ -106,25 +108,25 @@ class System(object):
     """
 
     @staticmethod
-    def _get_os():
-        os = {}
-        with open('/etc/os-release', 'r') as osfh:
-            lines = osfh.readlines()
+    def _get_operating_system():
+        operating_system = {}
+        with open('/etc/os-release', 'r') as operating_systemfh:
+            lines = operating_systemfh.readlines()
             for line in lines:
                 k, v = line.strip().split('=')
-                os[k] = v
-        return os
+                operating_system[k] = v
+        return operating_system
 
     @staticmethod
     def get_ip_address():
         """ Get the local ip address. """
         interface = Hardware.get_local_interface()
-        os = System._get_os()
+        operating_system = System._get_operating_system()
         try:
             lines = subprocess.check_output('ifconfig {0}'.format(interface), shell=True)
-            if os['ID'] == 'angstrom':
+            if operating_system['ID'] == 'angstrom':
                 return lines.split('\n')[1].strip().split(' ')[1].split(':')[1]
-            elif os['ID'] == 'debian':
+            elif operating_system['ID'] == 'debian':
                 return lines.split('\n')[1].strip().split(' ')[1]
             else:
                 return None
@@ -133,12 +135,12 @@ class System(object):
 
     @staticmethod
     def get_vpn_service():
-        return 'openvpn.service' if System._get_os()['ID'] == 'angstrom' else 'openvpn-client@omcloud'
+        return 'openvpn.service' if System._get_operating_system()['ID'] == 'angstrom' else 'openvpn-client@omcloud'
 
     @staticmethod
     def get_ssl_socket(sock, private_key_filename, certificate_filename):
-        os = System._get_os()
-        if os['ID'] == 'angstrom':
+        operating_system = System._get_operating_system()
+        if operating_system['ID'] == 'angstrom':
             from OpenSSL import SSL
             context = SSL.Context(SSL.SSLv23_METHOD)
             context.use_privatekey_file(private_key_filename)
@@ -154,8 +156,8 @@ class System(object):
 
     @staticmethod
     def setup_cherrypy_ssl(https_server, private_key_filename, certificate_filename):
-        os = System._get_os()
-        if os['ID'] == 'angstrom':
+        operating_system = System._get_operating_system()
+        if operating_system['ID'] == 'angstrom':
             https_server.ssl_module = 'pyopenssl'
         else:
             import ssl
@@ -166,8 +168,8 @@ class System(object):
 
     @staticmethod
     def handle_socket_exception(connection, exception, logger):
-        os = System._get_os()
-        if os['ID'] == 'angstrom':
+        operating_system = System._get_operating_system()
+        if operating_system['ID'] == 'angstrom':
             import select
             from OpenSSL import SSL
             if isinstance(exception, SSL.SysCallError):
@@ -175,7 +177,7 @@ class System(object):
                     # This should be ok, just wait for more data to arrive
                     return True  # continue
                 if exception[0] == -1:  # Unexpected EOF
-                    logger.info('Got (unexpected) EOF, aborting due to lost connection')
+                    logger.info('Got (unexpected) EOF, aborting due to loperating_systemt connection')
                     return False  # break
             elif isinstance(exception, SSL.WantReadError):
                 # This should be ok, just wait for more data to arrive
@@ -185,10 +187,19 @@ class System(object):
             import select
             import ssl
             if isinstance(exception, ssl.SSLEOFError):
-                logger.info('Got SSLEOFError, aborting due to lost connection')
+                logger.info('Got SSLEOFError, aborting due to loperating_systemt connection')
                 return False  # break
             elif isinstance(exception, ssl.SSLError):
                 if 'The read operation timed out' in str(exception):
                     # Got read timeout, just wait for data to arrive
                     return True  # continue
         raise exception
+
+    @staticmethod
+    def import_eggs():
+        operating_system = System._get_operating_system()
+        blacklisted_eggs = {'debian': ['requests-1.2.0-py2.7.egg']}.get(operating_system['ID'], [])
+        os.environ['PYTHON_EGG_CACHE'] = '/tmp/.eggs-cache/'
+        for egg in os.listdir('/opt/openmotics/python/eggs'):
+            if egg.endswith('.egg') and egg not in blacklisted_eggs:
+                sys.path.insert(0, '/opt/openmotics/python/eggs/{0}'.format(egg))

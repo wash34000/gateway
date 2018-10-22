@@ -22,6 +22,9 @@ import sys
 import argparse
 from ConfigParser import ConfigParser
 
+from platform_utils import System
+System.import_eggs()
+
 import intelhex
 
 from serial import Serial
