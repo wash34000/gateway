@@ -357,12 +357,8 @@ class PluginController(object):
             # Check if the package contains a valid plugin
             checker = open("%s/check.py" % tmp_dir, "w")
             checker.write("""import sys
-import os
-
-os.environ['PYTHON_EGG_CACHE'] = '/tmp/.eggs-cache/'
-for egg in os.listdir('/opt/openmotics/python/eggs'):
-    if egg.endswith('.egg'):
-        sys.path.insert(0, '/opt/openmotics/python/eggs/{0}'.format(egg))
+from platform_utils import System
+System.import_eggs()
 sys.path.append('/opt/openmotics/python')
 
 from plugins.base import PluginController, PluginException
