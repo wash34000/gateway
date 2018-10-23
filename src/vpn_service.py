@@ -18,6 +18,9 @@ if required. On each check the vpn_service sends some status information about t
 thermostats to the cloud, to keep the status information in the cloud in sync.
 """
 
+from platform_utils import System, Hardware
+System.import_eggs()
+
 import sys
 import requests
 import time
@@ -31,7 +34,6 @@ from ConfigParser import ConfigParser
 from datetime import datetime
 from bus.led_service import LedService
 from gateway.config import ConfigurationController
-from platform_utils import System, Hardware
 
 try:
     import json
