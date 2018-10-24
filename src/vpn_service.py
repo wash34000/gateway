@@ -18,6 +18,9 @@ if required. On each check the vpn_service sends some status information about t
 thermostats to the cloud, to keep the status information in the cloud in sync.
 """
 
+from platform_utils import System, Hardware
+System.import_eggs()
+
 import sys
 import requests
 import time
@@ -31,7 +34,6 @@ from ConfigParser import ConfigParser
 from datetime import datetime
 from bus.led_service import LedService
 from gateway.config import ConfigurationController
-from platform_utils import System, Hardware
 
 try:
     import json
@@ -108,8 +110,9 @@ class Cloud(object):
     def should_open_vpn(self, extra_data):
         """ Check with the OpenMotics could if we should open a VPN """
         try:
-            request = requests.post(self.__url, data={'extra_data': json.dumps(extra_data)},
-                                    timeout=10.0, verify=True)
+            request = requests.post(self.__url,
+                                    data={'extra_data': json.dumps(extra_data)},
+                                    timeout=10.0)
             data = json.loads(request.text)
 
             if 'sleep_time' in data:

@@ -203,3 +203,8 @@ class System(object):
         for egg in os.listdir('/opt/openmotics/python/eggs'):
             if egg.endswith('.egg') and egg not in blacklisted_eggs:
                 sys.path.insert(0, '/opt/openmotics/python/eggs/{0}'.format(egg))
+                # Patching where/if required
+                if egg == 'requests-1.2.0-py2.7.egg':
+                    from pkg_resources import resource_filename, resource_stream, Requirement
+                    resource_stream(Requirement.parse('requests'), 'requests/cacert.pem')
+                    os.environ['REQUESTS_CA_BUNDLE'] = resource_filename(Requirement.parse('requests'), 'requests/cacert.pem')
