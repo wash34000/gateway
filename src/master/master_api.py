@@ -483,7 +483,8 @@ def write_timer():
     """ Writes a timer setting to an Output, and immediately activates the timer value (even when an Output is already on). """
     return MasterCommandSpec("WT",
                              [Field.byte("id"), Field.int("timer"), Field.padding(10)],
-                             [Field.byte("id"), Field.int("timer"), Field.padding(10), Field.lit("\r\n")])
+                             [Field.byte("id"), Field.int("timer"), Field.padding(10), Field.lit("\r\n")],
+                             "RT")
 
 
 # Below are the asynchronous messages, sent by the master to the gateway

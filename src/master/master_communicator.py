@@ -152,7 +152,7 @@ class MasterCommunicator(object):
         """
         with self.__serial_write_lock:
             if self.__verbose:
-                LOGGER.info('Writing to Master serial: {0}'.format(printable(data)))
+                LOGGER.info('Writing to Master serial:   {0}'.format(printable(data)))
             self.__serial.write(data)
             self.__serial_bytes_written += len(data)
 
@@ -413,7 +413,7 @@ class MasterCommunicator(object):
                 self.__serial_bytes_read += (1 + num_bytes)
 
                 if self.__verbose:
-                    print "%.3f read from serial: %s" % (time.time(), printable(data))
+                    LOGGER.info('Reading from Master serial: {0}'.format(printable(data)))
 
                 if read_state.should_resume():
                     data = read_state.consume(data)
@@ -476,7 +476,7 @@ class Consumer(object):
 
     def get_prefix(self):
         """ Get the prefix of the answer from the master. """
-        return self.cmd.action + str(chr(self.cid))
+        return self.cmd.output_action + str(chr(self.cid))
 
     def consume(self, data, partial_result):
         """ Consume data. """
@@ -520,7 +520,7 @@ class BackgroundConsumer(object):
 
     def get_prefix(self):
         """ Get the prefix of the answer from the master. """
-        return self.cmd.action + str(chr(self.cid))
+        return self.cmd.output_action + str(chr(self.cid))
 
     def consume(self, data, partial_result):
         """ Consume data. """

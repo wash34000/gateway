@@ -20,11 +20,12 @@ Tool to bootload the slave modules (output, dimmer, input and temperature).
 
 import argparse
 from ConfigParser import ConfigParser
-
 from serial import Serial
 
-import constants
+from platform_utils import System
+System.import_eggs()
 
+import constants
 import master.master_api as master_api
 from master.master_communicator import MasterCommunicator
 from master.eeprom_controller import EepromFile, EepromAddress
@@ -228,7 +229,7 @@ def bootload(master_communicator, address, ihex, crc, blocks, logger):
                 if i == blocks - 1 and j >= 56:
                     # The first 8 bytes (the jump) is placed at the end of the code.
                     bytes += chr(ihex[j - 56])
-                else: 
+                else:
                     bytes += chr(ihex[i*64 + j])
 
             print "Block %d" % i

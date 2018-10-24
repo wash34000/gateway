@@ -22,7 +22,6 @@ LOGGER = logging.getLogger('openmotics')
 import threading
 import traceback
 import socket
-import select
 from platform_utils import System
 from master_communicator import InMaintenanceModeException
 
@@ -146,20 +145,18 @@ class SerialRedirector(object):
             try:
                 try:
                     data = self.__connection.recv(1024)
-                except System.get_syscall_exception() as exception:
-                    if exception[0] == 11:  # temporarily unavailable
-                        continue
-                    else:
-                        raise
-                except System.get_wantread_exception():
-                    select.select([self.__connection], [], [], 1.0)
-                else:
                     if not data:
                         LOGGER.info('Stopping maintenance mode due to no data.')
+                        break
                     if data.startswith('exit'):
                         LOGGER.info('Stopping maintenance mode due to exit.')
                         break
                     self.__gateway_api.send_maintenance_data(data)
+                except Exception as exception:
+                    if System.handle_socket_exception(self.__connection, exception, LOGGER):
+                        continue
+                    else:
+                        break
             except:
                 LOGGER.error('Exception in maintenance mode: %s\n', traceback.format_exc())
                 break

@@ -20,14 +20,11 @@ The main module for the OpenMotics
 
 import logging
 import sys
-import os
 import time
 import threading
 
-os.environ['PYTHON_EGG_CACHE'] = '/tmp/.eggs-cache/'
-for egg in os.listdir('/opt/openmotics/python/eggs'):
-    if egg.endswith('.egg'):
-        sys.path.insert(0, '/opt/openmotics/python/eggs/{0}'.format(egg))
+from platform_utils import System
+System.import_eggs()
 
 from serial import Serial
 from signal import signal, SIGTERM
@@ -119,6 +116,13 @@ def main():
         EepromExtension(constants.get_eeprom_extension_database_file())
     )
 
+    if passthrough_serial_port:
+        passthrough_serial = Serial(passthrough_serial_port, 115200)
+        passthrough_service = PassthroughService(master_communicator, passthrough_serial)
+        passthrough_service.start()
+
+    master_communicator.start()  # A running master_communicator is required for the startup of services below
+
     power_controller = PowerController(constants.get_power_database_file())
     power_communicator = PowerCommunicator(power_serial, power_controller)
 
@@ -131,11 +135,6 @@ def main():
     gateway_api = GatewayApi(master_communicator, power_communicator, power_controller, eeprom_controller, pulse_controller)
 
     scheduling_controller = SchedulingController(constants.get_scheduling_database_file(), config_lock, gateway_api)
-
-    if passthrough_serial_port:
-        passthrough_serial = Serial(passthrough_serial_port, 115200)
-        passthrough_service = PassthroughService(master_communicator, passthrough_serial)
-        passthrough_service.start()
 
     maintenance_service = MaintenanceService(gateway_api, constants.get_ssl_private_key_file(),
                                              constants.get_ssl_certificate_file())
@@ -180,7 +179,6 @@ def main():
         BackgroundConsumer(master_api.input_list(), 0, _on_input)
     )
 
-    master_communicator.start()
     power_communicator.start()
     plugin_controller.start_plugins()
     metrics_controller.start()
