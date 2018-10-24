@@ -33,7 +33,7 @@ class MasterCommandSpec(object):
     [Action (2 bytes)] [cid] [fields]
     The total length depends on the action.
     """
-    def __init__(self, action, input_fields, output_fields):
+    def __init__(self, action, input_fields, output_fields, output_action=None):
         """ Create a MasterCommandSpec.
 
         :param action: name of the action as described in the Master api.
@@ -42,10 +42,13 @@ class MasterCommandSpec(object):
         :type input_fields: array of :class`Field`
         :param output_fields: Fields in the output from the master
         :type output_fields: array of :class`Field`
+        :param output_action: name of the action of the answer, as described in the Master api. None if identical to the mainaction
+        :type output_action: 2-byte string
         """
         self.action = action
         self.input_fields = input_fields
         self.output_fields = output_fields
+        self.output_action = action if output_action is None else output_action
 
     def create_input(self, cid, fields=None):
         """ Create an input command for the master using this spec and the provided fields.
@@ -87,7 +90,7 @@ class MasterCommandSpec(object):
         :type fields: dict
         :rtype: string
         """
-        ret = self.action + chr(cid)
+        ret = self.output_action + chr(cid)
         for field in self.output_fields:
             ret += field.encode(fields.get(field.name))
         return ret
@@ -152,7 +155,7 @@ class MasterCommandSpec(object):
 
     def __eq__(self, other):
         """ Only used for testing, equals by name. """
-        return self.action == other.action
+        return self.action == other.action and self.output_action == other.output_action
 
 class Result(object):
     """ Result of a communication with the master. Can be accessed as a dict,
