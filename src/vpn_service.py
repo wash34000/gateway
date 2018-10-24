@@ -110,8 +110,9 @@ class Cloud(object):
     def should_open_vpn(self, extra_data):
         """ Check with the OpenMotics could if we should open a VPN """
         try:
-            request = requests.post(self.__url, data={'extra_data': json.dumps(extra_data)},
-                                    timeout=10.0, verify=True)
+            request = requests.post(self.__url,
+                                    data={'extra_data': json.dumps(extra_data)},
+                                    timeout=10.0)
             data = json.loads(request.text)
 
             if 'sleep_time' in data:

@@ -286,8 +286,9 @@ class MetricsController(object):
             self._cloud_last_try = now
             try:
                 # Try to send the metrics
-                request = requests.post(metrics_endpoint, data={'metrics': json.dumps(self._cloud_buffer + self._cloud_queue)},
-                                        timeout=30.0, verify=True)
+                request = requests.post(metrics_endpoint,
+                                        data={'metrics': json.dumps(self._cloud_buffer + self._cloud_queue)},
+                                        timeout=30.0)
                 return_data = json.loads(request.text)
                 if return_data.get('success', False) is False:
                     raise RuntimeError('{0}'.format(return_data.get('error')))
@@ -328,7 +329,7 @@ class MetricsController(object):
                 self._cloud_buffer_length += 1
             if self._metrics_cache_controller.clear_buffer(time.time() - 365 * 24 * 60 * 60) > 0:
                 self._load_cloud_buffer()
-    
+
     def _put(self, metric):
         rate_key = '{0}.{1}'.format(metric['source'].lower(), metric['type'].lower())
         if rate_key not in self.inbound_rates:
