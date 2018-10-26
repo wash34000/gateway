@@ -18,6 +18,9 @@ The hardware_utils module contains various classes helping with Hardware and Sys
 import os
 import sys
 import subprocess
+import os
+
+force_pyopenssl = os.environ.get('FORCE_PYOPENSSL', 'False')
 
 
 class Hardware(object):
@@ -138,26 +141,29 @@ class System(object):
         return 'openvpn.service' if System._get_operating_system()['ID'] == 'angstrom' else 'openvpn-client@omcloud'
 
     @staticmethod
+    def _use_pyopenssl():
+        return System._get_operating_system()['ID'] == 'angstrom' or force_pyopenssl == 'True'
+
+    @staticmethod
     def get_ssl_socket(sock, private_key_filename, certificate_filename):
-        operating_system = System._get_operating_system()
-        if operating_system['ID'] == 'angstrom':
+        if System._use_pyopenssl():
             from OpenSSL import SSL
             context = SSL.Context(SSL.SSLv23_METHOD)
             context.use_privatekey_file(private_key_filename)
             context.use_certificate_file(certificate_filename)
             return SSL.Connection(context, sock)
-        import ssl
-        return ssl.wrap_socket(sock,
-                               keyfile=private_key_filename,
-                               certfile=certificate_filename,
-                               ssl_version=ssl.PROTOCOL_SSLv23,
-                               do_handshake_on_connect=False,
-                               suppress_ragged_eofs=False)
+        else:
+            import ssl
+            return ssl.wrap_socket(sock,
+                                   keyfile=private_key_filename,
+                                   certfile=certificate_filename,
+                                   ssl_version=ssl.PROTOCOL_SSLv23,
+                                   do_handshake_on_connect=False,
+                                   suppress_ragged_eofs=False)
 
     @staticmethod
     def setup_cherrypy_ssl(https_server, private_key_filename, certificate_filename):
-        operating_system = System._get_operating_system()
-        if operating_system['ID'] == 'angstrom':
+        if System._use_pyopenssl():
             https_server.ssl_module = 'pyopenssl'
         else:
             import ssl
@@ -168,8 +174,7 @@ class System(object):
 
     @staticmethod
     def handle_socket_exception(connection, exception, logger):
-        operating_system = System._get_operating_system()
-        if operating_system['ID'] == 'angstrom':
+        if System._use_pyopenssl():
             import select
             from OpenSSL import SSL
             if isinstance(exception, SSL.SysCallError):

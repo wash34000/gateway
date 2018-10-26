@@ -16,7 +16,7 @@
 
 import inspect
 
-from plugins.base import PluginException
+from base import PluginException
 
 
 class PluginInterface(object):
@@ -100,17 +100,16 @@ def check_interface(plugin, interface):
             raise PluginException("Plugin '%s' has no method named '%s'" %
                                   (plugin_name, method.name))
 
-        if not (hasattr(plugin_method, 'exposed') and hasattr(plugin_method, 'auth') and
-                hasattr(plugin_method, 'orig')):
+        if not hasattr(plugin_method, 'om_expose'):
             raise PluginException("Plugin '%s' does not expose method '%s'" %
                                   (plugin_name, method.name))
 
-        if plugin_method.auth != method.auth:
+        if plugin_method.om_expose['auth'] != method.auth:
             raise PluginException("Plugin '%s': authentication for method '%s' does not match the "
                                   "interface authentication (%s required)." %
                                   (plugin_name, method.name, method.auth))
 
-        argspec = inspect.getargspec(plugin_method.orig)
+        argspec = inspect.getargspec(plugin_method.om_expose['method'])
         if len(argspec.args) == 0 or argspec.args[0] != "self":
             raise PluginException("Method '%s' on plugin '%s' lacks 'self' as first argument."
                                   % (method.name, plugin_name))

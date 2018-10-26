@@ -14,9 +14,6 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """ The OpenMotics plugin decorators. """
 
-import cherrypy
-
-
 def om_expose(method=None, auth=True, content_type='application/json'):
     """
     Decorator to expose a method of the plugin class through the
@@ -37,17 +34,11 @@ def om_expose(method=None, auth=True, content_type='application/json'):
     def method_to_expose(self, ...):
         ...
     """
-    def decorate(func):
-        def _exposed(*args, **kwargs):
-            result = func(*args, **kwargs)
-            cherrypy.response.headers["Content-Type"] = content_type
-            return result
-        if auth is True:
-            _exposed = cherrypy.tools.authenticated()(_exposed)
-        _exposed.exposed = True
-        _exposed.auth = auth
-        _exposed.orig = func
-        return _exposed
+    def decorate(method):
+        method.om_expose = {'method': method,
+                            'auth': auth,
+                            'content_type': content_type}
+        return method
 
     if method is not None:
         return decorate(method)
@@ -136,7 +127,7 @@ def om_metric_data(interval=5):
         interval = 5
 
     def decorate(method):
-        method.metric_data = {'interval': interval}
+        method.om_metric_data = {'interval': interval}
         return method
     return decorate
 
@@ -148,8 +139,8 @@ def om_metric_receive(source=None, metric_type=None, interval=None):
     """
     def decorate(method):
         """ The decorated method. """
-        method.metric_receive = {'source': source,
-                                 'metric_type': metric_type,
-                                 'interval': interval}
+        method.om_metric_receive = {'source': source,
+                                    'metric_type': metric_type,
+                                    'interval': interval}
         return method
     return decorate

@@ -55,6 +55,8 @@ from power.power_controller import PowerController
 
 from plugins.base import PluginController
 
+from dev.mocks import MasterCommunicatorMock, PowerCommunicatorMock
+
 
 def setup_logger():
     """ Setup the OpenMotics logger. """
@@ -88,7 +90,7 @@ def led_driver(led_service, master_communicator, power_communicator):
 
 def main():
     """ Main function. """
-    config = ConfigParser()
+    config = ConfigParser({'mode':'PROD'})
     config.read(constants.get_config_file())
 
     defaults = {'username': config.get('OpenMotics', 'cloud_user'),
@@ -97,6 +99,7 @@ def main():
     passthrough_serial_port = config.get('OpenMotics', 'passthrough_serial')
     power_serial_port = config.get('OpenMotics', 'power_serial')
     gateway_uuid = config.get('OpenMotics', 'uuid')
+    mode = config.get('OpenMotics', 'mode')
 
     config_lock = threading.Lock()
     user_controller = UserController(constants.get_config_database_file(), config_lock, defaults, 3600)
@@ -104,10 +107,17 @@ def main():
 
     led_service = LedService()
 
-    controller_serial = Serial(controller_serial_port, 115200)
-    power_serial = RS485(Serial(power_serial_port, 115200, timeout=None))
+    if mode == 'DEV' and controller_serial_port == '':
+        master_communicator = MasterCommunicatorMock()
+    else:
+        controller_serial = Serial(controller_serial_port, 115200)
+        master_communicator = MasterCommunicator(controller_serial)
 
-    master_communicator = MasterCommunicator(controller_serial)
+    if mode == 'DEV' and power_serial_port == '':
+        power_communicator = PowerCommunicatorMock()
+    else:
+        power_serial = RS485(Serial(power_serial_port, 115200, timeout=None))
+        power_communicator = PowerCommunicator(power_serial, power_controller)
 
     if passthrough_serial_port:
         passthrough_serial = Serial(passthrough_serial_port, 115200)
@@ -117,7 +127,6 @@ def main():
     master_communicator.start()  # A running master_communicator is required for the startup of services below
 
     power_controller = PowerController(constants.get_power_database_file())
-    power_communicator = PowerCommunicator(power_serial, power_controller)
 
     gateway_api = GatewayApi(master_communicator, power_communicator, power_controller)
 
